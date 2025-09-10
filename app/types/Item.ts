@@ -7,6 +7,7 @@ export interface ReceiptItem {
   discount: number;
   receipt: number;
   owner: number | null;
+  member_id: string | null;
 }
 
 export interface Receipt {

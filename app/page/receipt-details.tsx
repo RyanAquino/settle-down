@@ -60,6 +60,20 @@ export default function ReceiptDetails() {
         };
 
         setReceipt(updatedReceipt);
+        
+        // Pre-select users based on member_id
+        const initialSelectedUsers: {[itemId: number]: number | null} = {};
+        console.log(updatedReceipt.receipt_items)
+        updatedReceipt.receipt_items.forEach(item => {
+          if (item.member_id) {
+            // Find user with matching member_id
+            const matchingUser = usersResponse.items.find(user => user.username === item.member_id);
+            if (matchingUser) {
+              initialSelectedUsers[item.id] = matchingUser.id;
+            }
+          }
+        });
+        setSelectedUsers(initialSelectedUsers);
       }
 
       setUsers(usersResponse.items);
@@ -160,12 +174,12 @@ export default function ReceiptDetails() {
       // Refresh receipt data to show updated values
       await fetchReceiptDetails();
       
+      // Clear only the edited states, selectedUsers will be reset by fetchReceiptDetails
       setEditedPrices({});
       setEditedQuantities({});
-      setSelectedUsers({});
-      Alert.alert('Success', 'Changes saved successfully!', [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+      
+      // Show success message without navigating back
+      Alert.alert('Success', 'Changes saved successfully!');
       
     } catch (error) {
       Alert.alert('Error', 'Failed to save changes. Please try again.');
