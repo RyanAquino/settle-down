@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,109 +7,108 @@ import {
   SafeAreaView,
   StatusBar,
   FlatList,
-  Image,
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { Item } from '../types/Item';
+import { Receipt, Group } from '../types/Item';
+import { ApiService } from '../services/api';
 import { useCamera } from '../hooks/useCamera';
+import { useRouter } from 'expo-router';
 
 export default function Home() {
-  const [items, setItems] = useState<Item[]>([]);
-  const [editingItem, setEditingItem] = useState<string | null>(null);
-  const { takePhoto, isLoading } = useCamera();
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  const { takePhoto } = useCamera();
+  const router = useRouter();
 
-  const generateId = () => Date.now().toString();
-
-  const handleAddItem = async () => {
-    const photoUri = await takePhoto();
-    
-    if (photoUri) {
-      const newItem: Item = {
-        id: generateId(),
-        photo: photoUri,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setItems(prevItems => [...prevItems, newItem]);
-    }
-  };
-
-  const handleEditItem = async (itemId: string) => {
-    setEditingItem(itemId);
-    const photoUri = await takePhoto();
-    
-    if (photoUri) {
-      setItems(prevItems =>
-        prevItems.map(item =>
-          item.id === itemId
-            ? { ...item, photo: photoUri, updatedAt: new Date().toISOString() }
-            : item
-        )
-      );
-    }
-    setEditingItem(null);
-  };
-
-  const handleDeleteItem = (itemId: string) => {
-    Alert.alert(
-      'Delete Item',
-      'Are you sure you want to delete this item?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            setItems(prevItems => prevItems.filter(item => item.id !== itemId));
-          },
-        },
-      ]
-    );
-  };
-
-  const renderItem = ({ item }: { item: Item }) => (
-    <View style={styles.itemCard}>
-      {item.photo ? (
-        <Image source={{ uri: item.photo }} style={styles.itemPhoto} />
-      ) : (
-        <View style={styles.placeholderPhoto}>
-          <Text style={styles.placeholderText}>📷</Text>
-        </View>
-      )}
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      const [receiptsResponse, groupsResponse] = await Promise.all([
+        ApiService.getReceipts(),
+        ApiService.getGroups()
+      ]);
+      setReceipts(receiptsResponse.items);
+      setGroups(groupsResponse.items);
       
-      <View style={styles.itemActions}>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => handleEditItem(item.id)}
-          disabled={editingItem === item.id || isLoading}
-        >
-          {editingItem === item.id ? (
-            <ActivityIndicator size="small" color="#007aff" />
-          ) : (
-            <Text style={styles.editButtonText}>Edit</Text>
-          )}
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => handleDeleteItem(item.id)}
-          disabled={isLoading}
-        >
-          <Text style={styles.deleteButtonText}>Delete</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      // Auto-select first group if none selected and groups exist
+      if (!selectedGroup && groupsResponse.items.length > 0) {
+        setSelectedGroup(groupsResponse.items[0]);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to fetch data. Please try again.');
+      console.error('Error fetching data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchData();
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleGroupSelect = (group: Group) => {
+    setSelectedGroup(group);
+    setShowDropdown(false);
+  };
+
+  const handleShopPress = (receipt: Receipt) => {
+    const groupParam = selectedGroup ? `&groupId=${encodeURIComponent(selectedGroup.id)}` : '';
+    router.push(`/page/receipt-details?receiptId=${receipt.id}${groupParam}`);
+  };
+
+  const handleAddReceipt = async () => {
+    try {
+      setIsUploading(true);
+      const photoUri = await takePhoto();
+      
+      if (photoUri) {
+        await ApiService.uploadReceiptPhoto(photoUri);
+        await fetchData();
+        Alert.alert('Success', 'Receipt added successfully!');
+      }
+    } catch (error) {
+      console.error('Error adding receipt:', error);
+      Alert.alert('Error', 'Failed to add receipt. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+
+  const renderShopCard = ({ item }: { item: Receipt }) => (
+    <TouchableOpacity
+      style={styles.shopCard}
+      onPress={() => handleShopPress(item)}
+      activeOpacity={0.7}
+    >
+      <Text style={styles.shopName}>{item.shop_name}</Text>
+      <Text style={styles.shopDate}>
+        {new Date(item.created_at).toLocaleDateString()}
+      </Text>
+      <Text style={styles.itemCount}>
+        {item.receipt_items.length} items
+      </Text>
+    </TouchableOpacity>
   );
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Text style={styles.emptyStateTitle}>No items yet</Text>
+      <Text style={styles.emptyStateTitle}>No receipts yet</Text>
       <Text style={styles.emptyStateSubtitle}>
-        Tap the + button to add your first photo item
+        Pull down to refresh and check for new receipts
       </Text>
     </View>
   );
@@ -123,26 +122,72 @@ export default function Home() {
         <Text style={styles.headerTitle}>SettleDown</Text>
       </View>
 
-      {/* Content */}
-      <FlatList
-        data={items}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={renderEmptyState}
-        showsVerticalScrollIndicator={false}
-      />
+      {/* Group Dropdown */}
+      <View style={styles.dropdownContainer}>
+        <TouchableOpacity
+          style={styles.dropdown}
+          onPress={() => setShowDropdown(!showDropdown)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.dropdownText}>
+            {selectedGroup ? selectedGroup.name : 'Select Group'}
+          </Text>
+          <Text style={styles.dropdownArrow}>{showDropdown ? '▲' : '▼'}</Text>
+        </TouchableOpacity>
+        
+        {showDropdown && (
+          <View style={styles.dropdownOptions}>
+            {groups.map((group) => (
+              <TouchableOpacity
+                key={group.id}
+                style={[
+                  styles.dropdownOption,
+                  selectedGroup?.id === group.id && styles.selectedOption
+                ]}
+                onPress={() => handleGroupSelect(group)}
+                activeOpacity={0.7}
+              >
+                <Text style={[
+                  styles.dropdownOptionText,
+                  selectedGroup?.id === group.id && styles.selectedOptionText
+                ]}>
+                  {group.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
 
-      {/* Add Button */}
+      {/* Content */}
+      {isLoading && receipts.length === 0 ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007aff" />
+          <Text style={styles.loadingText}>Loading receipts...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={receipts}
+          renderItem={renderShopCard}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={renderEmptyState}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+
+      {/* Floating Add Button */}
       <TouchableOpacity
-        style={[styles.addButton, isLoading && styles.addButtonDisabled]}
-        onPress={handleAddItem}
-        disabled={isLoading}
+        style={[styles.addButton, isUploading && styles.addButtonDisabled]}
+        onPress={handleAddReceipt}
+        disabled={isUploading}
         activeOpacity={0.8}
       >
-        {isLoading ? (
-          <ActivityIndicator size="large" color="#fff" />
+        {isUploading ? (
+          <ActivityIndicator size="small" color="#fff" />
         ) : (
           <Text style={styles.addButtonText}>+</Text>
         )}
@@ -171,16 +216,81 @@ const styles = StyleSheet.create({
     fontFamily: 'System',
     textAlign: 'center',
   },
-  listContent: {
-    padding: 16,
-    paddingBottom: 100,
+  dropdownContainer: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 1000,
   },
-  itemCard: {
-    flex: 1,
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     backgroundColor: '#fff',
     borderRadius: 12,
-    margin: 6,
-    padding: 12,
+  },
+  dropdownText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1c1c1e',
+    flex: 1,
+  },
+  dropdownArrow: {
+    fontSize: 12,
+    color: '#8e8e93',
+    fontWeight: '600',
+  },
+  dropdownOptions: {
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f2f2f7',
+    maxHeight: 200,
+  },
+  dropdownOption: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f2f2f7',
+  },
+  dropdownOptionText: {
+    fontSize: 15,
+    color: '#1c1c1e',
+  },
+  selectedOption: {
+    backgroundColor: '#f2f7ff',
+  },
+  selectedOptionText: {
+    color: '#007aff',
+    fontWeight: '500',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#8e8e93',
+  },
+  listContent: {
+    padding: 16,
+  },
+  shopCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -189,57 +299,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    minHeight: 200,
   },
-  itemPhoto: {
-    width: '100%',
-    height: 120,
-    borderRadius: 8,
-    backgroundColor: '#f2f2f7',
-    resizeMode: 'cover',
+  shopName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1c1c1e',
+    marginBottom: 4,
   },
-  placeholderPhoto: {
-    width: '100%',
-    height: 120,
-    borderRadius: 8,
-    backgroundColor: '#f2f2f7',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  placeholderText: {
-    fontSize: 32,
+  shopDate: {
+    fontSize: 14,
     color: '#8e8e93',
+    marginBottom: 4,
   },
-  itemActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  editButton: {
-    backgroundColor: '#007aff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    flex: 0.48,
-  },
-  editButtonText: {
-    color: '#fff',
+  itemCount: {
     fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  deleteButton: {
-    backgroundColor: '#ff3b30',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
-    flex: 0.48,
-  },
-  deleteButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
+    color: '#007aff',
+    fontWeight: '500',
   },
   emptyState: {
     flex: 1,
