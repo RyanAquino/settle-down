@@ -18,7 +18,6 @@ export class ApiService {
       const data: ApiResponse = await response.json();
       return data;
     } catch (error) {
-      console.error('Error fetching receipts:', error);
       throw error;
     }
   }
@@ -39,7 +38,6 @@ export class ApiService {
       const data: UsersApiResponse = await response.json();
       return data;
     } catch (error) {
-      console.error('Error fetching users:', error);
       throw error;
     }
   }
@@ -55,7 +53,6 @@ export class ApiService {
       const data: GroupsApiResponse = await response.json();
       return data;
     } catch (error) {
-      console.error('Error fetching groups:', error);
       throw error;
     }
   }
@@ -71,7 +68,6 @@ export class ApiService {
       const data: ReceiptItem = await response.json();
       return data;
     } catch (error) {
-      console.error('Error fetching receipt item:', error);
       throw error;
     }
   }
@@ -90,7 +86,6 @@ export class ApiService {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
     } catch (error) {
-      console.error('Error updating receipt item cost:', error);
       throw error;
     }
   }
@@ -109,7 +104,6 @@ export class ApiService {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
     } catch (error) {
-      console.error('Error updating receipt item owner:', error);
       throw error;
     }
   }
@@ -128,7 +122,6 @@ export class ApiService {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
     } catch (error) {
-      console.error('Error updating receipt item quantity:', error);
       throw error;
     }
   }
@@ -159,7 +152,6 @@ export class ApiService {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
     } catch (error) {
-      console.error('Error uploading receipt photo:', error);
       throw error;
     }
   }

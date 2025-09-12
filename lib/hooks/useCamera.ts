@@ -41,7 +41,6 @@ export const useCamera = () => {
       
       return null;
     } catch (error) {
-      console.error('Error taking photo:', error);
       Alert.alert('Error', 'Failed to take photo. Please try again.');
       return null;
     } finally {
@@ -66,7 +65,6 @@ export const useCamera = () => {
       
       return null;
     } catch (error) {
-      console.error('Error picking photo:', error);
       Alert.alert('Error', 'Failed to pick photo. Please try again.');
       return null;
     } finally {

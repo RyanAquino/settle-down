@@ -92,7 +92,6 @@ export default function Home() {
         Alert.alert('Success', 'Receipt added successfully!');
       }
     } catch (error) {
-      console.error('Error adding receipt:', error);
       Alert.alert('Error', 'Failed to add receipt. Please try again.');
     } finally {
       setIsUploading(false);

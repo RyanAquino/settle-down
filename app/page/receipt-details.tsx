@@ -64,7 +64,6 @@ export default function ReceiptDetails() {
         
         // Pre-select users based on member_id
         const initialSelectedUsers: {[itemId: number]: number | null} = {};
-        console.log(updatedReceipt.receipt_items)
         updatedReceipt.receipt_items.forEach(item => {
           if (item.member_id) {
             // Find user with matching member_id
@@ -80,7 +79,6 @@ export default function ReceiptDetails() {
       setUsers(usersResponse.items);
     } catch (error) {
       Alert.alert('Error', 'Failed to fetch receipt details. Please try again.');
-      console.error('Error fetching receipt details:', error);
     } finally {
       setIsLoading(false);
     }
@@ -184,7 +182,6 @@ export default function ReceiptDetails() {
       
     } catch (error) {
       Alert.alert('Error', 'Failed to save changes. Please try again.');
-      console.error('Error saving changes:', error);
     } finally {
       setIsSaving(false);
     }
@@ -356,8 +353,6 @@ export default function ReceiptDetails() {
                 source={{ uri: `${API_ENDPOINTS.MEDIA_BASE_URL}${receipt.receipt_file}` }}
                 style={styles.fullImage}
                 resizeMode="contain"
-                onError={(error) => console.log('Modal image load error:', error.nativeEvent.error)}
-                onLoad={() => console.log('Modal image loaded successfully')}
               />
             </TouchableOpacity>
             
