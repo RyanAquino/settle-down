@@ -1,11 +1,15 @@
-import { ApiResponse, UsersApiResponse, ReceiptItem, GroupsApiResponse } from '../types/Item';
-
-const API_BASE_URL = 'http://192.168.0.242:8000/api/v1';
+import { ApiResponse, UsersApiResponse, ReceiptItem, GroupsApiResponse } from '../../app/types/Item';
+import { API_ENDPOINTS } from '../config/env';
 
 export class ApiService {
-  static async getReceipts(): Promise<ApiResponse> {
+  static async getReceipts(groupId?: string): Promise<ApiResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/receipts/`);
+      let url = API_ENDPOINTS.RECEIPTS;
+      if (groupId) {
+        url += `?group_id=${encodeURIComponent(groupId)}`;
+      }
+      
+      const response = await fetch(url);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -21,7 +25,7 @@ export class ApiService {
 
   static async getUsers(groupId?: string): Promise<UsersApiResponse> {
     try {
-      let url = `${API_BASE_URL}/receipts/users/`;
+      let url = API_ENDPOINTS.USERS;
       if (groupId) {
         url += `?group_id=${encodeURIComponent(groupId)}`;
       }
@@ -42,7 +46,7 @@ export class ApiService {
 
   static async getGroups(): Promise<GroupsApiResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/settle-up/groups/`);
+      const response = await fetch(API_ENDPOINTS.GROUPS);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -58,7 +62,7 @@ export class ApiService {
 
   static async getReceiptItem(receiptItemId: number): Promise<ReceiptItem> {
     try {
-      const response = await fetch(`${API_BASE_URL}/receipts/receipt-items/${receiptItemId}/`);
+      const response = await fetch(`${API_ENDPOINTS.RECEIPT_ITEMS}${receiptItemId}/`);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -74,7 +78,7 @@ export class ApiService {
 
   static async updateReceiptItemCost(receiptItemId: number, cost: number): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE_URL}/receipts/receipt-items/${receiptItemId}/`, {
+      const response = await fetch(`${API_ENDPOINTS.RECEIPT_ITEMS}${receiptItemId}/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -93,7 +97,7 @@ export class ApiService {
 
   static async updateReceiptItemOwner(receiptItemId: number, ownerId: number | null): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE_URL}/receipts/receipt-items/${receiptItemId}/`, {
+      const response = await fetch(`${API_ENDPOINTS.RECEIPT_ITEMS}${receiptItemId}/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -112,7 +116,7 @@ export class ApiService {
 
   static async updateReceiptItemQuantity(receiptItemId: number, quantity: number): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE_URL}/receipts/receipt-items/${receiptItemId}/`, {
+      const response = await fetch(`${API_ENDPOINTS.RECEIPT_ITEMS}${receiptItemId}/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -143,7 +147,7 @@ export class ApiService {
         name: fileName,
       } as any);
 
-      const response = await fetch(`${API_BASE_URL}/receipts/receipt-items/`, {
+      const response = await fetch(API_ENDPOINTS.RECEIPT_ITEMS, {
         method: 'POST',
         headers: {
           'Content-Type': 'multipart/form-data',

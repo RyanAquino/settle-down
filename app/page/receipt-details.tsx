@@ -16,8 +16,9 @@ import {
   Platform,
 } from 'react-native';
 import { Receipt, ReceiptItem, User } from '../types/Item';
-import { ApiService } from '../services/api';
+import { ApiService } from '../../lib/services/api';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { API_ENDPOINTS } from '../../lib/config/env';
 
 export default function ReceiptDetails() {
   const router = useRouter();
@@ -254,7 +255,7 @@ export default function ReceiptDetails() {
               <TouchableOpacity onPress={openImageModal} activeOpacity={0.8} style={styles.imageWrapper}>
                 <Image
                   source={{ 
-                    uri: `http://192.168.0.242:8000${receipt.receipt_file}`,
+                    uri: `${API_ENDPOINTS.MEDIA_BASE_URL}${receipt.receipt_file}`,
                     cache: 'reload'
                   }}
                   style={styles.receiptImage}
@@ -352,7 +353,7 @@ export default function ReceiptDetails() {
               activeOpacity={1}
             >
               <Image
-                source={{ uri: `http://192.168.0.242:8000${receipt.receipt_file}` }}
+                source={{ uri: `${API_ENDPOINTS.MEDIA_BASE_URL}${receipt.receipt_file}` }}
                 style={styles.fullImage}
                 resizeMode="contain"
                 onError={(error) => console.log('Modal image load error:', error.nativeEvent.error)}
@@ -441,10 +442,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     margin: 16,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
     elevation: 3,
   },
   imageLabel: {
@@ -489,10 +487,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
     elevation: 3,
   },
   receiptItem: {
@@ -606,15 +601,12 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#007aff',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    boxShadow: '0 4px 8px rgba(0, 122, 255, 0.3)',
     elevation: 8,
   },
   saveButtonDisabled: {
     backgroundColor: '#8e8e93',
-    shadowColor: '#8e8e93',
+    boxShadow: '0 4px 8px rgba(142, 142, 147, 0.3)',
   },
   saveButtonText: {
     color: '#fff',

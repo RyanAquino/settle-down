@@ -11,8 +11,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Receipt, Group } from '../types/Item';
-import { ApiService } from '../services/api';
-import { useCamera } from '../hooks/useCamera';
+import { ApiService } from '../../lib/services/api';
+import { useCamera } from '../../lib/hooks/useCamera';
 import { useRouter } from 'expo-router';
 
 export default function Home() {
@@ -30,11 +30,11 @@ export default function Home() {
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      const [receiptsResponse, groupsResponse] = await Promise.all([
-        ApiService.getReceipts(),
-        ApiService.getGroups()
-      ]);
+      
+      const receiptsResponse = await ApiService.getReceipts(selectedGroup?.id);
       setReceipts(receiptsResponse.items);
+      
+      const groupsResponse = await ApiService.getGroups();
       setGroups(groupsResponse.items);
       
       // Auto-select first group if none selected and groups exist
@@ -42,8 +42,8 @@ export default function Home() {
         setSelectedGroup(groupsResponse.items[0]);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to fetch data. Please try again.');
-      console.error('Error fetching data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      Alert.alert('Error', `Failed to fetch data: ${errorMessage}. Please try again.`);
     } finally {
       setIsLoading(false);
     }
@@ -59,9 +59,21 @@ export default function Home() {
     fetchData();
   }, []);
 
-  const handleGroupSelect = (group: Group) => {
+  const handleGroupSelect = async (group: Group) => {
     setSelectedGroup(group);
     setShowDropdown(false);
+    
+    // Refetch receipts for the selected group
+    try {
+      setIsLoading(true);
+      const receiptsResponse = await ApiService.getReceipts(group.id);
+      setReceipts(receiptsResponse.items);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      Alert.alert('Error', `Failed to fetch receipts for group: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleShopPress = (receipt: Receipt) => {
@@ -126,7 +138,9 @@ export default function Home() {
       <View style={styles.dropdownContainer}>
         <TouchableOpacity
           style={styles.dropdown}
-          onPress={() => setShowDropdown(!showDropdown)}
+          onPress={() => {
+            setShowDropdown(!showDropdown);
+          }}
           activeOpacity={0.7}
         >
           <Text style={styles.dropdownText}>
@@ -221,10 +235,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 16,
     borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
     elevation: 3,
     zIndex: 1000,
   },
@@ -291,13 +302,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
     elevation: 3,
   },
   shopName: {
@@ -346,13 +351,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#007aff',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#007aff',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    boxShadow: '0 4px 8px rgba(0, 122, 255, 0.3)',
     elevation: 8,
   },
   addButtonDisabled: {
