@@ -94,6 +94,7 @@ export class ApiService {
     }
   }
 
+
   static async updateReceiptItemQuantity(receiptItemId: number, quantity: number): Promise<void> {
     try {
       const response = await fetch(`${API_ENDPOINTS.RECEIPT_ITEMS}${receiptItemId}/`, {
@@ -132,6 +133,24 @@ export class ApiService {
           'Content-Type': 'multipart/form-data',
         },
         body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async updateReceiptPayor(receiptId: number, paidBy: string): Promise<void> {
+    try {
+      const response = await fetch(`${API_ENDPOINTS.RECEIPTS}${receiptId}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ paid_by: paidBy }),
       });
       
       if (!response.ok) {

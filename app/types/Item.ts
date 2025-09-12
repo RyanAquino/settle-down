@@ -16,6 +16,7 @@ export interface Receipt {
   receipt_file: string;
   created_at: string;
   updated_at: string;
+  paid_by: number | null;
   receipt_items: ReceiptItem[];
 }
 

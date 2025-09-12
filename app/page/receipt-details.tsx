@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   Alert,
   ActivityIndicator,
@@ -31,13 +30,11 @@ export default function ReceiptDetails() {
   const [selectedUsers, setSelectedUsers] = useState<{[itemId: number]: number | null}>({});
   const [editedPrices, setEditedPrices] = useState<{[itemId: number]: string}>({});
   const [editedQuantities, setEditedQuantities] = useState<{[itemId: number]: string}>({});
+  const [selectedPayor, setSelectedPayor] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  useEffect(() => {
-    fetchReceiptDetails();
-  }, [receiptId]);
-
-  const fetchReceiptDetails = async () => {
+  const fetchReceiptDetails = useCallback(async () => {
     try {
       setIsLoading(true);
       const [receiptsResponse, usersResponse] = await Promise.all([
@@ -49,18 +46,25 @@ export default function ReceiptDetails() {
       if (foundReceipt) {
         setReceipt(foundReceipt);
         
-        // Pre-select users based on member_id
+        // Pre-select users based on member_id and existing owners
         const initialSelectedUsers: {[itemId: number]: number | null} = {};
+        
         foundReceipt.receipt_items.forEach(item => {
+          // Set owner based on member_id or existing owner
           if (item.member_id) {
-            // Find user with matching member_id
             const matchingUser = usersResponse.items.find(user => user.username === item.member_id);
             if (matchingUser) {
               initialSelectedUsers[item.id] = matchingUser.id;
             }
+          } else if (item.owner) {
+            initialSelectedUsers[item.id] = item.owner;
           }
         });
+        
         setSelectedUsers(initialSelectedUsers);
+        
+        // Set the current payor if it exists
+        setSelectedPayor(foundReceipt.paid_by);
       }
 
       setUsers(usersResponse.items);
@@ -69,7 +73,11 @@ export default function ReceiptDetails() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [groupId, receiptId]);
+
+  useEffect(() => {
+    fetchReceiptDetails();
+  }, [fetchReceiptDetails]);
 
   const handlePriceChange = (itemId: number, newPrice: string) => {
     setEditedPrices(prev => ({
@@ -100,6 +108,7 @@ export default function ReceiptDetails() {
     }));
   };
 
+
   const getUserDisplayName = (user: User) => {
     if (user.first_name && user.last_name) {
       return `${user.first_name} ${user.last_name}`;
@@ -109,6 +118,35 @@ export default function ReceiptDetails() {
       return user.last_name;
     } else {
       return user.username;
+    }
+  };
+
+  const handleSync = async () => {
+    if (!receipt || !selectedPayor) {
+      Alert.alert('Error', 'Please select a payor before syncing.');
+      return;
+    }
+
+    try {
+      setIsSyncing(true);
+      
+      // Find the username of the selected user
+      const selectedUser = users.find(user => user.id === selectedPayor);
+      if (!selectedUser) {
+        Alert.alert('Error', 'Selected user not found.');
+        return;
+      }
+      
+      await ApiService.updateReceiptPayor(receipt.id, selectedUser.username);
+      
+      // Refresh receipt data to show updated values
+      await fetchReceiptDetails();
+      
+      Alert.alert('Success', 'Receipt payor updated successfully!');
+    } catch {
+      Alert.alert('Error', 'Failed to update receipt payor. Please try again.');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -185,19 +223,19 @@ export default function ReceiptDetails() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007aff" />
           <Text style={styles.loadingText}>Loading receipt details...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (!receipt) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Receipt not found</Text>
@@ -205,12 +243,12 @@ export default function ReceiptDetails() {
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
       {/* Header */}
@@ -249,6 +287,41 @@ export default function ReceiptDetails() {
                   <Text style={styles.imageHint}>Tap to view full size</Text>
                 </View>
               </TouchableOpacity>
+            </View>
+          )}
+          
+          {/* Payor Selection */}
+          {users.length > 0 && (
+            <View style={styles.payorContainer}>
+              <View style={styles.payorHeader}>
+                <Text style={styles.payorTitle}>Receipt Paid By:</Text>
+                <TouchableOpacity
+                  style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+                  onPress={handleSync}
+                  disabled={isSyncing}
+                  activeOpacity={0.8}
+                >
+                  {isSyncing ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.syncButtonText}>Sync</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+              <View style={styles.payorRadioContainer}>
+                {users.map((user) => (
+                  <TouchableOpacity
+                    key={`payor-${user.id}`}
+                    style={styles.radioOption}
+                    onPress={() => setSelectedPayor(user.id)}
+                  >
+                    <View style={styles.radioCircle}>
+                      {selectedPayor === user.id && <View style={styles.radioSelected} />}
+                    </View>
+                    <Text style={styles.radioLabel}>{getUserDisplayName(user)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           )}
           
@@ -349,7 +422,7 @@ export default function ReceiptDetails() {
           </View>
         </Modal>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -627,5 +700,45 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: '#fff',
     fontWeight: '500',
+  },
+  payorContainer: {
+    backgroundColor: '#fff',
+    margin: 16,
+    borderRadius: 12,
+    padding: 16,
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    elevation: 3,
+  },
+  payorHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  payorTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1c1c1e',
+  },
+  syncButton: {
+    backgroundColor: '#007aff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  syncButtonDisabled: {
+    backgroundColor: '#8e8e93',
+  },
+  syncButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  payorRadioContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
   },
 });
