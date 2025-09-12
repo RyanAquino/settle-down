@@ -57,20 +57,6 @@ export class ApiService {
     }
   }
 
-  static async getReceiptItem(receiptItemId: number): Promise<ReceiptItem> {
-    try {
-      const response = await fetch(`${API_ENDPOINTS.RECEIPT_ITEMS}${receiptItemId}/`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data: ReceiptItem = await response.json();
-      return data;
-    } catch (error) {
-      throw error;
-    }
-  }
 
   static async updateReceiptItemCost(receiptItemId: number, cost: number): Promise<void> {
     try {

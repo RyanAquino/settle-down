@@ -41,30 +41,17 @@ export default function ReceiptDetails() {
     try {
       setIsLoading(true);
       const [receiptsResponse, usersResponse] = await Promise.all([
-        ApiService.getReceipts(),
+        ApiService.getReceipts(typeof groupId === 'string' ? groupId : undefined),
         ApiService.getUsers(typeof groupId === 'string' ? groupId : undefined)
       ]);
 
       const foundReceipt = receiptsResponse.items.find(r => r.id.toString() === receiptId);
       if (foundReceipt) {
-        // Fetch each receipt item individually
-        const receiptItemsPromises = foundReceipt.receipt_items.map(item =>
-          ApiService.getReceiptItem(item.id)
-        );
-
-        const detailedReceiptItems = await Promise.all(receiptItemsPromises);
-
-        // Update the receipt with the detailed items
-        const updatedReceipt = {
-          ...foundReceipt,
-          receipt_items: detailedReceiptItems
-        };
-
-        setReceipt(updatedReceipt);
+        setReceipt(foundReceipt);
         
         // Pre-select users based on member_id
         const initialSelectedUsers: {[itemId: number]: number | null} = {};
-        updatedReceipt.receipt_items.forEach(item => {
+        foundReceipt.receipt_items.forEach(item => {
           if (item.member_id) {
             // Find user with matching member_id
             const matchingUser = usersResponse.items.find(user => user.username === item.member_id);
@@ -77,7 +64,7 @@ export default function ReceiptDetails() {
       }
 
       setUsers(usersResponse.items);
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to fetch receipt details. Please try again.');
     } finally {
       setIsLoading(false);
@@ -180,7 +167,7 @@ export default function ReceiptDetails() {
       // Show success message without navigating back
       Alert.alert('Success', 'Changes saved successfully!');
       
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to save changes. Please try again.');
     } finally {
       setIsSaving(false);
