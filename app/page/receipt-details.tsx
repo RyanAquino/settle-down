@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Receipt, ReceiptItem, User } from '../types/Item';
 import { ApiService } from '../../lib/services/api';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -22,6 +23,7 @@ import { API_ENDPOINTS } from '../../lib/config/env';
 export default function ReceiptDetails() {
   const router = useRouter();
   const { receiptId, groupId } = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
   
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -122,7 +124,7 @@ export default function ReceiptDetails() {
   };
 
   const handleSync = async () => {
-    if (!receipt || !selectedPayor) {
+    if (!receipt || !selectedPayor || !groupId) {
       Alert.alert('Error', 'Please select a payor before syncing.');
       return;
     }
@@ -137,14 +139,67 @@ export default function ReceiptDetails() {
         return;
       }
       
+      // Update receipt payor
       await ApiService.updateReceiptPayor(receipt.id, selectedUser.username);
+      
+      // Calculate totals for each user based on receipt items ownership
+      const userTotals: {[username: string]: number} = {};
+      let totalAmount = 0;
+      
+      receipt.receipt_items.forEach(item => {
+        // Total receipt amount is sum of ALL items (cost * quantity)
+        const itemTotal = item.cost * item.quantity;
+        totalAmount += itemTotal;
+        
+        // Only add to user total if this item is owned by someone
+        if (item.owner) {
+          const ownerUser = users.find(user => user.id === item.owner);
+          if (ownerUser) {
+            // Add this item's total cost to the owner's running total
+            userTotals[ownerUser.username] = (userTotals[ownerUser.username] || 0) + itemTotal;
+          }
+        }
+      });
+      
+      // Find users who have items assigned to them
+      const usersWithItems = Object.keys(userTotals);
+      
+      console.log('Receipt calculation summary:');
+      console.log('Total receipt amount:', totalAmount);
+      console.log('User totals:', userTotals);
+      console.log('Users with items:', usersWithItems);
+      
+      if (usersWithItems.length === 2) {
+        // Create transaction with two users
+        const [user1, user2] = usersWithItems;
+        const payingUser = selectedUser.username;
+        const otherUser = user1 === payingUser ? user2 : user1;
+        
+        const transactionData = {
+          purpose: receipt.shop_name,
+          total_amount: totalAmount,
+          paying_member_id: payingUser,
+          paying_member_total: userTotals[payingUser] || 0,
+          other_member_id: otherUser,
+          other_member_total: userTotals[otherUser] || 0,
+          group_id: typeof groupId === 'string' ? groupId : groupId.toString(),
+        };
+        
+        console.log('Creating transaction with data:', transactionData);
+        
+        await ApiService.createTransaction(transactionData);
+      } else if (usersWithItems.length > 2) {
+        Alert.alert('Info', 'Transactions with more than 2 users are not supported yet.');
+      } else {
+        Alert.alert('Info', 'At least 2 users must have items assigned to create a transaction.');
+      }
       
       // Refresh receipt data to show updated values
       await fetchReceiptDetails();
       
-      Alert.alert('Success', 'Receipt payor updated successfully!');
+      Alert.alert('Success', 'Receipt payor updated and transaction created successfully!');
     } catch {
-      Alert.alert('Error', 'Failed to update receipt payor. Please try again.');
+      Alert.alert('Error', 'Failed to sync receipt. Please try again.');
     } finally {
       setIsSyncing(false);
     }
@@ -252,7 +307,7 @@ export default function ReceiptDetails() {
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
@@ -287,41 +342,6 @@ export default function ReceiptDetails() {
                   <Text style={styles.imageHint}>Tap to view full size</Text>
                 </View>
               </TouchableOpacity>
-            </View>
-          )}
-          
-          {/* Payor Selection */}
-          {users.length > 0 && (
-            <View style={styles.payorContainer}>
-              <View style={styles.payorHeader}>
-                <Text style={styles.payorTitle}>Receipt Paid By:</Text>
-                <TouchableOpacity
-                  style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
-                  onPress={handleSync}
-                  disabled={isSyncing}
-                  activeOpacity={0.8}
-                >
-                  {isSyncing ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.syncButtonText}>Sync</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-              <View style={styles.payorRadioContainer}>
-                {users.map((user) => (
-                  <TouchableOpacity
-                    key={`payor-${user.id}`}
-                    style={styles.radioOption}
-                    onPress={() => setSelectedPayor(user.id)}
-                  >
-                    <View style={styles.radioCircle}>
-                      {selectedPayor === user.id && <View style={styles.radioSelected} />}
-                    </View>
-                    <Text style={styles.radioLabel}>{getUserDisplayName(user)}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
             </View>
           )}
           
@@ -376,6 +396,41 @@ export default function ReceiptDetails() {
               </View>
             ))}
           </View>
+          
+          {/* Payor Selection */}
+          {users.length > 0 && (
+            <View style={styles.payorContainer}>
+              <View style={styles.payorHeader}>
+                <Text style={styles.payorTitle}>Receipt Paid By:</Text>
+                <TouchableOpacity
+                  style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+                  onPress={handleSync}
+                  disabled={isSyncing}
+                  activeOpacity={0.8}
+                >
+                  {isSyncing ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.syncButtonText}>Sync</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+              <View style={styles.payorRadioContainer}>
+                {users.map((user) => (
+                  <TouchableOpacity
+                    key={`payor-${user.id}`}
+                    style={styles.radioOption}
+                    onPress={() => setSelectedPayor(user.id)}
+                  >
+                    <View style={styles.radioCircle}>
+                      {selectedPayor === user.id && <View style={styles.radioSelected} />}
+                    </View>
+                    <Text style={styles.radioLabel}>{getUserDisplayName(user)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
         </ScrollView>
         
         {/* Save Button */}
@@ -435,6 +490,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     paddingVertical: 16,
     paddingHorizontal: 16,
+    paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#e1e5e9',
     flexDirection: 'row',
@@ -449,10 +505,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   backButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 8,
     backgroundColor: '#f2f2f7',
+    minWidth: 60,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   backButtonText: {
     fontSize: 16,

@@ -23,6 +23,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [deletingReceipts, setDeletingReceipts] = useState<Set<number>>(new Set());
   
   const { takePhoto } = useCamera();
   const router = useRouter();
@@ -98,21 +99,67 @@ export default function Home() {
     }
   };
 
+  const handleDeleteReceipt = async (receipt: Receipt) => {
+    Alert.alert(
+      'Delete Receipt',
+      `Are you sure you want to delete the receipt from ${receipt.shop_name}?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setDeletingReceipts(prev => new Set(prev).add(receipt.id));
+              await ApiService.deleteReceipt(receipt.id);
+              await fetchData();
+              Alert.alert('Success', 'Receipt deleted successfully!');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to delete receipt. Please try again.');
+            } finally {
+              setDeletingReceipts(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(receipt.id);
+                return newSet;
+              });
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const renderShopCard = ({ item }: { item: Receipt }) => (
-    <TouchableOpacity
-      style={styles.shopCard}
-      onPress={() => handleShopPress(item)}
-      activeOpacity={0.7}
-    >
-      <Text style={styles.shopName}>{item.shop_name}</Text>
-      <Text style={styles.shopDate}>
-        {new Date(item.created_at).toLocaleDateString()}
-      </Text>
-      <Text style={styles.itemCount}>
-        {item.receipt_items.length} items
-      </Text>
-    </TouchableOpacity>
+    <View style={styles.shopCard}>
+      <TouchableOpacity
+        style={styles.shopCardContent}
+        onPress={() => handleShopPress(item)}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.shopName}>{item.shop_name}</Text>
+        <Text style={styles.shopDate}>
+          {new Date(item.created_at).toLocaleDateString()}
+        </Text>
+        <Text style={styles.itemCount}>
+          {item.receipt_items.length} items
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.deleteButton, deletingReceipts.has(item.id) && styles.deleteButtonDisabled]}
+        onPress={() => handleDeleteReceipt(item)}
+        disabled={deletingReceipts.has(item.id)}
+        activeOpacity={0.7}
+      >
+        {deletingReceipts.has(item.id) ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.deleteButtonText}>✕</Text>
+        )}
+      </TouchableOpacity>
+    </View>
   );
 
   const renderEmptyState = () => (
@@ -299,10 +346,15 @@ const styles = StyleSheet.create({
   shopCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 16,
     marginBottom: 12,
     boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
     elevation: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  shopCardContent: {
+    flex: 1,
+    padding: 16,
   },
   shopName: {
     fontSize: 18,
@@ -319,6 +371,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#007aff',
     fontWeight: '500',
+  },
+  deleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ff3b30',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  deleteButtonDisabled: {
+    backgroundColor: '#ff9999',
+    opacity: 0.6,
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   emptyState: {
     flex: 1,

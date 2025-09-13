@@ -160,4 +160,44 @@ export class ApiService {
       throw error;
     }
   }
+
+  static async deleteReceipt(receiptId: number): Promise<void> {
+    try {
+      const response = await fetch(`${API_ENDPOINTS.RECEIPTS}${receiptId}/`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async createTransaction(transactionData: {
+    purpose: string;
+    total_amount: number;
+    paying_member_id: string;
+    paying_member_total: number;
+    other_member_id: string;
+    other_member_total: number;
+    group_id: string;
+  }): Promise<void> {
+    try {
+      const response = await fetch(`${API_ENDPOINTS.BASE_URL}/settle-up/transactions/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(transactionData),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
 }
