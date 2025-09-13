@@ -13,8 +13,6 @@ export default function LoadingScreen() {
   }, [photoUri]);
 
   const uploadPhoto = async (photoUri: string) => {
-    // TODO: Comment out API call for now, use mock data
-    /*
     try {
       const formData = new FormData();
       formData.append('file', {
@@ -23,7 +21,7 @@ export default function LoadingScreen() {
         name: 'receipt.jpg',
       } as any);
 
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
+      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
       const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
         method: 'POST',
         body: formData,
@@ -49,7 +47,6 @@ export default function LoadingScreen() {
       // Upload failed, navigate back to camera
       router.replace('/');
     }
-    */
 
     // Use mock data for now - simulate processing delay
 
