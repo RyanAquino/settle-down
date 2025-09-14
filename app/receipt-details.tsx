@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import {useLocalSearchParams, router} from 'expo-router';
 import {useState, useEffect} from 'react';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 interface ReceiptItem {
     english_name: string;
@@ -31,6 +31,7 @@ interface ReceiptData {
     jp_shop_name: string;
     tax_amount: number;
     total_amount: number;
+    receipt_date: Date;
 }
 
 interface SettleUpGroup {
@@ -59,7 +60,12 @@ export default function ReceiptDetailsScreen() {
     const [editableItems, setEditableItems] = useState<ReceiptItem[]>([]);
     const [originalTaxAmount, setOriginalTaxAmount] = useState(0);
     const [editableTaxAmount, setEditableTaxAmount] = useState(0);
-    const [shopInfo, setShopInfo] = useState({en_shop_name: '', jp_shop_name: ''});
+    const [shopInfo, setShopInfo] = useState({
+        en_shop_name: '',
+        jp_shop_name: '',
+        total_amount: 0,
+        receipt_date: new Date()
+    });
     const [groups, setGroups] = useState<SettleUpGroup[]>([]);
     const [selectedGroupId, setSelectedGroupId] = useState<string>('');
     const [isLoadingGroups, setIsLoadingGroups] = useState(false);
@@ -70,6 +76,8 @@ export default function ReceiptDetailsScreen() {
     const [userSelections, setUserSelections] = useState<{ [itemIndex: number]: string }>({});
     const [paidByUserId, setPaidByUserId] = useState<string>('');
     const [isSyncing, setIsSyncing] = useState(false);
+    const [costInputs, setCostInputs] = useState<{ [itemIndex: number]: string }>({});
+    const [taxInput, setTaxInput] = useState<string | null>(null);
 
     const mockReceiptData: ReceiptData = {
         receipt_items: [
@@ -124,8 +132,9 @@ export default function ReceiptDetailsScreen() {
         ],
         en_shop_name: "LADOME",
         jp_shop_name: "ラドーム",
-        tax_amount: 0,
-        total_amount: 4675
+        tax_amount: 10,
+        total_amount: 4675,
+        receipt_date: new Date(2021, 0, 1, 12, 0, 0, 0)
     };
 
     let receiptData: ReceiptData | null = null;
@@ -200,9 +209,19 @@ export default function ReceiptDetailsScreen() {
             setEditableItems([...receiptData.receipt_items]);
             setOriginalTaxAmount(receiptData.tax_amount);
             setEditableTaxAmount(receiptData.tax_amount);
+            setTaxInput(receiptData.tax_amount.toString());
+
+            // Initialize cost inputs with current values
+            const initialCostInputs: { [itemIndex: number]: string } = {};
+            receiptData.receipt_items.forEach((item, index) => {
+                initialCostInputs[index] = item.cost.toString();
+            });
+            setCostInputs(initialCostInputs);
             setShopInfo({
                 en_shop_name: receiptData.en_shop_name,
-                jp_shop_name: receiptData.jp_shop_name
+                jp_shop_name: receiptData.jp_shop_name,
+                total_amount: receiptData.total_amount,
+                receipt_date: receiptData.receipt_date
             });
         }
         fetchSettleUpGroups();
@@ -227,8 +246,13 @@ export default function ReceiptDetailsScreen() {
     };
 
     const updateItemCost = (index: number, cost: string) => {
+        // Update the raw input string
+        setCostInputs(prev => ({...prev, [index]: cost}));
+
+        // Update the actual cost value - handle empty string properly
         const newItems = [...editableItems];
-        newItems[index].cost = Math.max(0, parseInt(cost) || 0);
+        const parsedCost = cost === '' ? 0 : parseFloat(cost);
+        newItems[index].cost = Math.max(0, isNaN(parsedCost) ? 0 : parsedCost);
         setEditableItems(newItems);
     };
 
@@ -237,11 +261,20 @@ export default function ReceiptDetailsScreen() {
     };
 
     const calculateTotal = () => {
-        return calculateSubtotal() + editableTaxAmount;
+        let total = calculateSubtotal() + editableTaxAmount
+        if (total !== shopInfo.total_amount) {
+            return total;
+        }
+        return shopInfo.total_amount;
     };
 
     const updateTaxAmount = (tax: string) => {
-        setEditableTaxAmount(Math.max(0, parseInt(tax) || 0));
+        // Update the raw input string
+        setTaxInput(tax);
+
+        // Update the actual tax value - handle empty string properly
+        const parsedTax = tax === '' ? 0 : parseFloat(tax);
+        setEditableTaxAmount(Math.max(0, isNaN(parsedTax) ? 0 : parsedTax));
     };
 
     const handleUserSelection = (itemIndex: number, userId: string) => {
@@ -298,12 +331,12 @@ export default function ReceiptDetailsScreen() {
             return;
         }
 
-        // Get unique user IDs (should be exactly 2 for this implementation)
+        // Get unique user IDs (allow 1 or more users)
         const assignedUserIds = Object.values(userSelections);
         const uniqueUserIds = [...new Set(assignedUserIds)];
 
-        if (uniqueUserIds.length !== 2) {
-            Alert.alert('Error', 'Items must be assigned to exactly 2 different users.');
+        if (uniqueUserIds.length === 0) {
+            Alert.alert('Error', 'Please assign items to at least one user.');
             return;
         }
 
@@ -326,7 +359,7 @@ export default function ReceiptDetailsScreen() {
 
             const payingMemberTotal = userTotals[paidByUserId] || 0;
             const otherUserId = uniqueUserIds.find(id => id !== paidByUserId);
-            const otherMemberTotal = userTotals[otherUserId!] || 0;
+            const otherMemberTotal = userTotals[otherUserId || ''] || 0;
 
             const payload = {
                 purpose: shopInfo.en_shop_name || shopInfo.jp_shop_name || 'Receipt',
@@ -334,9 +367,10 @@ export default function ReceiptDetailsScreen() {
                 tax_amount: editableTaxAmount,
                 paying_member_id: paidByUserId,
                 paying_member_total: payingMemberTotal,
-                other_member_id: otherUserId!,
+                other_member_id: otherUserId || '',
                 other_member_total: otherMemberTotal,
-                group_id: selectedGroupId
+                group_id: selectedGroupId,
+                receipt_date: shopInfo.receipt_date,
             };
 
             const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
@@ -398,236 +432,236 @@ export default function ReceiptDetailsScreen() {
                     </View>
                 </View>
 
-            <View style={styles.mainSection}>
-                {/* Ultra Compact Group and Paid By */}
-                <View style={styles.ultraCompactRow}>
-                    {/* Group Selection - Inline */}
-                    <View style={styles.inlineSection}>
-                        <Text style={styles.inlineLabel}>Group:</Text>
-                        {groupsError ? (
-                            <TouchableOpacity style={styles.miniRetryButton} onPress={fetchSettleUpGroups}>
-                                <Text style={styles.miniRetryText}>Retry</Text>
-                            </TouchableOpacity>
-                        ) : isLoadingGroups ? (
-                            <ActivityIndicator size="small" color="#007AFF"/>
-                        ) : (
-                            <TouchableOpacity
-                                style={styles.inlinePickerButton}
-                                onPress={showGroupPicker}
-                                disabled={groups.length === 0}
-                            >
-                                <Text style={styles.inlinePickerText}>
-                                    {groups.length === 0 ? "None" : (getSelectedGroupName().length > 12 ? getSelectedGroupName().substring(0, 12) + '...' : getSelectedGroupName())}
-                                </Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-
-                    {/* Paid By - Inline */}
-                    <View style={styles.inlineSection}>
-                        <Text style={styles.inlineLabel}>Paid:</Text>
-                        {isLoadingUsers ? (
-                            <ActivityIndicator size="small" color="#007AFF"/>
-                        ) : (
-                            <View style={styles.inlineUserButtons}>
-                                {groupUsers.map((user) => (
-                                    <TouchableOpacity
-                                        key={user.id}
-                                        style={[
-                                            styles.miniUserButton,
-                                            paidByUserId === user.id && styles.miniUserButtonSelected
-                                        ]}
-                                        onPress={() => setPaidByUserId(user.id)}
-                                    >
-                                        <Text style={[
-                                            styles.miniUserButtonText,
-                                            paidByUserId === user.id && styles.miniUserButtonTextSelected
-                                        ]}>
-                                            {user.name.split(' ')[0].substring(0, 6)}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        )}
-                    </View>
-                </View>
-
-                {/* Items List */}
-                <View style={styles.itemsList}>
-                    <View style={styles.itemsHeader}>
-                        <Text style={styles.itemsHeaderText}>Items</Text>
-                    </View>
-
-                    {editableItems
-                        .sort((a, b) => a.item_order - b.item_order)
-                        .map((item, index) => (
-                            <View key={index} style={styles.compactItemRow}>
-                                <View style={styles.itemMainInfo}>
-                                    <View style={styles.itemTopRow}>
-                                        <View style={styles.itemNameSection}>
-                                            <Text style={styles.compactItemName}>
-                                                {item.english_name || item.japanese_name}
-                                            </Text>
-                                            {item.english_name && item.japanese_name && (
-                                                <Text style={styles.itemNameSecondary}>
-                                                    {item.japanese_name}
-                                                </Text>
-                                            )}
-                                        </View>
-
-                                        <View style={styles.itemControls}>
-                                            <View style={styles.quantityControl}>
-                                                <TouchableOpacity
-                                                    style={styles.quantityButton}
-                                                    onPress={() => updateItemQuantity(index, Math.max(0, item.quantity - 1).toString())}
-                                                >
-                                                    <Text style={styles.quantityButtonText}>−</Text>
-                                                </TouchableOpacity>
-                                                <Text style={styles.quantityText}>{item.quantity}</Text>
-                                                <TouchableOpacity
-                                                    style={styles.quantityButton}
-                                                    onPress={() => updateItemQuantity(index, (item.quantity + 1).toString())}
-                                                >
-                                                    <Text style={styles.quantityButtonText}>+</Text>
-                                                </TouchableOpacity>
-                                            </View>
-
-                                            <View style={styles.priceInputContainer}>
-                                                <Text style={styles.pricePrefix}>¥</Text>
-                                                <TextInput
-                                                    style={styles.priceInput}
-                                                    value={item.cost.toString()}
-                                                    onChangeText={(text) => updateItemCost(index, text)}
-                                                    keyboardType="numeric"
-                                                    placeholder="0"
-                                                />
-                                            </View>
-                                        </View>
-                                    </View>
-
-                                    {/* Right-aligned User Assignment Row */}
-                                    {groupUsers.length > 0 && (
-                                        <View style={styles.userAssignmentRowRight}>
-                                            {groupUsers.map((user) => (
-                                                <TouchableOpacity
-                                                    key={user.id}
-                                                    style={[
-                                                        styles.userAssignButton,
-                                                        userSelections[index] === user.id && styles.userAssignButtonSelected
-                                                    ]}
-                                                    onPress={() => handleUserSelection(index, user.id)}
-                                                >
-                                                    <Text style={[
-                                                        styles.userAssignButtonText,
-                                                        userSelections[index] === user.id && styles.userAssignButtonTextSelected
-                                                    ]}>
-                                                        {user.name.split(' ')[0]}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    )}
-                                </View>
-                            </View>
-                        ))}
-                </View>
-            </View>
-
-            {/* Clean Summary and Sync */}
-            <View style={[styles.bottomSection, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-                {/* Ultra Compact Summary */}
-                <View style={styles.summaryCard}>
-                    <View style={styles.compactSummaryRow}>
-                        <View style={styles.summaryColumn}>
-                            <Text style={styles.summaryLabel}>Subtotal</Text>
-                            <Text style={styles.summaryValue}>¥{subtotal}</Text>
-                        </View>
-
-                        <View style={styles.summaryColumnCompact}>
-                            <Text style={styles.summaryLabel}>Tax</Text>
-                            <View style={styles.miniTaxInput}>
-                                <Text style={styles.miniTaxPrefix}>¥</Text>
-                                <TextInput
-                                    style={styles.miniTaxField}
-                                    value={editableTaxAmount.toString()}
-                                    onChangeText={(text) => updateTaxAmount(text)}
-                                    keyboardType="numeric"
-                                    placeholder="0"
-                                />
-                            </View>
-                        </View>
-
-                        <View style={styles.summaryColumn}>
-                            <Text style={styles.summaryLabel}>Total</Text>
-                            <Text style={styles.summaryTotalAmount}>¥{total}</Text>
-                        </View>
-                    </View>
-                </View>
-
-                {/* Clean Sync Button */}
-                <TouchableOpacity
-                    style={[styles.cleanSyncButton, isSyncing && styles.cleanSyncButtonDisabled]}
-                    onPress={syncTransaction}
-                    disabled={isSyncing}
-                >
-                    {isSyncing ? (
-                        <View style={styles.syncingContent}>
-                            <ActivityIndicator size="small" color="#ffffff"/>
-                            <Text style={styles.cleanSyncText}>Syncing Transaction...</Text>
-                        </View>
-                    ) : (
-                        <Text style={styles.cleanSyncText}>Sync Transaction</Text>
-                    )}
-                </TouchableOpacity>
-            </View>
-
-            {/* Groups Selection Modal */}
-            <Modal
-                visible={isDropdownOpen}
-                transparent={true}
-                animationType="fade"
-                onRequestClose={closeDropdown}
-            >
-                <TouchableOpacity
-                    style={styles.modalOverlay}
-                    activeOpacity={1}
-                    onPress={closeDropdown}
-                >
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Select Settle-Up Group</Text>
-                            <TouchableOpacity onPress={closeDropdown} style={styles.closeButton}>
-                                <Text style={styles.closeButtonText}>✕</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        <FlatList
-                            data={groups}
-                            keyExtractor={(item) => item.id}
-                            renderItem={({item}) => (
+                <View style={styles.mainSection}>
+                    {/* Ultra Compact Group and Paid By */}
+                    <View style={styles.ultraCompactRow}>
+                        {/* Group Selection - Inline */}
+                        <View style={styles.inlineSection}>
+                            <Text style={styles.inlineLabel}>Group:</Text>
+                            {groupsError ? (
+                                <TouchableOpacity style={styles.miniRetryButton} onPress={fetchSettleUpGroups}>
+                                    <Text style={styles.miniRetryText}>Retry</Text>
+                                </TouchableOpacity>
+                            ) : isLoadingGroups ? (
+                                <ActivityIndicator size="small" color="#007AFF"/>
+                            ) : (
                                 <TouchableOpacity
-                                    style={[
-                                        styles.groupOption,
-                                        selectedGroupId === item.id && styles.groupOptionSelected
-                                    ]}
-                                    onPress={() => handleGroupSelection(item)}
+                                    style={styles.inlinePickerButton}
+                                    onPress={showGroupPicker}
+                                    disabled={groups.length === 0}
                                 >
-                                    <Text style={[
-                                        styles.groupOptionText,
-                                        selectedGroupId === item.id && styles.groupOptionTextSelected
-                                    ]}>
-                                        {item.name}
+                                    <Text style={styles.inlinePickerText}>
+                                        {groups.length === 0 ? "None" : (getSelectedGroupName().length > 12 ? getSelectedGroupName().substring(0, 12) + '...' : getSelectedGroupName())}
                                     </Text>
-                                    {selectedGroupId === item.id && (
-                                        <Text style={styles.checkmark}>✓</Text>
-                                    )}
                                 </TouchableOpacity>
                             )}
-                            style={styles.groupsList}
-                        />
+                        </View>
+
+                        {/* Paid By - Inline */}
+                        <View style={styles.inlineSection}>
+                            <Text style={styles.inlineLabel}>Paid:</Text>
+                            {isLoadingUsers ? (
+                                <ActivityIndicator size="small" color="#007AFF"/>
+                            ) : (
+                                <View style={styles.inlineUserButtons}>
+                                    {groupUsers.map((user) => (
+                                        <TouchableOpacity
+                                            key={user.id}
+                                            style={[
+                                                styles.miniUserButton,
+                                                paidByUserId === user.id && styles.miniUserButtonSelected
+                                            ]}
+                                            onPress={() => setPaidByUserId(user.id)}
+                                        >
+                                            <Text style={[
+                                                styles.miniUserButtonText,
+                                                paidByUserId === user.id && styles.miniUserButtonTextSelected
+                                            ]}>
+                                                {user.name.split(' ')[0].substring(0, 6)}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+                        </View>
                     </View>
-                </TouchableOpacity>
-            </Modal>
+
+                    {/* Items List */}
+                    <View style={styles.itemsList}>
+                        <View style={styles.itemsHeader}>
+                            <Text style={styles.itemsHeaderText}>Items</Text>
+                        </View>
+
+                        {editableItems
+                            .sort((a, b) => a.item_order - b.item_order)
+                            .map((item, index) => (
+                                <View key={index} style={styles.compactItemRow}>
+                                    <View style={styles.itemMainInfo}>
+                                        <View style={styles.itemTopRow}>
+                                            <View style={styles.itemNameSection}>
+                                                <Text style={styles.compactItemName}>
+                                                    {item.english_name || item.japanese_name}
+                                                </Text>
+                                                {item.english_name && item.japanese_name && (
+                                                    <Text style={styles.itemNameSecondary}>
+                                                        {item.japanese_name}
+                                                    </Text>
+                                                )}
+                                            </View>
+
+                                            <View style={styles.itemControls}>
+                                                <View style={styles.quantityControl}>
+                                                    <TouchableOpacity
+                                                        style={styles.quantityButton}
+                                                        onPress={() => updateItemQuantity(index, Math.max(0, item.quantity - 1).toString())}
+                                                    >
+                                                        <Text style={styles.quantityButtonText}>−</Text>
+                                                    </TouchableOpacity>
+                                                    <Text style={styles.quantityText}>{item.quantity}</Text>
+                                                    <TouchableOpacity
+                                                        style={styles.quantityButton}
+                                                        onPress={() => updateItemQuantity(index, (item.quantity + 1).toString())}
+                                                    >
+                                                        <Text style={styles.quantityButtonText}>+</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+
+                                                <View style={styles.priceInputContainer}>
+                                                    <Text style={styles.pricePrefix}>¥</Text>
+                                                    <TextInput
+                                                        style={styles.priceInput}
+                                                        value={costInputs.hasOwnProperty(index) ? costInputs[index] : item.cost.toString()}
+                                                        onChangeText={(text) => updateItemCost(index, text)}
+                                                        keyboardType="decimal-pad"
+                                                        placeholder="0"
+                                                    />
+                                                </View>
+                                            </View>
+                                        </View>
+
+                                        {/* Right-aligned User Assignment Row */}
+                                        {groupUsers.length > 0 && (
+                                            <View style={styles.userAssignmentRowRight}>
+                                                {groupUsers.map((user) => (
+                                                    <TouchableOpacity
+                                                        key={user.id}
+                                                        style={[
+                                                            styles.userAssignButton,
+                                                            userSelections[index] === user.id && styles.userAssignButtonSelected
+                                                        ]}
+                                                        onPress={() => handleUserSelection(index, user.id)}
+                                                    >
+                                                        <Text style={[
+                                                            styles.userAssignButtonText,
+                                                            userSelections[index] === user.id && styles.userAssignButtonTextSelected
+                                                        ]}>
+                                                            {user.name.split(' ')[0]}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
+                                        )}
+                                    </View>
+                                </View>
+                            ))}
+                    </View>
+                </View>
+
+                {/* Clean Summary and Sync */}
+                <View style={[styles.bottomSection, {paddingBottom: Math.max(insets.bottom, 16)}]}>
+                    {/* Ultra Compact Summary */}
+                    <View style={styles.summaryCard}>
+                        <View style={styles.compactSummaryRow}>
+                            <View style={styles.summaryColumn}>
+                                <Text style={styles.summaryLabel}>Subtotal</Text>
+                                <Text style={styles.summaryValue}>¥{subtotal}</Text>
+                            </View>
+
+                            <View style={styles.summaryColumnCompact}>
+                                <Text style={styles.summaryLabel}>Tax</Text>
+                                <View style={styles.miniTaxInput}>
+                                    <Text style={styles.miniTaxPrefix}>¥</Text>
+                                    <TextInput
+                                        style={styles.miniTaxField}
+                                        value={taxInput !== null ? taxInput : editableTaxAmount.toString()}
+                                        onChangeText={(text) => updateTaxAmount(text)}
+                                        keyboardType="decimal-pad"
+                                        placeholder="0"
+                                    />
+                                </View>
+                            </View>
+
+                            <View style={styles.summaryColumn}>
+                                <Text style={styles.summaryLabel}>Total</Text>
+                                <Text style={styles.summaryTotalAmount}>¥{total}</Text>
+                            </View>
+                        </View>
+                    </View>
+
+                    {/* Clean Sync Button */}
+                    <TouchableOpacity
+                        style={[styles.cleanSyncButton, isSyncing && styles.cleanSyncButtonDisabled]}
+                        onPress={syncTransaction}
+                        disabled={isSyncing}
+                    >
+                        {isSyncing ? (
+                            <View style={styles.syncingContent}>
+                                <ActivityIndicator size="small" color="#ffffff"/>
+                                <Text style={styles.cleanSyncText}>Syncing Transaction...</Text>
+                            </View>
+                        ) : (
+                            <Text style={styles.cleanSyncText}>Sync Transaction</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+
+                {/* Groups Selection Modal */}
+                <Modal
+                    visible={isDropdownOpen}
+                    transparent={true}
+                    animationType="fade"
+                    onRequestClose={closeDropdown}
+                >
+                    <TouchableOpacity
+                        style={styles.modalOverlay}
+                        activeOpacity={1}
+                        onPress={closeDropdown}
+                    >
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Select Settle-Up Group</Text>
+                                <TouchableOpacity onPress={closeDropdown} style={styles.closeButton}>
+                                    <Text style={styles.closeButtonText}>✕</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            <FlatList
+                                data={groups}
+                                keyExtractor={(item) => item.id}
+                                renderItem={({item}) => (
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.groupOption,
+                                            selectedGroupId === item.id && styles.groupOptionSelected
+                                        ]}
+                                        onPress={() => handleGroupSelection(item)}
+                                    >
+                                        <Text style={[
+                                            styles.groupOptionText,
+                                            selectedGroupId === item.id && styles.groupOptionTextSelected
+                                        ]}>
+                                            {item.name}
+                                        </Text>
+                                        {selectedGroupId === item.id && (
+                                            <Text style={styles.checkmark}>✓</Text>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
+                                style={styles.groupsList}
+                            />
+                        </View>
+                    </TouchableOpacity>
+                </Modal>
             </ScrollView>
         </KeyboardAvoidingView>
     );
