@@ -47,14 +47,6 @@ export default function LoadingScreen() {
       // Upload failed, navigate back to camera
       router.replace('/');
     }
-
-    // Use mock data for now - simulate processing delay
-
-    // Simulate processing time
-    setTimeout(() => {
-      // Navigate to receipt details page without data (will use mock data)
-      router.replace('/receipt-details');
-    }, 2000); // 2 second delay to show loading screen
   };
 
   return (

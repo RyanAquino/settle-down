@@ -129,11 +129,18 @@ export default function ReceiptDetailsScreen() {
     };
 
     let receiptData: ReceiptData | null = null;
-    try {
-        receiptData = params.data ? JSON.parse(params.data as string) : mockReceiptData;
-    } catch (error) {
-        // Failed to parse receipt data, using mock data
+
+    // Only use mock data if explicitly requested via debug button
+    if (params.useMockData === 'true') {
         receiptData = mockReceiptData;
+    } else {
+        try {
+            receiptData = params.data ? JSON.parse(params.data as string) : null;
+        } catch (error) {
+            // Failed to parse receipt data, navigate back
+            router.back();
+            return null;
+        }
     }
 
     const fetchSettleUpGroups = async () => {
@@ -915,21 +922,21 @@ const styles = StyleSheet.create({
     },
     userAssignButton: {
         backgroundColor: '#f2f2f7',
-        borderRadius: 6,
-        paddingVertical: 2,
-        paddingHorizontal: 6,
-        marginRight: 3,
-        marginBottom: 1,
+        borderRadius: 8,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        marginRight: 4,
+        marginBottom: 2,
         borderWidth: 1,
         borderColor: 'transparent',
         shadowColor: '#000',
         shadowOffset: {width: 0, height: 0.5},
-        shadowOpacity: 0.02,
-        shadowRadius: 0.5,
+        shadowOpacity: 0.03,
+        shadowRadius: 1,
         elevation: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: 18,
+        minHeight: 28,
     },
     userAssignButtonSelected: {
         backgroundColor: '#007AFF',
@@ -938,10 +945,10 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.2,
     },
     userAssignButtonText: {
-        fontSize: 9,
-        fontWeight: '500',
+        fontSize: 12,
+        fontWeight: '600',
         color: '#1c1c1e',
-        letterSpacing: -0.05,
+        letterSpacing: -0.1,
     },
     userAssignButtonTextSelected: {
         color: '#ffffff',
