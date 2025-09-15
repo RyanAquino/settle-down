@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect } from 'react';
+import * as Haptics from 'expo-haptics';
 
 export default function LoadingScreen() {
   const params = useLocalSearchParams();
@@ -33,6 +34,9 @@ export default function LoadingScreen() {
       if (response.ok) {
         const data = await response.json();
 
+        // Trigger haptic feedback and sound to notify completion
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
         // Navigate to receipt details page with the data
         router.replace({
           pathname: '/receipt-details',
@@ -44,6 +48,9 @@ export default function LoadingScreen() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
     } catch (_error) {
+      // Trigger error haptic feedback
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+
       // Upload failed, navigate back to camera
       router.replace('/');
     }
