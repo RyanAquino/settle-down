@@ -28,6 +28,8 @@ export default function CameraScreen() {
         const photo = await cameraRef.current.takePictureAsync({
           quality: 1,
           base64: false,
+          skipProcessing: true,
+          shutterSound: false,
         });
 
         if (photo?.uri) {
@@ -39,7 +41,7 @@ export default function CameraScreen() {
             }
           });
         }
-      } catch (error) {
+      } catch (_error) {
         // Failed to take picture
         Alert.alert('Error', 'Failed to take picture. Please try again.');
       }
@@ -56,16 +58,15 @@ export default function CameraScreen() {
         pictureSize="High"
         videoQuality="4:3"
         ratio="4:3"
-      >
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={styles.captureButton}
-            onPress={takePicture}
-          >
-            <View style={styles.captureButtonInner} />
-          </TouchableOpacity>
-        </View>
-      </CameraView>
+      />
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity
+          style={styles.captureButton}
+          onPress={takePicture}
+        >
+          <View style={styles.captureButtonInner} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -83,11 +84,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   buttonContainer: {
-    flex: 1,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingBottom: 50,
+    height: 150,
   },
   captureButton: {
     width: 70,

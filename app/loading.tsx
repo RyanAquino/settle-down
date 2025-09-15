@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect } from 'react';
+import * as Haptics from 'expo-haptics';
 
 export default function LoadingScreen() {
   const params = useLocalSearchParams();
@@ -13,8 +14,6 @@ export default function LoadingScreen() {
   }, [photoUri]);
 
   const uploadPhoto = async (photoUri: string) => {
-    // TODO: Comment out API call for now, use mock data
-    /*
     try {
       const formData = new FormData();
       formData.append('file', {
@@ -23,7 +22,7 @@ export default function LoadingScreen() {
         name: 'receipt.jpg',
       } as any);
 
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
+      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
       const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
         method: 'POST',
         body: formData,
@@ -35,6 +34,9 @@ export default function LoadingScreen() {
       if (response.ok) {
         const data = await response.json();
 
+        // Trigger haptic feedback and sound to notify completion
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
         // Navigate to receipt details page with the data
         router.replace({
           pathname: '/receipt-details',
@@ -45,19 +47,13 @@ export default function LoadingScreen() {
       } else {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-    } catch (error) {
+    } catch (_error) {
+      // Trigger error haptic feedback
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+
       // Upload failed, navigate back to camera
       router.replace('/');
     }
-    */
-
-    // Use mock data for now - simulate processing delay
-
-    // Simulate processing time
-    setTimeout(() => {
-      // Navigate to receipt details page without data (will use mock data)
-      router.replace('/receipt-details');
-    }, 2000); // 2 second delay to show loading screen
   };
 
   return (

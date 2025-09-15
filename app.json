@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "settle-down",
+    "name": "Settle Down",
     "slug": "settle-down",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to capture high-quality photos."
-      }
+      },
+      "bundleIdentifier": "com.ryan.aquino.settledown"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +23,12 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.ryan.aquino.settledown"
     },
     "web": {
       "output": "static",

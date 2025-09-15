@@ -23,7 +23,10 @@ export default function Index() {
         <View style={styles.debugOverlay}>
           <TouchableOpacity
             style={styles.debugButton}
-            onPress={() => router.push('/receipt-details')}
+            onPress={() => router.push({
+              pathname: '/receipt-details',
+              params: { useMockData: 'true' }
+            })}
           >
             <Text style={styles.debugButtonText}>Skip to Receipt Details</Text>
           </TouchableOpacity>
