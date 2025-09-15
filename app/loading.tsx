@@ -43,7 +43,7 @@ export default function LoadingScreen() {
       } else {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-    } catch (error) {
+    } catch (_error) {
       // Upload failed, navigate back to camera
       router.replace('/');
     }

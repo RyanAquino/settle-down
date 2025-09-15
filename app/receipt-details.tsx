@@ -13,7 +13,7 @@ import {
     Platform
 } from 'react-native';
 import {useLocalSearchParams, router} from 'expo-router';
-import {useState, useEffect} from 'react';
+import {useState, useEffect, useCallback, useMemo} from 'react';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 interface ReceiptItem {
@@ -29,7 +29,7 @@ interface ReceiptData {
     receipt_items: ReceiptItem[];
     en_shop_name: string;
     jp_shop_name: string;
-    tax_amount: number;
+    tax_percentage: number;
     total_amount: number;
     receipt_date: Date;
 }
@@ -58,8 +58,7 @@ export default function ReceiptDetailsScreen() {
     const params = useLocalSearchParams();
     const insets = useSafeAreaInsets();
     const [editableItems, setEditableItems] = useState<ReceiptItem[]>([]);
-    const [originalTaxAmount, setOriginalTaxAmount] = useState(0);
-    const [editableTaxAmount, setEditableTaxAmount] = useState(0);
+    const [editableTaxPercentage, setEditableTaxPercentage] = useState(0);
     const [shopInfo, setShopInfo] = useState({
         en_shop_name: '',
         jp_shop_name: '',
@@ -77,82 +76,80 @@ export default function ReceiptDetailsScreen() {
     const [paidByUserId, setPaidByUserId] = useState<string>('');
     const [isSyncing, setIsSyncing] = useState(false);
     const [costInputs, setCostInputs] = useState<{ [itemIndex: number]: string }>({});
-    const [taxInput, setTaxInput] = useState<string | null>(null);
+    const [taxPercentageInput, setTaxPercentageInput] = useState<string | null>(null);
 
     const mockReceiptData: ReceiptData = {
         receipt_items: [
             {
-                english_name: "CRANBERRY",
+                english_name: "drinks",
                 japanese_name: "クランベリー",
                 item_order: 1,
-                cost: 605,
+                cost: 169,
                 quantity: 1,
                 discount: 0
             },
             {
-                english_name: "(M)ST SHAKE",
+                english_name: "food",
                 japanese_name: "MSTシェイク",
                 item_order: 2,
-                cost: 847,
+                cost: 159,
                 quantity: 1,
                 discount: 0
             },
             {
-                english_name: "CHEESE RISOTTO",
+                english_name: "banana",
                 japanese_name: "チーズリゾット",
                 item_order: 3,
-                cost: 1408,
+                cost: 129,
                 quantity: 1,
                 discount: 0
             },
-            {
-                english_name: "CAESAR SALAD",
-                japanese_name: "シーザーサラダ",
-                item_order: 4,
-                cost: 1045,
-                quantity: 1,
-                discount: 0
-            },
-            {
-                english_name: "T. BACON",
-                japanese_name: "T.ベーコン",
-                item_order: 5,
-                cost: 385,
-                quantity: 1,
-                discount: 0
-            },
-            {
-                english_name: "T. AVOCADO",
-                japanese_name: "T.アボカド",
-                item_order: 6,
-                cost: 385,
-                quantity: 1,
-                discount: 0
-            }
         ],
-        en_shop_name: "LADOME",
+        en_shop_name: "my basket debug",
         jp_shop_name: "ラドーム",
-        tax_amount: 10,
-        total_amount: 4675,
-        receipt_date: new Date(2021, 0, 1, 12, 0, 0, 0)
+        tax_percentage: 8,
+        total_amount: 493,
+        receipt_date: new Date()
     };
 
-    let receiptData: ReceiptData | null = null;
+    // Parse receipt data or use mock data - memoized to prevent infinite loops
+    const receiptData = useMemo((): ReceiptData | null => {
+        if (params.useMockData === 'true') {
+            return mockReceiptData;
+        }
 
-    // Only use mock data if explicitly requested via debug button
-    if (params.useMockData === 'true') {
-        receiptData = mockReceiptData;
-    } else {
         try {
-            receiptData = params.data ? JSON.parse(params.data as string) : null;
-        } catch (error) {
-            // Failed to parse receipt data, navigate back
-            router.back();
+            return params.data ? JSON.parse(params.data as string) : null;
+        } catch (_error) {
             return null;
         }
-    }
+    }, [params.useMockData, params.data]);
 
-    const fetchSettleUpGroups = async () => {
+    const fetchGroupUsers = useCallback(async (groupId: string) => {
+        if (!groupId) return;
+
+        const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
+        setIsLoadingUsers(true);
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`);
+            if (response.ok) {
+                const data: GroupUsersResponse = await response.json();
+                setGroupUsers(data.items || []);
+                // Clear previous user selections when switching groups
+                setUserSelections({});
+                setPaidByUserId('');
+            } else {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+        } catch (_error) {
+            // Failed to fetch group users
+            setGroupUsers([]);
+        } finally {
+            setIsLoadingUsers(false);
+        }
+    }, []);
+
+    const fetchSettleUpGroups = useCallback(async () => {
         const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
         setIsLoadingGroups(true);
         setGroupsError(null);
@@ -171,60 +168,44 @@ export default function ReceiptDetailsScreen() {
             } else {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-        } catch (error) {
+        } catch (_error) {
             // Failed to fetch settle-up groups
             setGroupsError('Failed to load groups. Please try again.');
             setGroups([]);
         } finally {
             setIsLoadingGroups(false);
         }
-    };
+    }, [fetchGroupUsers]);
 
-    const fetchGroupUsers = async (groupId: string) => {
-        if (!groupId) return;
-
-        const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
-        setIsLoadingUsers(true);
-        try {
-            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`);
-            if (response.ok) {
-                const data: GroupUsersResponse = await response.json();
-                setGroupUsers(data.items || []);
-                // Clear previous user selections when switching groups
-                setUserSelections({});
-                setPaidByUserId('');
-            } else {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-        } catch (error) {
-            // Failed to fetch group users
-            setGroupUsers([]);
-        } finally {
-            setIsLoadingUsers(false);
-        }
-    };
-
+    // Initialize data when component mounts
     useEffect(() => {
-        if (receiptData) {
-            setEditableItems([...receiptData.receipt_items]);
-            setOriginalTaxAmount(receiptData.tax_amount);
-            setEditableTaxAmount(receiptData.tax_amount);
-            setTaxInput(receiptData.tax_amount.toString());
-
-            // Initialize cost inputs with current values
-            const initialCostInputs: { [itemIndex: number]: string } = {};
-            receiptData.receipt_items.forEach((item, index) => {
-                initialCostInputs[index] = item.cost.toString();
-            });
-            setCostInputs(initialCostInputs);
-            setShopInfo({
-                en_shop_name: receiptData.en_shop_name,
-                jp_shop_name: receiptData.jp_shop_name,
-                total_amount: receiptData.total_amount,
-                receipt_date: receiptData.receipt_date
-            });
+        if (!receiptData) {
+            router.back();
+            return;
         }
+
+        setEditableItems([...receiptData.receipt_items]);
+        setEditableTaxPercentage(receiptData.tax_percentage);
+        setTaxPercentageInput(receiptData.tax_percentage.toString());
+
+        // Initialize cost inputs with current values
+        const initialCostInputs: { [itemIndex: number]: string } = {};
+        receiptData.receipt_items.forEach((item, index) => {
+            initialCostInputs[index] = item.cost.toString();
+        });
+        setCostInputs(initialCostInputs);
+        setShopInfo({
+            en_shop_name: receiptData.en_shop_name,
+            jp_shop_name: receiptData.jp_shop_name,
+            total_amount: receiptData.total_amount,
+            receipt_date: receiptData.receipt_date
+        });
+    }, [receiptData]);
+
+    // Fetch groups only once on mount
+    useEffect(() => {
         fetchSettleUpGroups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
 
@@ -257,24 +238,26 @@ export default function ReceiptDetailsScreen() {
     };
 
     const calculateSubtotal = () => {
-        return editableItems.reduce((total, item) => total + (item.cost * item.quantity) - item.discount, 0);
+        return editableItems.reduce((total, item) => total + (item.cost * item.quantity), 0);
     };
 
-    const calculateTotal = () => {
-        let total = calculateSubtotal() + editableTaxAmount
-        if (total !== shopInfo.total_amount) {
-            return total;
-        }
+    const calculateTaxAmount = () => {
+        const subtotal = calculateSubtotal();
+        return (subtotal * editableTaxPercentage) / 100;
+    };
+
+    // Total should come from the API response, not calculated
+    const getTotal = () => {
         return shopInfo.total_amount;
     };
 
-    const updateTaxAmount = (tax: string) => {
+    const updateTaxPercentage = (taxPercent: string) => {
         // Update the raw input string
-        setTaxInput(tax);
+        setTaxPercentageInput(taxPercent);
 
-        // Update the actual tax value - handle empty string properly
-        const parsedTax = tax === '' ? 0 : parseFloat(tax);
-        setEditableTaxAmount(Math.max(0, isNaN(parsedTax) ? 0 : parsedTax));
+        // Update the actual tax percentage value - handle empty string properly
+        const parsedTaxPercent = taxPercent === '' ? 0 : parseFloat(taxPercent);
+        setEditableTaxPercentage(Math.max(0, isNaN(parsedTaxPercent) ? 0 : parsedTaxPercent));
     };
 
     const handleUserSelection = (itemIndex: number, userId: string) => {
@@ -289,10 +272,6 @@ export default function ReceiptDetailsScreen() {
         return selectedGroup?.name || "Select a group...";
     };
 
-    const handleGroupSelect = (groupId: string) => {
-        setSelectedGroupId(groupId);
-        setIsDropdownOpen(false);
-    };
 
     const showGroupPicker = () => {
         if (groups.length === 0) {
@@ -324,51 +303,70 @@ export default function ReceiptDetailsScreen() {
             return;
         }
 
-        // Check if all items have been assigned to users
+        // Check if all items have been assigned to users or marked as shared
         const unassignedItems = editableItems.filter((_, index) => !userSelections[index]);
         if (unassignedItems.length > 0) {
-            Alert.alert('Error', 'Please assign all receipt items to users.');
+            Alert.alert('Error', 'Please assign all receipt items to users or mark as shared.');
             return;
         }
 
-        // Get unique user IDs (allow 1 or more users)
-        const assignedUserIds = Object.values(userSelections);
+        // Get unique user IDs (excluding 'shared' assignments)
+        const assignedUserIds = Object.values(userSelections).filter(id => id !== 'shared');
         const uniqueUserIds = [...new Set(assignedUserIds)];
 
-        if (uniqueUserIds.length === 0) {
-            Alert.alert('Error', 'Please assign items to at least one user.');
+        // Check if there are any user assignments or shared items
+        const hasUserAssignments = uniqueUserIds.length > 0;
+        const hasSharedItems = Object.values(userSelections).some(id => id === 'shared');
+
+        if (!hasUserAssignments && !hasSharedItems) {
+            Alert.alert('Error', 'Please assign items to at least one user or mark items as shared.');
             return;
         }
 
         setIsSyncing(true);
 
         try {
+            // Create user receipt items array and split items array
+            const userReceiptItems: { member_id: string; cost: number }[] = [];
+            const splitReceiptItems: number[] = [];
+
             // Calculate totals for each user
             const userTotals = uniqueUserIds.reduce((acc, userId) => {
                 acc[userId] = 0;
                 return acc;
             }, {} as { [userId: string]: number });
 
-            // Sum up item costs for each user
+            // Sum up item costs for each user and collect shared items
             editableItems.forEach((item, index) => {
                 const assignedUserId = userSelections[index];
-                if (assignedUserId) {
-                    userTotals[assignedUserId] += (item.cost * item.quantity) - item.discount;
+                const itemTotal = item.cost * item.quantity;
+
+                if (assignedUserId === 'shared') {
+                    // Add to split receipt items for shared ownership
+                    splitReceiptItems.push(itemTotal);
+                } else if (assignedUserId && assignedUserId !== 'shared') {
+                    // Add to specific user's total
+                    userTotals[assignedUserId] += itemTotal;
                 }
             });
 
-            const payingMemberTotal = userTotals[paidByUserId] || 0;
-            const otherUserId = uniqueUserIds.find(id => id !== paidByUserId);
-            const otherMemberTotal = userTotals[otherUserId || ''] || 0;
+            // Convert user totals to user_receipt_items format
+            uniqueUserIds.forEach(userId => {
+                if (userTotals[userId] > 0) {
+                    userReceiptItems.push({
+                        member_id: userId,
+                        cost: userTotals[userId]
+                    });
+                }
+            });
 
             const payload = {
                 purpose: shopInfo.en_shop_name || shopInfo.jp_shop_name || 'Receipt',
-                total_amount: calculateTotal(),
-                tax_amount: editableTaxAmount,
                 paying_member_id: paidByUserId,
-                paying_member_total: payingMemberTotal,
-                other_member_id: otherUserId || '',
-                other_member_total: otherMemberTotal,
+                tax_percentage: editableTaxPercentage,
+                total_amount: getTotal(),
+                user_receipt_items: userReceiptItems,
+                split_receipt_items: splitReceiptItems,
                 group_id: selectedGroupId,
                 receipt_date: shopInfo.receipt_date,
             };
@@ -396,7 +394,7 @@ export default function ReceiptDetailsScreen() {
             } else {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-        } catch (error) {
+        } catch (_error) {
             // Sync failed
             Alert.alert('Error', 'Failed to sync transaction. Please try again.');
         } finally {
@@ -405,7 +403,8 @@ export default function ReceiptDetailsScreen() {
     };
 
     const subtotal = calculateSubtotal();
-    const total = calculateTotal();
+    const taxAmount = calculateTaxAmount();
+    const total = getTotal();
 
     return (
         <KeyboardAvoidingView
@@ -428,7 +427,7 @@ export default function ReceiptDetailsScreen() {
                                 {shopInfo.en_shop_name || shopInfo.jp_shop_name}
                             </Text>
                         </View>
-                        <Text style={styles.totalPreview}>¥{total}</Text>
+                        <Text style={styles.totalPreview}>¥{getTotal()}</Text>
                     </View>
                 </View>
 
@@ -559,6 +558,23 @@ export default function ReceiptDetailsScreen() {
                                                         </Text>
                                                     </TouchableOpacity>
                                                 ))}
+                                                {/* Shared button */}
+                                                <TouchableOpacity
+                                                    style={[
+                                                        styles.userAssignButton,
+                                                        styles.sharedButton,
+                                                        userSelections[index] === 'shared' && styles.sharedButtonSelected
+                                                    ]}
+                                                    onPress={() => handleUserSelection(index, 'shared')}
+                                                >
+                                                    <Text style={[
+                                                        styles.userAssignButtonText,
+                                                        styles.sharedButtonText,
+                                                        userSelections[index] === 'shared' && styles.sharedButtonTextSelected
+                                                    ]}>
+                                                        Shared
+                                                    </Text>
+                                                </TouchableOpacity>
                                             </View>
                                         )}
                                     </View>
@@ -580,20 +596,21 @@ export default function ReceiptDetailsScreen() {
                             <View style={styles.summaryColumnCompact}>
                                 <Text style={styles.summaryLabel}>Tax</Text>
                                 <View style={styles.miniTaxInput}>
-                                    <Text style={styles.miniTaxPrefix}>¥</Text>
                                     <TextInput
                                         style={styles.miniTaxField}
-                                        value={taxInput !== null ? taxInput : editableTaxAmount.toString()}
-                                        onChangeText={(text) => updateTaxAmount(text)}
+                                        value={taxPercentageInput !== null ? taxPercentageInput : editableTaxPercentage.toString()}
+                                        onChangeText={(text) => updateTaxPercentage(text)}
                                         keyboardType="decimal-pad"
                                         placeholder="0"
                                     />
+                                    <Text style={styles.miniTaxPrefix}>%</Text>
                                 </View>
+                                <Text style={styles.taxAmount}>¥{Math.round(taxAmount)}</Text>
                             </View>
 
                             <View style={styles.summaryColumn}>
                                 <Text style={styles.summaryLabel}>Total</Text>
-                                <Text style={styles.summaryTotalAmount}>¥{total}</Text>
+                                <Text style={styles.summaryTotalAmount}>¥{getTotal()}</Text>
                             </View>
                         </View>
                     </View>
@@ -987,6 +1004,25 @@ const styles = StyleSheet.create({
     userAssignButtonTextSelected: {
         color: '#ffffff',
     },
+    sharedButton: {
+        backgroundColor: '#f8f9fa',
+        borderColor: '#e9ecef',
+        borderWidth: 1,
+    },
+    sharedButtonSelected: {
+        backgroundColor: '#28a745',
+        borderColor: '#28a745',
+        shadowColor: '#28a745',
+        shadowOpacity: 0.2,
+    },
+    sharedButtonText: {
+        color: '#6c757d',
+        fontWeight: '500',
+    },
+    sharedButtonTextSelected: {
+        color: '#ffffff',
+        fontWeight: '600',
+    },
     userAssignmentRight: {
         flexDirection: 'column',
         alignItems: 'center',
@@ -1148,6 +1184,13 @@ const styles = StyleSheet.create({
         padding: 0,
         textAlign: 'center',
         minWidth: 35,
+    },
+    taxAmount: {
+        fontSize: 10,
+        fontWeight: '500',
+        color: '#8e8e93',
+        textAlign: 'center',
+        marginTop: 2,
     },
     cleanSyncButton: {
         backgroundColor: '#007AFF',

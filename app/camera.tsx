@@ -41,7 +41,7 @@ export default function CameraScreen() {
             }
           });
         }
-      } catch (error) {
+      } catch (_error) {
         // Failed to take picture
         Alert.alert('Error', 'Failed to take picture. Please try again.');
       }
