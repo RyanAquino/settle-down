@@ -55,6 +55,7 @@ interface ReceiptData {
     tax_percentage: number;
     total_amount: number;
     receipt_date: Date;
+    receipt_image_url?: string;
 }
 
 interface SettleUpGroup {
@@ -86,7 +87,8 @@ export default function ReceiptDetailsScreen() {
         en_shop_name: '',
         jp_shop_name: '',
         total_amount: 0,
-        receipt_date: new Date()
+        receipt_date: new Date(),
+        receipt_image_url: ''
     });
     const [groups, setGroups] = useState<SettleUpGroup[]>([]);
     const [selectedGroupId, setSelectedGroupId] = useState<string>('');
@@ -133,7 +135,8 @@ export default function ReceiptDetailsScreen() {
         jp_shop_name: "ラドーム",
         tax_percentage: 8,
         total_amount: 493,
-        receipt_date: new Date()
+        receipt_date: new Date(),
+        receipt_image_url: "https://example.com/mock-receipt-image.jpg"
     };
 
     // Parse receipt data or use mock data - memoized to prevent infinite loops
@@ -246,7 +249,8 @@ export default function ReceiptDetailsScreen() {
             en_shop_name: receiptData.en_shop_name,
             jp_shop_name: receiptData.jp_shop_name,
             total_amount: receiptData.total_amount,
-            receipt_date: new Date(receiptData.receipt_date)
+            receipt_date: new Date(receiptData.receipt_date),
+            receipt_image_url: receiptData?.receipt_image_url || ''
         });
     }, [receiptData]);
 
@@ -441,6 +445,7 @@ export default function ReceiptDetailsScreen() {
                 split_receipt_items: splitReceiptItems,
                 group_id: selectedGroupId,
                 receipt_date: shopInfo.receipt_date,
+                receipt_image_url: shopInfo.receipt_image_url,
             };
 
             const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
