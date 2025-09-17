@@ -15,6 +15,7 @@ import {
 import {useLocalSearchParams, router} from 'expo-router';
 import {useState, useEffect, useCallback, useMemo} from 'react';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface ReceiptItem {
     english_name: string;
@@ -75,6 +76,7 @@ export default function ReceiptDetailsScreen() {
     const [userSelections, setUserSelections] = useState<{ [itemIndex: number]: string }>({});
     const [paidByUserId, setPaidByUserId] = useState<string>('');
     const [isSyncing, setIsSyncing] = useState(false);
+    const [showDatePicker, setShowDatePicker] = useState(false);
     const [costInputs, setCostInputs] = useState<{ [itemIndex: number]: string }>({});
     const [taxPercentageInput, setTaxPercentageInput] = useState<string | null>(null);
 
@@ -120,9 +122,10 @@ export default function ReceiptDetailsScreen() {
 
         try {
             return params.data ? JSON.parse(params.data as string) : null;
-        } catch (_error) {
+        } catch {
             return null;
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [params.useMockData, params.data]);
 
     const fetchGroupUsers = useCallback(async (groupId: string) => {
@@ -131,7 +134,16 @@ export default function ReceiptDetailsScreen() {
         const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
         setIsLoadingUsers(true);
         try {
-            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`);
+            const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
+            const headers: { [key: string]: string } = {};
+
+            if (authToken) {
+                headers.Authorization = `Bearer ${authToken}`;
+            }
+
+            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`, {
+                headers,
+            });
             if (response.ok) {
                 const data: GroupUsersResponse = await response.json();
                 setGroupUsers(data.items || []);
@@ -141,7 +153,7 @@ export default function ReceiptDetailsScreen() {
             } else {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-        } catch (_error) {
+        } catch {
             // Failed to fetch group users
             setGroupUsers([]);
         } finally {
@@ -154,7 +166,16 @@ export default function ReceiptDetailsScreen() {
         setIsLoadingGroups(true);
         setGroupsError(null);
         try {
-            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/groups/`);
+            const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
+            const headers: { [key: string]: string } = {};
+
+            if (authToken) {
+                headers.Authorization = `Bearer ${authToken}`;
+            }
+
+            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/groups/`, {
+                headers,
+            });
             if (response.ok) {
                 const data: SettleUpGroupsResponse = await response.json();
                 setGroups(data.items || []);
@@ -168,7 +189,7 @@ export default function ReceiptDetailsScreen() {
             } else {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-        } catch (_error) {
+        } catch {
             // Failed to fetch settle-up groups
             setGroupsError('Failed to load groups. Please try again.');
             setGroups([]);
@@ -198,7 +219,7 @@ export default function ReceiptDetailsScreen() {
             en_shop_name: receiptData.en_shop_name,
             jp_shop_name: receiptData.jp_shop_name,
             total_amount: receiptData.total_amount,
-            receipt_date: receiptData.receipt_date
+            receipt_date: new Date(receiptData.receipt_date)
         });
     }, [receiptData]);
 
@@ -258,6 +279,30 @@ export default function ReceiptDetailsScreen() {
         // Update the actual tax percentage value - handle empty string properly
         const parsedTaxPercent = taxPercent === '' ? 0 : parseFloat(taxPercent);
         setEditableTaxPercentage(Math.max(0, isNaN(parsedTaxPercent) ? 0 : parsedTaxPercent));
+    };
+
+    const handleDateChange = (event: any, selectedDate?: Date) => {
+        if (selectedDate) {
+            setShopInfo(prev => ({
+                ...prev,
+                receipt_date: selectedDate
+            }));
+        }
+    };
+
+    const formatDateTime = (date: Date) => {
+        return date.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    };
+
+    const showDateTimePicker = () => {
+        setShowDatePicker(true);
     };
 
     const handleUserSelection = (itemIndex: number, userId: string) => {
@@ -372,11 +417,18 @@ export default function ReceiptDetailsScreen() {
             };
 
             const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
+            const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
+            const headers: { [key: string]: string } = {
+                'Content-Type': 'application/json',
+            };
+
+            if (authToken) {
+                headers.Authorization = `Bearer ${authToken}`;
+            }
+
             const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/transactions/`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers,
                 body: JSON.stringify(payload),
             });
 
@@ -394,7 +446,7 @@ export default function ReceiptDetailsScreen() {
             } else {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-        } catch (_error) {
+        } catch {
             // Sync failed
             Alert.alert('Error', 'Failed to sync transaction. Please try again.');
         } finally {
@@ -404,7 +456,6 @@ export default function ReceiptDetailsScreen() {
 
     const subtotal = calculateSubtotal();
     const taxAmount = calculateTaxAmount();
-    const total = getTotal();
 
     return (
         <KeyboardAvoidingView
@@ -426,6 +477,14 @@ export default function ReceiptDetailsScreen() {
                             <Text style={styles.shopName}>
                                 {shopInfo.en_shop_name || shopInfo.jp_shop_name}
                             </Text>
+                            <TouchableOpacity
+                                style={styles.dateButton}
+                                onPress={showDateTimePicker}
+                            >
+                                <Text style={styles.dateText}>
+                                    📅 {formatDateTime(shopInfo.receipt_date)}
+                                </Text>
+                            </TouchableOpacity>
                         </View>
                         <Text style={styles.totalPreview}>¥{getTotal()}</Text>
                     </View>
@@ -680,6 +739,48 @@ export default function ReceiptDetailsScreen() {
                     </TouchableOpacity>
                 </Modal>
             </ScrollView>
+
+            {showDatePicker && (
+                <Modal
+                    transparent={true}
+                    animationType="slide"
+                    visible={showDatePicker}
+                    onRequestClose={() => setShowDatePicker(false)}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.datePickerModal}>
+                            <View style={styles.datePickerHeader}>
+                                <TouchableOpacity
+                                    onPress={() => setShowDatePicker(false)}
+                                    style={styles.headerButton}
+                                >
+                                    <Text style={styles.headerButtonText}>Cancel</Text>
+                                </TouchableOpacity>
+                                <Text style={styles.headerTitle}>Select Date & Time</Text>
+                                <TouchableOpacity
+                                    onPress={() => setShowDatePicker(false)}
+                                    style={styles.headerButton}
+                                >
+                                    <Text style={[styles.headerButtonText, styles.doneButton]}>Done</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <View style={styles.datePickerContainer}>
+                                <DateTimePicker
+                                    value={shopInfo.receipt_date}
+                                    mode="datetime"
+                                    display="spinner"
+                                    onChange={handleDateChange}
+                                    maximumDate={new Date()}
+                                    textColor="#000000"
+                                    accentColor="#007AFF"
+                                    themeVariant="light"
+                                    style={styles.datePicker}
+                                />
+                            </View>
+                        </View>
+                    </View>
+                </Modal>
+            )}
         </KeyboardAvoidingView>
     );
 }
@@ -726,6 +827,20 @@ const styles = StyleSheet.create({
     shopInfo: {
         flex: 1,
         alignItems: 'center',
+    },
+    dateButton: {
+        marginTop: 4,
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        backgroundColor: 'rgba(0, 122, 255, 0.1)',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 122, 255, 0.3)',
+    },
+    dateText: {
+        fontSize: 13,
+        color: '#007AFF',
+        fontWeight: '500',
     },
     shopName: {
         fontSize: 16,
@@ -1597,5 +1712,46 @@ const styles = StyleSheet.create({
     syncButtonContent: {
         flexDirection: 'row',
         alignItems: 'center',
+    },
+    datePickerModal: {
+        backgroundColor: 'white',
+        marginTop: 'auto',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingBottom: 34, // Safe area bottom
+    },
+    datePickerHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        borderBottomWidth: 0.5,
+        borderBottomColor: '#e5e5e7',
+    },
+    headerButton: {
+        padding: 4,
+        minWidth: 60,
+    },
+    headerButtonText: {
+        fontSize: 17,
+        color: '#007AFF',
+    },
+    doneButton: {
+        fontWeight: '600',
+    },
+    headerTitle: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: '#1c1c1e',
+    },
+    datePickerContainer: {
+        backgroundColor: '#ffffff',
+        paddingVertical: 20,
+        marginHorizontal: 16,
+    },
+    datePicker: {
+        height: 200,
+        backgroundColor: '#ffffff',
     },
 });
