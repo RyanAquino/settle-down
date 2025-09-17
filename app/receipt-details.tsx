@@ -17,6 +17,28 @@ import {useState, useEffect, useCallback, useMemo} from 'react';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
+// Generic retry utility for API calls
+async function retryApiCall<T>(
+    apiCall: () => Promise<T>,
+    maxAttempts: number = 3,
+    baseDelay: number = 1000
+): Promise<T> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await apiCall();
+        } catch (error) {
+            if (attempt === maxAttempts) {
+                throw error; // Re-throw on final attempt
+            }
+
+            // Exponential backoff with jitter
+            const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 5000);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    throw new Error('Retry failed'); // This should never be reached
+}
+
 interface ReceiptItem {
     english_name: string;
     japanese_name: string;
@@ -141,9 +163,12 @@ export default function ReceiptDetailsScreen() {
                 headers.Authorization = `Bearer ${authToken}`;
             }
 
-            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`, {
-                headers,
+            const response = await retryApiCall(async () => {
+                return await fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`, {
+                    headers,
+                });
             });
+
             if (response.ok) {
                 const data: GroupUsersResponse = await response.json();
                 setGroupUsers(data.items || []);
@@ -173,8 +198,10 @@ export default function ReceiptDetailsScreen() {
                 headers.Authorization = `Bearer ${authToken}`;
             }
 
-            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/groups/`, {
-                headers,
+            const response = await retryApiCall(async () => {
+                return await fetch(`${apiBaseUrl}/api/v1/settle-up/groups/`, {
+                    headers,
+                });
             });
             if (response.ok) {
                 const data: SettleUpGroupsResponse = await response.json();
@@ -426,10 +453,12 @@ export default function ReceiptDetailsScreen() {
                 headers.Authorization = `Bearer ${authToken}`;
             }
 
-            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/transactions/`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(payload),
+            const response = await retryApiCall(async () => {
+                return await fetch(`${apiBaseUrl}/api/v1/settle-up/transactions/`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload),
+                });
             });
 
             if (response.ok) {
