@@ -1,12 +1,26 @@
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button, StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function CameraScreen() {
   const [facing] = useState<CameraType>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+  const params = useLocalSearchParams();
+
+  useEffect(() => {
+    // Show success message if photo was saved offline
+    if (params.message) {
+      Alert.alert('Success', params.message as string);
+    }
+
+    // Show error message if saving failed
+    if (params.error) {
+      Alert.alert('Error', params.error as string);
+    }
+  }, [params.message, params.error]);
 
   if (!permission) {
     return <View />;
@@ -41,10 +55,49 @@ export default function CameraScreen() {
             }
           });
         }
-      } catch (_error) {
+      } catch {
         // Failed to take picture
         Alert.alert('Error', 'Failed to take picture. Please try again.');
       }
+    }
+  };
+
+  const pickFromLibrary = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (permissionResult.status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'This app needs access to your photo library to select images. Please enable photo library access in your device settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => ImagePicker.requestMediaLibraryPermissionsAsync() }
+          ]
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions?.Images || 'Images',
+        allowsEditing: false,
+        quality: 1,
+        selectionLimit: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const photoUri = result.assets[0].uri;
+
+        router.push({
+          pathname: '/loading',
+          params: {
+            photoUri: photoUri,
+            fromLibrary: 'true'
+          }
+        });
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to pick photo from library. Please try again.');
     }
   };
 
@@ -61,11 +114,20 @@ export default function CameraScreen() {
       />
       <View style={styles.buttonContainer}>
         <TouchableOpacity
+          style={styles.libraryButton}
+          onPress={pickFromLibrary}
+        >
+          <Text style={styles.libraryButtonText}>📷</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.captureButton}
           onPress={takePicture}
         >
           <View style={styles.captureButtonInner} />
         </TouchableOpacity>
+
+        <View style={styles.spacer} />
       </View>
     </View>
   );
@@ -89,8 +151,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: 'transparent',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    paddingHorizontal: 50,
     paddingBottom: 50,
     height: 150,
   },
@@ -114,5 +178,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: 'white',
+  },
+  libraryButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  libraryButtonText: {
+    fontSize: 24,
+  },
+  spacer: {
+    width: 50,
+    height: 50,
   },
 });
