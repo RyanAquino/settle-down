@@ -17,6 +17,28 @@ import {useState, useEffect, useCallback, useMemo} from 'react';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
+// Generic retry utility for API calls
+async function retryApiCall<T>(
+    apiCall: () => Promise<T>,
+    maxAttempts: number = 3,
+    baseDelay: number = 1000
+): Promise<T> {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await apiCall();
+        } catch (error) {
+            if (attempt === maxAttempts) {
+                throw error; // Re-throw on final attempt
+            }
+
+            // Exponential backoff with jitter
+            const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), 5000);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+    throw new Error('Retry failed'); // This should never be reached
+}
+
 interface ReceiptItem {
     english_name: string;
     japanese_name: string;
@@ -33,6 +55,7 @@ interface ReceiptData {
     tax_percentage: number;
     total_amount: number;
     receipt_date: Date;
+    receipt_image_url?: string;
 }
 
 interface SettleUpGroup {
@@ -64,7 +87,8 @@ export default function ReceiptDetailsScreen() {
         en_shop_name: '',
         jp_shop_name: '',
         total_amount: 0,
-        receipt_date: new Date()
+        receipt_date: new Date(),
+        receipt_image_url: ''
     });
     const [groups, setGroups] = useState<SettleUpGroup[]>([]);
     const [selectedGroupId, setSelectedGroupId] = useState<string>('');
@@ -111,7 +135,8 @@ export default function ReceiptDetailsScreen() {
         jp_shop_name: "ラドーム",
         tax_percentage: 8,
         total_amount: 493,
-        receipt_date: new Date()
+        receipt_date: new Date(),
+        receipt_image_url: "https://example.com/mock-receipt-image.jpg"
     };
 
     // Parse receipt data or use mock data - memoized to prevent infinite loops
@@ -141,9 +166,12 @@ export default function ReceiptDetailsScreen() {
                 headers.Authorization = `Bearer ${authToken}`;
             }
 
-            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`, {
-                headers,
+            const response = await retryApiCall(async () => {
+                return await fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`, {
+                    headers,
+                });
             });
+
             if (response.ok) {
                 const data: GroupUsersResponse = await response.json();
                 setGroupUsers(data.items || []);
@@ -173,8 +201,10 @@ export default function ReceiptDetailsScreen() {
                 headers.Authorization = `Bearer ${authToken}`;
             }
 
-            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/groups/`, {
-                headers,
+            const response = await retryApiCall(async () => {
+                return await fetch(`${apiBaseUrl}/api/v1/settle-up/groups/`, {
+                    headers,
+                });
             });
             if (response.ok) {
                 const data: SettleUpGroupsResponse = await response.json();
@@ -219,7 +249,8 @@ export default function ReceiptDetailsScreen() {
             en_shop_name: receiptData.en_shop_name,
             jp_shop_name: receiptData.jp_shop_name,
             total_amount: receiptData.total_amount,
-            receipt_date: new Date(receiptData.receipt_date)
+            receipt_date: new Date(receiptData.receipt_date),
+            receipt_image_url: receiptData?.receipt_image_url || ''
         });
     }, [receiptData]);
 
@@ -414,6 +445,7 @@ export default function ReceiptDetailsScreen() {
                 split_receipt_items: splitReceiptItems,
                 group_id: selectedGroupId,
                 receipt_date: shopInfo.receipt_date,
+                receipt_image_url: shopInfo.receipt_image_url,
             };
 
             const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
@@ -426,10 +458,12 @@ export default function ReceiptDetailsScreen() {
                 headers.Authorization = `Bearer ${authToken}`;
             }
 
-            const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/transactions/`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(payload),
+            const response = await retryApiCall(async () => {
+                return await fetch(`${apiBaseUrl}/api/v1/settle-up/transactions/`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(payload),
+                });
             });
 
             if (response.ok) {

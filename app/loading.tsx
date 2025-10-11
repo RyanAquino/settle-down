@@ -47,7 +47,7 @@ export default function LoadingScreen() {
     }
   }, [fromLibrary]);
 
-  const uploadPhoto = useCallback(async (photoUri: string) => {
+  const uploadPhotoWithRetry = useCallback(async (photoUri: string, attempt = 1, maxAttempts = 3): Promise<void> => {
     try {
       const formData = new FormData();
       formData.append('file', {
@@ -67,10 +67,16 @@ export default function LoadingScreen() {
         headers.Authorization = `Bearer ${authToken}`;
       }
 
+      // Update status message for retry attempts
+      if (attempt > 1) {
+        setStatusMessage(`Retrying... (${attempt}/${maxAttempts})`);
+      }
+
       const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
         method: 'POST',
         body: formData,
         headers,
+        // Add timeout for serverless APIs
       });
 
       if (response.ok) {
@@ -82,13 +88,28 @@ export default function LoadingScreen() {
             data: JSON.stringify(data)
           }
         });
+        return;
       } else {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
     } catch {
-      await savePhotoAsFallback(photoUri);
+      if (attempt < maxAttempts) {
+        // Wait longer for each retry (exponential backoff)
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        setStatusMessage(`Retrying in ${delay / 1000}s...`);
+
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return uploadPhotoWithRetry(photoUri, attempt + 1, maxAttempts);
+      } else {
+        // All retries failed, fall back to saving photo
+        await savePhotoAsFallback(photoUri);
+      }
     }
-  }, [savePhotoAsFallback]);
+  }, [savePhotoAsFallback, setStatusMessage]);
+
+  const uploadPhoto = useCallback(async (photoUri: string) => {
+    await uploadPhotoWithRetry(photoUri);
+  }, [uploadPhotoWithRetry]);
 
   const handleLibraryPhotoOffline = useCallback(async () => {
     try {
