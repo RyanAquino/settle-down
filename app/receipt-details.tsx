@@ -97,6 +97,7 @@ export default function ReceiptDetailsScreen() {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [groupUsers, setGroupUsers] = useState<GroupUser[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+    const [groupsFetchAttempts, setGroupsFetchAttempts] = useState(0);
     const [userSelections, setUserSelections] = useState<{ [itemIndex: number]: string }>({});
     const [paidByUserId, setPaidByUserId] = useState<string>('');
     const [isSyncing, setIsSyncing] = useState(false);
@@ -189,10 +190,18 @@ export default function ReceiptDetailsScreen() {
         }
     }, []);
 
-    const fetchSettleUpGroups = useCallback(async () => {
+    const fetchSettleUpGroups = useCallback(async (isAutoRetry: boolean = false) => {
         const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
         setIsLoadingGroups(true);
         setGroupsError(null);
+
+        // Increment attempt counter for auto-retry tracking
+        if (isAutoRetry) {
+            setGroupsFetchAttempts(prev => prev + 1);
+        } else {
+            setGroupsFetchAttempts(1);
+        }
+
         try {
             const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
             const headers: { [key: string]: string } = {};
@@ -209,6 +218,8 @@ export default function ReceiptDetailsScreen() {
             if (response.ok) {
                 const data: SettleUpGroupsResponse = await response.json();
                 setGroups(data.items || []);
+                // Reset attempts on success
+                setGroupsFetchAttempts(0);
                 if (data.items && data.items.length > 0) {
                     // Set default selection to the last item
                     const lastGroupId = data.items[data.items.length - 1].id;
@@ -259,6 +270,22 @@ export default function ReceiptDetailsScreen() {
         fetchSettleUpGroups();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Auto-retry logic for fetching groups when error occurs
+    useEffect(() => {
+        const MAX_AUTO_RETRIES = 2; // After initial attempt, retry 2 more times
+
+        if (groupsError && groupsFetchAttempts > 0 && groupsFetchAttempts <= MAX_AUTO_RETRIES) {
+            // Calculate exponential backoff delay
+            const retryDelay = Math.min(1000 * Math.pow(2, groupsFetchAttempts - 1), 5000);
+
+            const retryTimer = setTimeout(() => {
+                fetchSettleUpGroups(true); // true indicates auto-retry
+            }, retryDelay);
+
+            return () => clearTimeout(retryTimer);
+        }
+    }, [groupsError, groupsFetchAttempts, fetchSettleUpGroups]);
 
 
     if (!receiptData) {
@@ -531,7 +558,7 @@ export default function ReceiptDetailsScreen() {
                         <View style={styles.inlineSection}>
                             <Text style={styles.inlineLabel}>Group:</Text>
                             {groupsError ? (
-                                <TouchableOpacity style={styles.miniRetryButton} onPress={fetchSettleUpGroups}>
+                                <TouchableOpacity style={styles.miniRetryButton} onPress={() => fetchSettleUpGroups(false)}>
                                     <Text style={styles.miniRetryText}>Retry</Text>
                                 </TouchableOpacity>
                             ) : isLoadingGroups ? (
