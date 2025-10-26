@@ -222,10 +222,10 @@ export default function ReceiptDetailsScreen() {
                 setGroupsFetchAttempts(0);
                 if (data.items && data.items.length > 0) {
                     // Set default selection to the last item
-                    const lastGroupId = data.items[data.items.length - 1].id;
-                    setSelectedGroupId(lastGroupId);
+                    const firstGroupId = data.items[0].id;
+                    setSelectedGroupId(firstGroupId);
                     // Fetch users for the default selected group
-                    fetchGroupUsers(lastGroupId);
+                    fetchGroupUsers(firstGroupId);
                 }
             } else {
                 throw new Error(`HTTP error! status: ${response.status}`);
