@@ -60,6 +60,7 @@ export default function LoadingScreen() {
       const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
 
       const headers: { [key: string]: string } = {
+        "ngrok-skip-browser-warning": "true",
         'Content-Type': 'multipart/form-data',
       };
 

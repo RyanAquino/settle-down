@@ -161,7 +161,9 @@ export default function ReceiptDetailsScreen() {
         setIsLoadingUsers(true);
         try {
             const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
-            const headers: { [key: string]: string } = {};
+            const headers: { [key: string]: string } = {
+                "ngrok-skip-browser-warning": "true"
+            };
 
             if (authToken) {
                 headers.Authorization = `Bearer ${authToken}`;
@@ -204,7 +206,9 @@ export default function ReceiptDetailsScreen() {
 
         try {
             const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
-            const headers: { [key: string]: string } = {};
+            const headers: { [key: string]: string } = {
+                "ngrok-skip-browser-warning": "true"
+            };
 
             if (authToken) {
                 headers.Authorization = `Bearer ${authToken}`;
@@ -478,6 +482,7 @@ export default function ReceiptDetailsScreen() {
             const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
             const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
             const headers: { [key: string]: string } = {
+                "ngrok-skip-browser-warning": "true",
                 'Content-Type': 'application/json',
             };
 
