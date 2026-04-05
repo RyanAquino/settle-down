@@ -16,6 +16,7 @@ import {useLocalSearchParams, router} from 'expo-router';
 import {useState, useEffect, useCallback, useMemo} from 'react';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import {clearPendingJob} from '../utils/jobStorage';
 
 // Generic retry utility for API calls
 async function retryApiCall<T>(
@@ -104,6 +105,9 @@ export default function ReceiptDetailsScreen() {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [costInputs, setCostInputs] = useState<{ [itemIndex: number]: string }>({});
     const [taxPercentageInput, setTaxPercentageInput] = useState<string | null>(null);
+    const [isLoadingJob, setIsLoadingJob] = useState(false);
+    const [jobError, setJobError] = useState<string | null>(null);
+    const [jobReceiptData, setJobReceiptData] = useState<ReceiptData | null>(null);
 
     const mockReceiptData: ReceiptData = {
         receipt_items: [
@@ -142,6 +146,11 @@ export default function ReceiptDetailsScreen() {
 
     // Parse receipt data or use mock data - memoized to prevent infinite loops
     const receiptData = useMemo((): ReceiptData | null => {
+        // Job-fetched data takes priority
+        if (jobReceiptData) {
+            return jobReceiptData;
+        }
+
         if (params.useMockData === 'true') {
             return mockReceiptData;
         }
@@ -152,7 +161,7 @@ export default function ReceiptDetailsScreen() {
             return null;
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [params.useMockData, params.data]);
+    }, [params.useMockData, params.data, jobReceiptData]);
 
     const fetchGroupUsers = useCallback(async (groupId: string) => {
         if (!groupId) return;
@@ -246,6 +255,8 @@ export default function ReceiptDetailsScreen() {
     // Initialize data when component mounts
     useEffect(() => {
         if (!receiptData) {
+            // Don't navigate back if we're loading from a job
+            if (params.jobId && (isLoadingJob || !jobError)) return;
             router.back();
             return;
         }
@@ -267,7 +278,57 @@ export default function ReceiptDetailsScreen() {
             receipt_date: new Date(receiptData.receipt_date),
             receipt_image_url: receiptData?.receipt_image_url || ''
         });
-    }, [receiptData]);
+    }, [receiptData, params.jobId, isLoadingJob, jobError]);
+
+    // Fetch job result if navigated via jobId (from push notification)
+    useEffect(() => {
+        const jobId = params.jobId as string | undefined;
+        if (!jobId) return;
+
+        const fetchJobResult = async () => {
+            setIsLoadingJob(true);
+            setJobError(null);
+
+            const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
+            const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
+            const headers: { [key: string]: string } = {
+                "ngrok-skip-browser-warning": "true",
+            };
+
+            if (authToken) {
+                headers.Authorization = `Bearer ${authToken}`;
+            }
+
+            try {
+                const response = await retryApiCall(async () => {
+                    return await fetch(`${apiBaseUrl}/api/v1/receipts/jobs/${jobId}/`, {
+                        headers,
+                    });
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.status === 'completed' && result.data) {
+                        setJobReceiptData(result.data);
+                        await clearPendingJob();
+                    } else if (result.status === 'failed') {
+                        setJobError(result.error || 'Receipt processing failed.');
+                        await clearPendingJob();
+                    } else {
+                        setJobError('Receipt is still processing. Please try again later.');
+                    }
+                } else {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+            } catch {
+                setJobError('Failed to load receipt data. Please try again.');
+            } finally {
+                setIsLoadingJob(false);
+            }
+        };
+
+        fetchJobResult();
+    }, [params.jobId]);
 
     // Fetch groups only once on mount
     useEffect(() => {
@@ -291,6 +352,26 @@ export default function ReceiptDetailsScreen() {
         }
     }, [groupsError, groupsFetchAttempts, fetchSettleUpGroups]);
 
+
+    if (isLoadingJob) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color="#007AFF" />
+                <Text style={[styles.errorText, { color: '#333', marginTop: 16 }]}>Loading receipt data...</Text>
+            </View>
+        );
+    }
+
+    if (jobError) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <Text style={styles.errorText}>{jobError}</Text>
+                <TouchableOpacity style={[styles.backButton, { marginTop: 16 }]} onPress={() => router.back()}>
+                    <Text style={styles.backButtonText}>Go Back</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
 
     if (!receiptData) {
         return (

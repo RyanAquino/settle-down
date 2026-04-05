@@ -4,20 +4,21 @@ import { useEffect, useState, useCallback } from 'react';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import * as MediaLibrary from 'expo-media-library';
+import { savePendingJob } from '../utils/jobStorage';
 
 export default function LoadingScreen() {
   const params = useLocalSearchParams();
   const photoUri = params.photoUri as string;
   const fromLibrary = params.fromLibrary === 'true';
   const [isOffline, setIsOffline] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('Processing Receipt');
+  const [statusMessage, setStatusMessage] = useState('Uploading Receipt');
 
-  const savePhotoAsFallback = useCallback(async (photoUri: string) => {
+  const savePhotoAsFallback = useCallback(async (uri: string) => {
     try {
       if (!fromLibrary) {
         const { status } = await MediaLibrary.requestPermissionsAsync();
         if (status === 'granted') {
-          await MediaLibrary.saveToLibraryAsync(photoUri);
+          await MediaLibrary.saveToLibraryAsync(uri);
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           router.replace({
             pathname: '/',
@@ -47,11 +48,11 @@ export default function LoadingScreen() {
     }
   }, [fromLibrary]);
 
-  const uploadPhotoWithRetry = useCallback(async (photoUri: string, attempt = 1, maxAttempts = 3): Promise<void> => {
+  const uploadPhotoWithRetry = useCallback(async (uri: string, attempt = 1, maxAttempts = 3): Promise<void> => {
     try {
       const formData = new FormData();
       formData.append('file', {
-        uri: photoUri,
+        uri,
         type: 'image/jpeg',
         name: 'receipt.jpg',
       } as any);
@@ -68,26 +69,31 @@ export default function LoadingScreen() {
         headers.Authorization = `Bearer ${authToken}`;
       }
 
-      // Update status message for retry attempts
       if (attempt > 1) {
         setStatusMessage(`Retrying... (${attempt}/${maxAttempts})`);
       }
 
-      const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
+      const response = await fetch(`${apiBaseUrl}/api/v1/receipts/async-receipt-items/`, {
         method: 'POST',
         body: formData,
         headers,
-        // Add timeout for serverless APIs
       });
 
       if (response.ok) {
         const data = await response.json();
+        const jobId = data.job_id as string;
+
+        // Persist the job ID so it survives app kill
+        await savePendingJob(jobId);
+
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+        // Navigate back to camera with confirmation toast
         router.replace({
-          pathname: '/receipt-details',
+          pathname: '/',
           params: {
-            data: JSON.stringify(data)
-          }
+            message: 'Receipt uploaded! We\'ll notify you when it\'s ready.',
+          },
         });
         return;
       } else {
@@ -95,21 +101,19 @@ export default function LoadingScreen() {
       }
     } catch {
       if (attempt < maxAttempts) {
-        // Wait longer for each retry (exponential backoff)
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
         setStatusMessage(`Retrying in ${delay / 1000}s...`);
 
         await new Promise(resolve => setTimeout(resolve, delay));
-        return uploadPhotoWithRetry(photoUri, attempt + 1, maxAttempts);
+        return uploadPhotoWithRetry(uri, attempt + 1, maxAttempts);
       } else {
-        // All retries failed, fall back to saving photo
-        await savePhotoAsFallback(photoUri);
+        await savePhotoAsFallback(uri);
       }
     }
-  }, [savePhotoAsFallback, setStatusMessage]);
+  }, [savePhotoAsFallback]);
 
-  const uploadPhoto = useCallback(async (photoUri: string) => {
-    await uploadPhotoWithRetry(photoUri);
+  const uploadPhoto = useCallback(async (uri: string) => {
+    await uploadPhotoWithRetry(uri);
   }, [uploadPhotoWithRetry]);
 
   const handleLibraryPhotoOffline = useCallback(async () => {
@@ -134,14 +138,14 @@ export default function LoadingScreen() {
     }
   }, []);
 
-  const saveCameraPhotoToLibrary = useCallback(async (photoUri: string) => {
+  const saveCameraPhotoToLibrary = useCallback(async (uri: string) => {
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') {
         throw new Error('Media library permission denied');
       }
 
-      await MediaLibrary.saveToLibraryAsync(photoUri);
+      await MediaLibrary.saveToLibraryAsync(uri);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       setTimeout(() => {
@@ -163,30 +167,30 @@ export default function LoadingScreen() {
     }
   }, []);
 
-  const handleOfflinePhoto = useCallback(async (photoUri: string) => {
+  const handleOfflinePhoto = useCallback(async (uri: string) => {
     if (fromLibrary) {
       await handleLibraryPhotoOffline();
     } else {
-      await saveCameraPhotoToLibrary(photoUri);
+      await saveCameraPhotoToLibrary(uri);
     }
   }, [fromLibrary, handleLibraryPhotoOffline, saveCameraPhotoToLibrary]);
 
-  const checkConnectivityAndProcess = useCallback(async (photoUri: string) => {
+  const checkConnectivityAndProcess = useCallback(async (uri: string) => {
     try {
       const netInfoState = await NetInfo.fetch();
       const isConnected = netInfoState.isConnected === true;
 
       if (isConnected) {
-        await uploadPhoto(photoUri);
+        await uploadPhoto(uri);
       } else {
         setIsOffline(true);
         setStatusMessage('No Internet Connection');
-        await handleOfflinePhoto(photoUri);
+        await handleOfflinePhoto(uri);
       }
     } catch {
       setIsOffline(true);
       setStatusMessage('Network Check Failed');
-      await handleOfflinePhoto(photoUri);
+      await handleOfflinePhoto(uri);
     }
   }, [uploadPhoto, handleOfflinePhoto]);
 
@@ -204,7 +208,7 @@ export default function LoadingScreen() {
         <Text style={styles.subtitle}>
           {isOffline
             ? "Saving photo to device storage..."
-            : "Analyzing your receipt image..."
+            : "Sending your receipt for processing..."
           }
         </Text>
 
@@ -218,8 +222,8 @@ export default function LoadingScreen() {
               </>
             ) : (
               <>
-                <Text style={styles.stepText}>🔍 Extracting text...</Text>
-                <Text style={styles.stepText}>📋 Processing items...</Text>
+                <Text style={styles.stepText}>📤 Uploading image...</Text>
+                <Text style={styles.stepText}>🔔 We&apos;ll notify you when ready</Text>
               </>
             )}
           </View>
