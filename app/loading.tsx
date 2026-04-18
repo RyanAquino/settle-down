@@ -1,116 +1,126 @@
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Image, Animated, Easing } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import * as MediaLibrary from 'expo-media-library';
+import { theme } from '../utils/theme';
+
+type StepState = 'pending' | 'active' | 'done';
 
 export default function LoadingScreen() {
   const params = useLocalSearchParams();
   const photoUri = params.photoUri as string;
   const fromLibrary = params.fromLibrary === 'true';
   const [isOffline, setIsOffline] = useState(false);
-  const [statusMessage, setStatusMessage] = useState('Processing Receipt');
+  const [statusMessage, setStatusMessage] = useState('Reading receipt');
+  const [statusDetail, setStatusDetail] = useState('Extracting items and amounts');
+  const [steps, setSteps] = useState<{ label: string; state: StepState }[]>([
+    { label: 'Capture', state: 'done' },
+    { label: 'Read', state: 'active' },
+    { label: 'Assign', state: 'pending' },
+  ]);
 
-  const savePhotoAsFallback = useCallback(async (photoUri: string) => {
-    try {
-      if (!fromLibrary) {
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status === 'granted') {
-          await MediaLibrary.saveToLibraryAsync(photoUri);
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          router.replace({
-            pathname: '/',
-            params: {
-              message: 'Upload failed. Photo saved to your photo library.',
-            },
-          });
+  // scanning beam animation — sweeps top to bottom and back
+  const beam = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (isOffline) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(beam, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(beam, { toValue: 0, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [beam, isOffline]);
+
+  // advance "Read" → "Assign" on a timer so the user sees motion
+  const tickRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (isOffline) return;
+    tickRef.current = setTimeout(() => {
+      setSteps((s) =>
+        s.map((st, i) => (i === 1 ? { ...st, state: 'done' } : i === 2 ? { ...st, state: 'active' } : st)),
+      );
+    }, 1400);
+    return () => {
+      if (tickRef.current) clearTimeout(tickRef.current);
+    };
+  }, [isOffline]);
+
+  const savePhotoAsFallback = useCallback(
+    async (photoUri: string) => {
+      try {
+        if (!fromLibrary) {
+          const { status } = await MediaLibrary.requestPermissionsAsync();
+          if (status === 'granted') {
+            await MediaLibrary.saveToLibraryAsync(photoUri);
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            router.replace({
+              pathname: '/',
+              params: { message: 'Upload failed. Photo saved to your photo library.' },
+            });
+            return;
+          }
+        }
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        router.replace({ pathname: '/', params: { error: 'Upload failed. Please try again.' } });
+      } catch {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        router.replace({ pathname: '/', params: { error: 'Upload failed. Unable to save photo.' } });
+      }
+    },
+    [fromLibrary],
+  );
+
+  const uploadPhotoWithRetry = useCallback(
+    async (photoUri: string, attempt = 1, maxAttempts = 3): Promise<void> => {
+      try {
+        const formData = new FormData();
+        formData.append('file', { uri: photoUri, type: 'image/jpeg', name: 'receipt.jpg' } as any);
+
+        const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+        const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
+        const headers: { [key: string]: string } = {
+          'ngrok-skip-browser-warning': 'true',
+          'Content-Type': 'multipart/form-data',
+        };
+        if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+        if (attempt > 1) {
+          setStatusMessage(`Retrying · attempt ${attempt} of ${maxAttempts}`);
+          setStatusDetail('Network took a pause. Hang tight.');
+        }
+
+        const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
+          method: 'POST',
+          body: formData,
+          headers,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          router.replace({ pathname: '/receipt-details', params: { data: JSON.stringify(data) } });
           return;
         }
-      }
-
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      router.replace({
-        pathname: '/',
-        params: {
-          error: 'Upload failed. Please try again.',
-        },
-      });
-    } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      router.replace({
-        pathname: '/',
-        params: {
-          error: 'Upload failed. Unable to save photo.',
-        },
-      });
-    }
-  }, [fromLibrary]);
-
-  const uploadPhotoWithRetry = useCallback(async (photoUri: string, attempt = 1, maxAttempts = 3): Promise<void> => {
-    try {
-      const formData = new FormData();
-      formData.append('file', {
-        uri: photoUri,
-        type: 'image/jpeg',
-        name: 'receipt.jpg',
-      } as any);
-
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
-      const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
-
-      const headers: { [key: string]: string } = {
-        "ngrok-skip-browser-warning": "true",
-        'Content-Type': 'multipart/form-data',
-      };
-
-      if (authToken) {
-        headers.Authorization = `Bearer ${authToken}`;
-      }
-
-      // Update status message for retry attempts
-      if (attempt > 1) {
-        setStatusMessage(`Retrying... (${attempt}/${maxAttempts})`);
-      }
-
-      const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
-        method: 'POST',
-        body: formData,
-        headers,
-        // Add timeout for serverless APIs
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.replace({
-          pathname: '/receipt-details',
-          params: {
-            data: JSON.stringify(data)
-          }
-        });
-        return;
-      } else {
         throw new Error(`HTTP error! status: ${response.status}`);
-      }
-    } catch {
-      if (attempt < maxAttempts) {
-        // Wait longer for each retry (exponential backoff)
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-        setStatusMessage(`Retrying in ${delay / 1000}s...`);
-
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return uploadPhotoWithRetry(photoUri, attempt + 1, maxAttempts);
-      } else {
-        // All retries failed, fall back to saving photo
+      } catch {
+        if (attempt < maxAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          setStatusMessage(`Retrying in ${delay / 1000}s`);
+          setStatusDetail('We\u2019ll try a couple more times before giving up.');
+          await new Promise((r) => setTimeout(r, delay));
+          return uploadPhotoWithRetry(photoUri, attempt + 1, maxAttempts);
+        }
         await savePhotoAsFallback(photoUri);
       }
-    }
-  }, [savePhotoAsFallback, setStatusMessage]);
+    },
+    [savePhotoAsFallback],
+  );
 
-  const uploadPhoto = useCallback(async (photoUri: string) => {
-    await uploadPhotoWithRetry(photoUri);
-  }, [uploadPhotoWithRetry]);
+  const uploadPhoto = useCallback(async (uri: string) => uploadPhotoWithRetry(uri), [uploadPhotoWithRetry]);
 
   const handleLibraryPhotoOffline = useCallback(async () => {
     try {
@@ -118,113 +128,151 @@ export default function LoadingScreen() {
       setTimeout(() => {
         router.replace({
           pathname: '/',
-          params: {
-            message: 'Internet connection required to process photos from your library.',
-          },
+          params: { message: 'Internet connection required to process photos from your library.' },
         });
-      }, 2000);
+      }, 1800);
     } catch {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      router.replace({
-        pathname: '/',
-        params: {
-          error: 'Unable to process photo.',
-        },
-      });
+      router.replace({ pathname: '/', params: { error: 'Unable to process photo.' } });
     }
   }, []);
 
   const saveCameraPhotoToLibrary = useCallback(async (photoUri: string) => {
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        throw new Error('Media library permission denied');
-      }
-
+      if (status !== 'granted') throw new Error('Media library permission denied');
       await MediaLibrary.saveToLibraryAsync(photoUri);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
       setTimeout(() => {
-        router.replace({
-          pathname: '/',
-          params: {
-            message: 'Photo saved to your photo library.',
-          },
-        });
-      }, 2000);
+        router.replace({ pathname: '/', params: { message: 'Photo saved to your photo library.' } });
+      }, 1800);
     } catch {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      router.replace({
-        pathname: '/',
-        params: {
-          error: 'Failed to save photo to library.',
-        },
-      });
+      router.replace({ pathname: '/', params: { error: 'Failed to save photo to library.' } });
     }
   }, []);
 
-  const handleOfflinePhoto = useCallback(async (photoUri: string) => {
-    if (fromLibrary) {
-      await handleLibraryPhotoOffline();
-    } else {
-      await saveCameraPhotoToLibrary(photoUri);
-    }
-  }, [fromLibrary, handleLibraryPhotoOffline, saveCameraPhotoToLibrary]);
+  const handleOfflinePhoto = useCallback(
+    async (photoUri: string) => {
+      if (fromLibrary) await handleLibraryPhotoOffline();
+      else await saveCameraPhotoToLibrary(photoUri);
+    },
+    [fromLibrary, handleLibraryPhotoOffline, saveCameraPhotoToLibrary],
+  );
 
-  const checkConnectivityAndProcess = useCallback(async (photoUri: string) => {
-    try {
-      const netInfoState = await NetInfo.fetch();
-      const isConnected = netInfoState.isConnected === true;
-
-      if (isConnected) {
-        await uploadPhoto(photoUri);
-      } else {
+  const checkConnectivityAndProcess = useCallback(
+    async (uri: string) => {
+      try {
+        const netInfoState = await NetInfo.fetch();
+        const isConnected = netInfoState.isConnected === true;
+        if (isConnected) {
+          await uploadPhoto(uri);
+        } else {
+          setIsOffline(true);
+          setStatusMessage('You\u2019re offline');
+          setStatusDetail(
+            fromLibrary
+              ? 'Come back when you\u2019re online to scan this one.'
+              : 'Saving the photo. We\u2019ll process it next time you\u2019re online.',
+          );
+          await handleOfflinePhoto(uri);
+        }
+      } catch {
         setIsOffline(true);
-        setStatusMessage('No Internet Connection');
-        await handleOfflinePhoto(photoUri);
+        setStatusMessage('Network check failed');
+        setStatusDetail('Falling back to offline mode.');
+        await handleOfflinePhoto(uri);
       }
-    } catch {
-      setIsOffline(true);
-      setStatusMessage('Network Check Failed');
-      await handleOfflinePhoto(photoUri);
-    }
-  }, [uploadPhoto, handleOfflinePhoto]);
+    },
+    [uploadPhoto, handleOfflinePhoto, fromLibrary],
+  );
 
   useEffect(() => {
-    if (photoUri) {
-      checkConnectivityAndProcess(photoUri);
-    }
+    if (photoUri) checkConnectivityAndProcess(photoUri);
   }, [photoUri, checkConnectivityAndProcess]);
+
+  // beam translateY: 0 → photoHeight, within the card
+  const PHOTO_H = 260;
+  const beamY = beam.interpolate({ inputRange: [0, 1], outputRange: [0, PHOTO_H - 2] });
+  const beamOpacity = isOffline ? 0 : 1;
 
   return (
     <View style={styles.container}>
       <View style={styles.content}>
-        <ActivityIndicator size="large" color={isOffline ? "#FF6B6B" : "#007AFF"} />
-        <Text style={styles.title}>{statusMessage}</Text>
-        <Text style={styles.subtitle}>
-          {isOffline
-            ? "Saving photo to device storage..."
-            : "Analyzing your receipt image..."
-          }
-        </Text>
-
-        <View style={styles.progressContainer}>
-          <View style={styles.progressSteps}>
-            <Text style={styles.stepText}>📸 Photo captured</Text>
-            {isOffline ? (
-              <>
-                <Text style={styles.stepText}>💾 Saving offline...</Text>
-                <Text style={styles.stepText}>🔄 Will sync when online</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.stepText}>🔍 Extracting text...</Text>
-                <Text style={styles.stepText}>📋 Processing items...</Text>
-              </>
-            )}
-          </View>
+        {/* Photo card — polaroid style with scan beam */}
+        <View style={[styles.photoCard, { height: PHOTO_H }]}>
+          {photoUri ? (
+            <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+          ) : (
+            <View style={[styles.photo, styles.photoPlaceholder]} />
+          )}
+          {/* scan beam overlay */}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.beam,
+              {
+                opacity: beamOpacity,
+                transform: [{ translateY: beamY }],
+              },
+            ]}
+          />
+          {/* subtle top tint that follows the beam */}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.beamTint,
+              {
+                opacity: beamOpacity,
+                transform: [{ translateY: beamY }],
+              },
+            ]}
+          />
         </View>
+
+        <Text style={styles.title}>{statusMessage}</Text>
+        <Text style={styles.subtitle}>{statusDetail}</Text>
+
+        {/* 3-step progress */}
+        <View style={styles.steps}>
+          {steps.map((s, i) => (
+            <StepItem
+              key={i}
+              label={s.label}
+              state={isOffline ? 'pending' : s.state}
+              isLast={i === steps.length - 1}
+            />
+          ))}
+        </View>
+
+        {isOffline && <Text style={styles.offlineNote}>Saving offline</Text>}
       </View>
+    </View>
+  );
+}
+
+function StepItem({ label, state, isLast }: { label: string; state: StepState; isLast: boolean }) {
+  return (
+    <View style={styles.stepItem}>
+      <View style={styles.stepDotWrap}>
+        <View
+          style={[
+            styles.stepDot,
+            state === 'done' && styles.stepDotDone,
+            state === 'active' && styles.stepDotActive,
+          ]}
+        />
+        {!isLast && <View style={styles.stepConnector} />}
+      </View>
+      <Text
+        style={[
+          styles.stepLabel,
+          state === 'pending' && styles.stepLabelPending,
+          state === 'active' && styles.stepLabelActive,
+        ]}
+      >
+        {label}
+      </Text>
     </View>
   );
 }
@@ -232,47 +280,126 @@ export default function LoadingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: theme.bg,
     justifyContent: 'center',
     alignItems: 'center',
   },
   content: {
     alignItems: 'center',
     paddingHorizontal: 40,
+    width: '100%',
+    maxWidth: 420,
+  },
+  photoCard: {
+    width: 200,
+    backgroundColor: '#fff',
+    borderRadius: 4,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.12,
+    shadowRadius: 28,
+    elevation: 10,
+    marginBottom: 36,
+  },
+  photo: {
+    width: '100%',
+    height: '100%',
+  },
+  photoPlaceholder: {
+    backgroundColor: theme.surfaceAlt,
+  },
+  beam: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 2,
+    backgroundColor: theme.accent,
+    shadowColor: theme.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  beamTint: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -60,
+    height: 60,
+    backgroundColor: 'rgba(59,59,232,0.10)',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 30,
-    marginBottom: 10,
+    fontSize: 22,
+    fontWeight: '600',
+    color: theme.ink,
+    letterSpacing: -0.4,
+    textAlign: 'center',
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 14,
+    color: theme.inkMuted,
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 28,
+    lineHeight: 20,
   },
-  progressContainer: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  progressSteps: {
+
+  // 3-dot horizontal stepper
+  steps: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'flex-start',
+    gap: 36,
   },
-  stepText: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 12,
-    paddingLeft: 10,
+  stepItem: {
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 56,
+  },
+  stepDotWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.border,
+  },
+  stepDotDone: {
+    backgroundColor: theme.ink,
+  },
+  stepDotActive: {
+    backgroundColor: theme.accent,
+    shadowColor: theme.accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+  },
+  stepConnector: {
+    display: 'none', // dots-only; spacing via gap
+  },
+  stepLabel: {
+    fontSize: 12,
+    color: theme.ink,
+    fontWeight: '600',
+    letterSpacing: -0.1,
+  },
+  stepLabelPending: {
+    color: theme.inkFaint,
+    fontWeight: '500',
+  },
+  stepLabelActive: {
+    color: theme.ink,
+    fontWeight: '600',
+  },
+
+  offlineNote: {
+    marginTop: 24,
+    fontSize: 13,
+    color: theme.warn,
+    fontWeight: '500',
   },
 });
