@@ -79,11 +79,11 @@ export default function ReceiptDetailsScreen() {
     const [groupUsers, setGroupUsers] = useState<GroupUser[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
     const [groupsFetchAttempts, setGroupsFetchAttempts] = useState(0);
-    const [userSelections, setUserSelections] = useState<{ [itemIndex: number]: string }>({});
+    const [userSelections, setUserSelections] = useState<{ [itemOrder: number]: string }>({});
     const [paidByUserId, setPaidByUserId] = useState<string>('');
     const [isSyncing, setIsSyncing] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
-    const [costInputs, setCostInputs] = useState<{ [itemIndex: number]: string }>({});
+    const [costInputs, setCostInputs] = useState<{ [itemOrder: number]: string }>({});
     const [taxPercentageInput, setTaxPercentageInput] = useState<string | null>(null);
 
     // Drives the thin "items assigned" progress bar in the Items header.
@@ -169,11 +169,14 @@ export default function ReceiptDetailsScreen() {
     // -------- init --------
     useEffect(() => {
         if (!receiptData) { router.back(); return; }
-        setEditableItems([...receiptData.receipt_items]);
+        // Sort by item_order once here so display order is stable; per-item state
+        // (userSelections, costInputs, React keys) is keyed by item_order, not array index.
+        const sortedItems = [...receiptData.receipt_items].sort((a, b) => a.item_order - b.item_order);
+        setEditableItems(sortedItems);
         setEditableTaxPercentage(receiptData.tax_percentage);
         setTaxPercentageInput(receiptData.tax_percentage.toString());
-        const initialCostInputs: { [i: number]: string } = {};
-        receiptData.receipt_items.forEach((item, index) => { initialCostInputs[index] = item.cost.toString(); });
+        const initialCostInputs: { [itemOrder: number]: string } = {};
+        sortedItems.forEach((item) => { initialCostInputs[item.item_order] = item.cost.toString(); });
         setCostInputs(initialCostInputs);
         setShopInfo({
             en_shop_name: receiptData.en_shop_name,
@@ -228,15 +231,15 @@ export default function ReceiptDetailsScreen() {
     }
 
     // -------- handlers --------
-    const updateItemCost = (index: number, cost: string) => {
-        setCostInputs((p) => ({ ...p, [index]: cost }));
+    const updateItemCost = (itemOrder: number, cost: string) => {
+        setCostInputs((p) => ({ ...p, [itemOrder]: cost }));
         const parsed = cost === '' ? 0 : parseFloat(cost);
         const next = Math.max(0, isNaN(parsed) ? 0 : parsed);
-        // Immutable update: new object for the edited row (mutating the existing
-        // one in place would break per-row memoization); functional updater avoids
-        // a stale `editableItems` closure.
+        // Immutable update keyed by item_order (the item's stable identity), not array
+        // index — mutating in place would break per-row memoization, and the functional
+        // updater avoids a stale `editableItems` closure.
         setEditableItems((prev) =>
-            prev.map((it, i) => (i === index ? { ...it, cost: next } : it)),
+            prev.map((it) => (it.item_order === itemOrder ? { ...it, cost: next } : it)),
         );
     };
     // `cost` from the API is the line total (already accounts for quantity), so we
@@ -257,8 +260,8 @@ export default function ReceiptDetailsScreen() {
     const formatTime = (d: Date) =>
         d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-    const handleUserSelection = (itemIndex: number, userId: string) => {
-        setUserSelections((p) => ({ ...p, [itemIndex]: userId }));
+    const handleUserSelection = (itemOrder: number, userId: string) => {
+        setUserSelections((p) => ({ ...p, [itemOrder]: userId }));
     };
     const getSelectedGroupName = () =>
         groups.find((g) => g.id === selectedGroupId)?.name || 'Select group';
@@ -273,7 +276,7 @@ export default function ReceiptDetailsScreen() {
     const syncTransaction = async () => {
         if (!selectedGroupId) return Alert.alert('Pick a group', 'Please select a settle-up group.');
         if (!paidByUserId) return Alert.alert('Who paid?', 'Please select who paid for this receipt.');
-        const unassigned = editableItems.filter((_, i) => !userSelections[i]);
+        const unassigned = editableItems.filter((item) => !userSelections[item.item_order]);
         if (unassigned.length > 0)
             return Alert.alert('Assign every item', 'Tap a person on each item, or mark it shared.');
 
@@ -290,8 +293,8 @@ export default function ReceiptDetailsScreen() {
             const splitReceiptItems: number[] = [];
             const userTotals = uniqueUserIds.reduce((acc, id) => { acc[id] = 0; return acc; }, {} as { [id: string]: number });
 
-            editableItems.forEach((item, index) => {
-                const assigned = userSelections[index];
+            editableItems.forEach((item) => {
+                const assigned = userSelections[item.item_order];
                 const total = item.cost; // line total from the API; do not multiply by quantity
                 if (assigned === 'shared') splitReceiptItems.push(total);
                 else if (assigned) userTotals[assigned] += total;
@@ -492,12 +495,10 @@ export default function ReceiptDetailsScreen() {
 
                 <Entrance delay={250} style={styles.itemsCard}>
                     {editableItems
-                        .slice()
-                        .sort((a, b) => a.item_order - b.item_order)
                         .map((item, index) => {
-                            const assigned = userSelections[index];
+                            const assigned = userSelections[item.item_order];
                             return (
-                                <View key={index} style={[styles.itemRow, index > 0 && styles.itemRowDivider]}>
+                                <View key={item.item_order} style={[styles.itemRow, index > 0 && styles.itemRowDivider]}>
                                     {/* Name + JP secondary */}
                                     <View style={styles.itemNameWrap}>
                                         <Text style={styles.itemName} numberOfLines={1}>
@@ -520,8 +521,8 @@ export default function ReceiptDetailsScreen() {
                                             <Text style={styles.priceSymbol}>¥</Text>
                                             <TextInput
                                                 style={styles.priceInput}
-                                                value={costInputs.hasOwnProperty(index) ? costInputs[index] : item.cost.toString()}
-                                                onChangeText={(t) => updateItemCost(index, t)}
+                                                value={costInputs.hasOwnProperty(item.item_order) ? costInputs[item.item_order] : item.cost.toString()}
+                                                onChangeText={(t) => updateItemCost(item.item_order, t)}
                                                 keyboardType="decimal-pad"
                                                 placeholder="0"
                                                 placeholderTextColor={theme.inkFaint}
@@ -543,7 +544,7 @@ export default function ReceiptDetailsScreen() {
                                                             styles.assignChip,
                                                             selected && { backgroundColor: c, borderColor: c },
                                                         ]}
-                                                        onPress={() => handleUserSelection(index, u.id)}
+                                                        onPress={() => handleUserSelection(item.item_order, u.id)}
                                                         accessibilityLabel={`Assign to ${u.name}`}
                                                     >
                                                         <View
@@ -571,7 +572,7 @@ export default function ReceiptDetailsScreen() {
                                                     styles.sharedChip,
                                                     assigned === 'shared' && styles.sharedChipSelected,
                                                 ]}
-                                                onPress={() => handleUserSelection(index, 'shared')}
+                                                onPress={() => handleUserSelection(item.item_order, 'shared')}
                                                 accessibilityLabel="Mark item as shared"
                                             >
                                                 <View style={styles.sharedGlyph}>
