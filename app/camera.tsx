@@ -1,79 +1,67 @@
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { useState, useRef, useEffect } from 'react';
-import { Button, StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { theme } from '../utils/theme';
 
 export default function CameraScreen() {
   const [facing] = useState<CameraType>('back');
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
-    // Show success message if photo was saved offline
-    if (params.message) {
-      Alert.alert('Success', params.message as string);
-    }
-
-    // Show error message if saving failed
-    if (params.error) {
-      Alert.alert('Error', params.error as string);
-    }
+    if (params.message) Alert.alert('Saved', params.message as string);
+    if (params.error) Alert.alert('Error', params.error as string);
   }, [params.message, params.error]);
 
-  if (!permission) {
-    return <View />;
-  }
+  if (!permission) return <View style={styles.container} />;
 
   if (!permission.granted) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.message}>We need your permission to show the camera</Text>
-        <Button onPress={requestPermission} title="Grant permission" />
+      <View style={[styles.container, styles.permissionWrap]}>
+        <Text style={styles.permissionTitle}>Camera access</Text>
+        <Text style={styles.permissionBody}>
+          Settle Down needs your camera to read receipts.
+        </Text>
+        <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
+          <Text style={styles.permissionBtnText}>Allow camera</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-
   const takePicture = async () => {
-    if (cameraRef.current) {
-      try {
-        const photo = await cameraRef.current.takePictureAsync({
-          quality: 1,
-          base64: false,
-          skipProcessing: true,
-          shutterSound: false,
-        });
-
-        if (photo?.uri) {
-          // Navigate to loading page with photo URI
-          router.push({
-            pathname: '/loading',
-            params: {
-              photoUri: photo.uri
-            }
-          });
-        }
-      } catch {
-        // Failed to take picture
-        Alert.alert('Error', 'Failed to take picture. Please try again.');
+    if (!cameraRef.current) return;
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 1,
+        base64: false,
+        skipProcessing: true,
+        shutterSound: false,
+      });
+      if (photo?.uri) {
+        router.push({ pathname: '/loading', params: { photoUri: photo.uri } });
       }
+    } catch {
+      Alert.alert('Error', 'Failed to take picture. Please try again.');
     }
   };
 
   const pickFromLibrary = async () => {
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
       if (permissionResult.status !== 'granted') {
         Alert.alert(
-          'Permission Required',
-          'This app needs access to your photo library to select images. Please enable photo library access in your device settings.',
+          'Permission required',
+          'Settle Down needs access to your photo library.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => ImagePicker.requestMediaLibraryPermissionsAsync() }
-          ]
+            { text: 'Open settings', onPress: () => ImagePicker.requestMediaLibraryPermissionsAsync() },
+          ],
         );
         return;
       }
@@ -86,14 +74,9 @@ export default function CameraScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        const photoUri = result.assets[0].uri;
-
         router.push({
           pathname: '/loading',
-          params: {
-            photoUri: photoUri,
-            fromLibrary: 'true'
-          }
+          params: { photoUri: result.assets[0].uri, fromLibrary: 'true' },
         });
       }
     } catch {
@@ -112,86 +95,176 @@ export default function CameraScreen() {
         videoQuality="4:3"
         ratio="4:3"
       />
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity
-          style={styles.libraryButton}
-          onPress={pickFromLibrary}
-        >
-          <Text style={styles.libraryButtonText}>📷</Text>
+
+      {/* Top hint — subtle */}
+      <View style={[styles.topHint, { top: insets.top + 12 }]}>
+        <Text style={styles.topHintText}>Point at a receipt</Text>
+      </View>
+
+      {/* Framing guides */}
+      <View pointerEvents="none" style={styles.guides}>
+        <View style={[styles.corner, styles.cornerTL]} />
+        <View style={[styles.corner, styles.cornerTR]} />
+        <View style={[styles.corner, styles.cornerBL]} />
+        <View style={[styles.corner, styles.cornerBR]} />
+      </View>
+
+      {/* Bottom controls */}
+      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 24) + 8 }]}>
+        <TouchableOpacity style={styles.sideBtn} onPress={pickFromLibrary} accessibilityLabel="Pick from library">
+          <View style={styles.sideBtnIcon}>
+            <View style={styles.libraryBack} />
+            <View style={styles.libraryFront} />
+          </View>
+          <Text style={styles.sideBtnLabel}>Library</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.captureButton}
-          onPress={takePicture}
-        >
-          <View style={styles.captureButtonInner} />
+        <TouchableOpacity style={styles.shutter} onPress={takePicture} accessibilityLabel="Capture receipt">
+          <View style={styles.shutterInner} />
         </TouchableOpacity>
 
-        <View style={styles.spacer} />
+        <View style={styles.sideBtn}>
+          {/* placeholder spacer so shutter stays centered */}
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
+  container: { flex: 1, backgroundColor: '#000' },
+  camera: { flex: 1 },
+
+  topHint: {
+    position: 'absolute',
+    alignSelf: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
-  message: {
-    textAlign: 'center',
-    paddingBottom: 10,
+  topHintText: {
+    color: '#fff',
+    fontSize: 13,
+    letterSpacing: 0.2,
+    fontWeight: '500',
   },
-  camera: {
-    flex: 1,
+
+  guides: {
+    position: 'absolute',
+    top: '18%',
+    bottom: '28%',
+    left: 28,
+    right: 28,
   },
-  buttonContainer: {
+  corner: {
+    position: 'absolute',
+    width: 22,
+    height: 22,
+    borderColor: 'rgba(255,255,255,0.85)',
+  },
+  cornerTL: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2, borderTopLeftRadius: 4 },
+  cornerTR: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2, borderTopRightRadius: 4 },
+  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2, borderBottomLeftRadius: 4 },
+  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2, borderBottomRightRadius: 4 },
+
+  bottomBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'transparent',
+    paddingTop: 18,
+    paddingHorizontal: 36,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 50,
-    paddingBottom: 50,
-    height: 150,
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
-  captureButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+
+  sideBtn: {
+    width: 72,
+    alignItems: 'center',
+  },
+  sideBtnIcon: {
+    width: 32,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  libraryBack: {
+    position: 'absolute',
+    top: 0,
+    left: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.6)',
+  },
+  libraryFront: {
+    position: 'absolute',
+    bottom: 0,
+    right: 2,
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  sideBtnLabel: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 11,
+    letterSpacing: 0.3,
+    fontWeight: '500',
+  },
+
+  shutter: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
     borderWidth: 3,
-    borderColor: 'white',
+    borderColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  captureButtonInner: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'white',
+  shutterInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#fff',
   },
-  text: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  libraryButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+
+  // permission state
+  permissionWrap: {
+    backgroundColor: theme.bg,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 32,
   },
-  libraryButtonText: {
-    fontSize: 24,
+  permissionTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: theme.ink,
+    marginBottom: 8,
   },
-  spacer: {
-    width: 50,
-    height: 50,
+  permissionBody: {
+    fontSize: 15,
+    color: theme.inkMuted,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  permissionBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 999,
+    backgroundColor: theme.ink,
+  },
+  permissionBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

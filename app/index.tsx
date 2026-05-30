@@ -10,10 +10,8 @@ export default function Index() {
   useFocusEffect(
     useCallback(() => {
       setIsFocused(true);
-      return () => {
-        setIsFocused(false);
-      };
-    }, [])
+      return () => { setIsFocused(false); };
+    }, []),
   );
 
   return (
@@ -23,12 +21,11 @@ export default function Index() {
         <View style={styles.debugOverlay}>
           <TouchableOpacity
             style={styles.debugButton}
-            onPress={() => router.push({
-              pathname: '/receipt-details',
-              params: { useMockData: 'true' }
-            })}
+            onPress={() =>
+              router.push({ pathname: '/receipt-details', params: { useMockData: 'true' } })
+            }
           >
-            <Text style={styles.debugButtonText}>Skip to Receipt Details</Text>
+            <Text style={styles.debugButtonText}>Skip to Receipt</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -37,24 +34,13 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  debugOverlay: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    zIndex: 1000,
-  },
+  container: { flex: 1, backgroundColor: '#000' },
+  debugOverlay: { position: 'absolute', top: 60, right: 16, zIndex: 1000 },
   debugButton: {
-    backgroundColor: 'rgba(0, 122, 255, 0.9)',
-    paddingHorizontal: 16,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 999,
   },
-  debugButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  debugButtonText: { color: '#0B0B0F', fontSize: 13, fontWeight: '600', letterSpacing: -0.1 },
 });
