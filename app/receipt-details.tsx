@@ -94,11 +94,12 @@ export default function ReceiptDetailsScreen() {
             { english_name: 'Cranberry juice', japanese_name: 'クランベリー', item_order: 1, cost: 169, quantity: 1, discount: 0 },
             { english_name: 'MST shake', japanese_name: 'MSTシェイク', item_order: 2, cost: 159, quantity: 1, discount: 0 },
             { english_name: 'Cheese risotto', japanese_name: 'チーズリゾット', item_order: 3, cost: 129, quantity: 1, discount: 0 },
+            { english_name: 'Onigiri', japanese_name: 'おにぎり', item_order: 4, cost: 240, quantity: 2, discount: 0 },
         ],
         en_shop_name: 'My Basket',
         jp_shop_name: 'ラドーム',
         tax_percentage: 8,
-        total_amount: 493,
+        total_amount: 753,
         receipt_date: new Date(),
         receipt_image_url: 'https://example.com/mock-receipt-image.jpg',
     };
@@ -227,11 +228,6 @@ export default function ReceiptDetailsScreen() {
     }
 
     // -------- handlers --------
-    const updateItemQuantity = (index: number, quantity: string) => {
-        const newItems = [...editableItems];
-        newItems[index].quantity = Math.max(0, parseInt(quantity) || 0);
-        setEditableItems(newItems);
-    };
     const updateItemCost = (index: number, cost: string) => {
         setCostInputs((p) => ({ ...p, [index]: cost }));
         const newItems = [...editableItems];
@@ -239,7 +235,9 @@ export default function ReceiptDetailsScreen() {
         newItems[index].cost = Math.max(0, isNaN(parsed) ? 0 : parsed);
         setEditableItems(newItems);
     };
-    const calculateSubtotal = () => editableItems.reduce((t, i) => t + i.cost * i.quantity, 0);
+    // `cost` from the API is the line total (already accounts for quantity), so we
+    // sum it directly — multiplying by quantity would double-count multi-unit lines.
+    const calculateSubtotal = () => editableItems.reduce((t, i) => t + i.cost, 0);
     const calculateTaxAmount = () => (calculateSubtotal() * editableTaxPercentage) / 100;
     const getTotal = () => shopInfo.total_amount;
     const updateTaxPercentage = (t: string) => {
@@ -290,7 +288,7 @@ export default function ReceiptDetailsScreen() {
 
             editableItems.forEach((item, index) => {
                 const assigned = userSelections[index];
-                const total = item.cost * item.quantity;
+                const total = item.cost; // line total from the API; do not multiply by quantity
                 if (assigned === 'shared') splitReceiptItems.push(total);
                 else if (assigned) userTotals[assigned] += total;
             });
@@ -510,26 +508,8 @@ export default function ReceiptDetailsScreen() {
 
                                     {/* Qty + price */}
                                     <View style={styles.itemMetaRow}>
-                                        <View style={styles.qtyGroup}>
-                                            <PressableScale
-                                                style={styles.qtyBtn}
-                                                haptic="light"
-                                                scaleTo={0.82}
-                                                onPress={() =>
-                                                    updateItemQuantity(index, Math.max(0, item.quantity - 1).toString())
-                                                }
-                                            >
-                                                <Text style={styles.qtyBtnText}>−</Text>
-                                            </PressableScale>
-                                            <Text style={styles.qtyValue}>{item.quantity}</Text>
-                                            <PressableScale
-                                                style={styles.qtyBtn}
-                                                haptic="light"
-                                                scaleTo={0.82}
-                                                onPress={() => updateItemQuantity(index, (item.quantity + 1).toString())}
-                                            >
-                                                <Text style={styles.qtyBtnText}>+</Text>
-                                            </PressableScale>
+                                        <View style={styles.qtyTag}>
+                                            <Text style={styles.qtyTagText}>×{item.quantity}</Text>
                                         </View>
 
                                         <View style={styles.priceWrap}>
@@ -919,21 +899,15 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginBottom: 12,
     },
-    qtyGroup: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: theme.surfaceAlt,
+    qtyTag: {
+        paddingHorizontal: 10,
+        paddingVertical: 5,
         borderRadius: 999,
+        backgroundColor: theme.surfaceAlt,
         borderWidth: 1,
         borderColor: theme.border,
-        paddingHorizontal: 2,
     },
-    qtyBtn: {
-        width: 28, height: 28,
-        alignItems: 'center', justifyContent: 'center',
-    },
-    qtyBtnText: { fontSize: 16, color: theme.ink, fontWeight: '500', marginTop: -1 },
-    qtyValue: { minWidth: 20, textAlign: 'center', fontSize: 14, color: theme.ink, fontWeight: '600' },
+    qtyTagText: { fontSize: 13, color: theme.inkMuted, fontWeight: '600', fontVariant: ['tabular-nums'] },
 
     priceWrap: {
         flexDirection: 'row',
