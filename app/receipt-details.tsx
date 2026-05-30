@@ -11,12 +11,16 @@ import {
     Alert,
     KeyboardAvoidingView,
     Platform,
+    Animated,
+    Easing,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { theme, buildUserColorMap, initialFor } from '../utils/theme';
+import * as Haptics from 'expo-haptics';
+import { theme, shadow, type, buildUserColorMap, initialFor } from '@/utils/theme';
+import { Entrance, PressableScale } from '@/components/motion';
 
 // -------- types --------
 interface ReceiptItem {
@@ -81,6 +85,9 @@ export default function ReceiptDetailsScreen() {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [costInputs, setCostInputs] = useState<{ [itemIndex: number]: string }>({});
     const [taxPercentageInput, setTaxPercentageInput] = useState<string | null>(null);
+
+    // Drives the thin "items assigned" progress bar in the Items header.
+    const assignProgress = useRef(new Animated.Value(0)).current;
 
     const mockReceiptData: ReceiptData = {
         receipt_items: [
@@ -176,7 +183,23 @@ export default function ReceiptDetailsScreen() {
         });
     }, [receiptData]);
 
-    useEffect(() => { fetchSettleUpGroups(); /* eslint-disable-next-line */ }, []);
+    // Fetch groups once on mount.
+    useEffect(() => {
+        fetchSettleUpGroups();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Animate the assignment progress bar whenever selections change.
+    useEffect(() => {
+        const total = editableItems.length;
+        const ratio = total > 0 ? Object.keys(userSelections).length / total : 0;
+        Animated.timing(assignProgress, {
+            toValue: ratio,
+            duration: 360,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: false,
+        }).start();
+    }, [userSelections, editableItems.length, assignProgress]);
 
     useEffect(() => {
         const MAX_AUTO_RETRIES = 2;
@@ -187,13 +210,18 @@ export default function ReceiptDetailsScreen() {
         }
     }, [groupsError, groupsFetchAttempts, fetchSettleUpGroups]);
 
+    // Index-based color map — guarantees each user in the current group gets a
+    // distinct fill (up to palette size). Declared before the early return below
+    // so hook order stays stable across renders.
+    const userColorMap = useMemo(() => buildUserColorMap(groupUsers), [groupUsers]);
+
     if (!receiptData) {
         return (
             <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>Couldn\u2019t load receipt data.</Text>
-                <TouchableOpacity style={styles.primaryBtn} onPress={() => router.back()}>
+                <PressableScale style={styles.primaryBtn} haptic="light" onPress={() => router.back()}>
                     <Text style={styles.primaryBtnText}>Go back</Text>
-                </TouchableOpacity>
+                </PressableScale>
             </View>
         );
     }
@@ -298,11 +326,13 @@ export default function ReceiptDetailsScreen() {
                 }),
             );
             if (response.ok) {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 Alert.alert('Synced', 'Transaction sent to Settle Up.', [
                     { text: 'OK', onPress: () => router.back() },
                 ]);
             } else throw new Error(`HTTP error! status: ${response.status}`);
         } catch {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             Alert.alert('Sync failed', 'Couldn\u2019t sync this transaction. Please try again.');
         } finally {
             setIsSyncing(false);
@@ -310,9 +340,6 @@ export default function ReceiptDetailsScreen() {
     };
 
     // -------- derived --------
-    // Index-based color map — guarantees each user in the current group
-    // gets a different fill color (up to palette size).
-    const userColorMap = useMemo(() => buildUserColorMap(groupUsers), [groupUsers]);
     const subtotal = calculateSubtotal();
     const taxAmount = calculateTaxAmount();
     const total = getTotal();
@@ -334,11 +361,11 @@ export default function ReceiptDetailsScreen() {
                 showsVerticalScrollIndicator={false}
             >
                 {/* Header */}
-                <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+                <Entrance style={[styles.header, { paddingTop: insets.top + 8 }]}>
                     <View style={styles.headerTopRow}>
-                        <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()} accessibilityLabel="Back">
+                        <PressableScale style={styles.iconBtn} haptic="light" onPress={() => router.back()} accessibilityLabel="Back">
                             <Text style={styles.iconBtnText}>←</Text>
-                        </TouchableOpacity>
+                        </PressableScale>
                         <Text style={styles.headerKicker}>RECEIPT</Text>
                         <View style={styles.iconBtnSpacer} />
                     </View>
@@ -350,26 +377,27 @@ export default function ReceiptDetailsScreen() {
                         <Text style={styles.shopNameJP}>{shopInfo.jp_shop_name}</Text>
                     ) : null}
 
-                    <TouchableOpacity style={styles.dateRow} onPress={() => setShowDatePicker(true)}>
+                    <PressableScale style={styles.dateRow} scaleTo={0.99} onPress={() => setShowDatePicker(true)}>
                         <Text style={styles.dateText}>
                             {formatDate(shopInfo.receipt_date)} · {formatTime(shopInfo.receipt_date)}
                         </Text>
                         <Text style={styles.dateEdit}>Edit</Text>
-                    </TouchableOpacity>
-                </View>
+                    </PressableScale>
+                </Entrance>
 
                 {/* Group — compact single-line pill card */}
-                <View style={styles.groupCard}>
+                <Entrance delay={70} style={styles.groupCard}>
                     <Text style={styles.eyebrow}>GROUP</Text>
                     {groupsError ? (
-                        <TouchableOpacity style={styles.retryBtn} onPress={() => fetchSettleUpGroups(false)}>
+                        <PressableScale style={styles.retryBtn} haptic="light" onPress={() => fetchSettleUpGroups(false)}>
                             <Text style={styles.retryBtnText}>Retry</Text>
-                        </TouchableOpacity>
+                        </PressableScale>
                     ) : isLoadingGroups ? (
                         <ActivityIndicator size="small" color={theme.ink} />
                     ) : (
-                        <TouchableOpacity
+                        <PressableScale
                             style={styles.groupValue}
+                            scaleTo={0.97}
                             onPress={showGroupPicker}
                             disabled={groups.length === 0}
                         >
@@ -377,12 +405,12 @@ export default function ReceiptDetailsScreen() {
                                 {groups.length === 0 ? 'No groups' : getSelectedGroupName()}
                             </Text>
                             {groups.length > 0 && <Text style={styles.chev}>↓</Text>}
-                        </TouchableOpacity>
+                        </PressableScale>
                     )}
-                </View>
+                </Entrance>
 
                 {/* Paid by — inline one-tap chips */}
-                <View style={styles.paidByCard}>
+                <Entrance delay={130} style={styles.paidByCard}>
                     <Text style={[styles.eyebrow, { marginBottom: 8 }]}>PAID BY</Text>
                     {isLoadingUsers ? (
                         <ActivityIndicator size="small" color={theme.ink} style={{ alignSelf: 'flex-start' }} />
@@ -394,7 +422,7 @@ export default function ReceiptDetailsScreen() {
                                 const selected = paidByUserId === u.id;
                                 const c = userColorMap[u.id];
                                 return (
-                                    <TouchableOpacity
+                                    <PressableScale
                                         key={u.id}
                                         style={[
                                             styles.paidByChip,
@@ -427,22 +455,40 @@ export default function ReceiptDetailsScreen() {
                                         >
                                             {u.name.split(' ')[0]}
                                         </Text>
-                                    </TouchableOpacity>
+                                    </PressableScale>
                                 );
                             })}
                         </View>
                     )}
-                </View>
+                </Entrance>
 
                 {/* Items */}
-                <View style={styles.itemsHeader}>
-                    <Text style={styles.itemsHeaderTitle}>Items</Text>
-                    <Text style={styles.itemsHeaderMeta}>
-                        {assignedCount}/{editableItems.length} assigned
-                    </Text>
-                </View>
+                <Entrance delay={190}>
+                    <View style={styles.itemsHeader}>
+                        <Text style={styles.itemsHeaderTitle}>Items</Text>
+                        <Text style={styles.itemsHeaderMeta}>
+                            {assignedCount}/{editableItems.length} assigned
+                        </Text>
+                    </View>
+                    <View style={styles.progressTrackWrap}>
+                        <View style={styles.progressTrack}>
+                            <Animated.View
+                                style={[
+                                    styles.progressFill,
+                                    {
+                                        width: assignProgress.interpolate({
+                                            inputRange: [0, 1],
+                                            outputRange: ['0%', '100%'],
+                                        }),
+                                        backgroundColor: allAssigned ? theme.success : theme.accent,
+                                    },
+                                ]}
+                            />
+                        </View>
+                    </View>
+                </Entrance>
 
-                <View style={styles.itemsCard}>
+                <Entrance delay={250} style={styles.itemsCard}>
                     {editableItems
                         .slice()
                         .sort((a, b) => a.item_order - b.item_order)
@@ -465,21 +511,25 @@ export default function ReceiptDetailsScreen() {
                                     {/* Qty + price */}
                                     <View style={styles.itemMetaRow}>
                                         <View style={styles.qtyGroup}>
-                                            <TouchableOpacity
+                                            <PressableScale
                                                 style={styles.qtyBtn}
+                                                haptic="light"
+                                                scaleTo={0.82}
                                                 onPress={() =>
                                                     updateItemQuantity(index, Math.max(0, item.quantity - 1).toString())
                                                 }
                                             >
                                                 <Text style={styles.qtyBtnText}>−</Text>
-                                            </TouchableOpacity>
+                                            </PressableScale>
                                             <Text style={styles.qtyValue}>{item.quantity}</Text>
-                                            <TouchableOpacity
+                                            <PressableScale
                                                 style={styles.qtyBtn}
+                                                haptic="light"
+                                                scaleTo={0.82}
                                                 onPress={() => updateItemQuantity(index, (item.quantity + 1).toString())}
                                             >
                                                 <Text style={styles.qtyBtnText}>+</Text>
-                                            </TouchableOpacity>
+                                            </PressableScale>
                                         </View>
 
                                         <View style={styles.priceWrap}>
@@ -502,13 +552,15 @@ export default function ReceiptDetailsScreen() {
                                                 const selected = assigned === u.id;
                                                 const c = userColorMap[u.id];
                                                 return (
-                                                    <TouchableOpacity
+                                                    <PressableScale
                                                         key={u.id}
+                                                        scaleTo={0.92}
                                                         style={[
                                                             styles.assignChip,
                                                             selected && { backgroundColor: c, borderColor: c },
                                                         ]}
                                                         onPress={() => handleUserSelection(index, u.id)}
+                                                        accessibilityLabel={`Assign to ${u.name}`}
                                                     >
                                                         <View
                                                             style={[
@@ -525,16 +577,18 @@ export default function ReceiptDetailsScreen() {
                                                         >
                                                             {u.name.split(' ')[0]}
                                                         </Text>
-                                                    </TouchableOpacity>
+                                                    </PressableScale>
                                                 );
                                             })}
-                                            <TouchableOpacity
+                                            <PressableScale
+                                                scaleTo={0.92}
                                                 style={[
                                                     styles.assignChip,
                                                     styles.sharedChip,
                                                     assigned === 'shared' && styles.sharedChipSelected,
                                                 ]}
                                                 onPress={() => handleUserSelection(index, 'shared')}
+                                                accessibilityLabel="Mark item as shared"
                                             >
                                                 <View style={styles.sharedGlyph}>
                                                     <View style={[styles.sharedDot, assigned === 'shared' && styles.sharedDotOn]} />
@@ -549,16 +603,16 @@ export default function ReceiptDetailsScreen() {
                                                 >
                                                     Shared
                                                 </Text>
-                                            </TouchableOpacity>
+                                            </PressableScale>
                                         </View>
                                     )}
                                 </View>
                             );
                         })}
-                </View>
+                </Entrance>
 
                 {/* Summary */}
-                <View style={styles.summaryCard}>
+                <Entrance delay={320} style={styles.summaryCard}>
                     <View style={styles.summaryLine}>
                         <Text style={styles.summaryLabel}>Subtotal</Text>
                         <Text style={styles.summaryValue}>{yen(subtotal)}</Text>
@@ -584,11 +638,11 @@ export default function ReceiptDetailsScreen() {
                         <Text style={styles.summaryTotalLabel}>Total</Text>
                         <Text style={styles.summaryTotal}>{yen(total)}</Text>
                     </View>
-                </View>
+                </Entrance>
             </ScrollView>
 
             {/* Sticky sync footer */}
-            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
+            <Entrance delay={380} distance={20} style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
                 <Text style={styles.footerHint}>
                     {readyToSync
                         ? 'Ready to sync.'
@@ -598,7 +652,9 @@ export default function ReceiptDetailsScreen() {
                             ? 'Select who paid.'
                             : `${editableItems.length - assignedCount} item${editableItems.length - assignedCount === 1 ? '' : 's'} left to assign.`}
                 </Text>
-                <TouchableOpacity
+                <PressableScale
+                    scaleTo={0.98}
+                    haptic={readyToSync && !isSyncing ? 'medium' : 'none'}
                     style={[styles.syncBtn, (!readyToSync || isSyncing) && styles.syncBtnDisabled]}
                     onPress={syncTransaction}
                     disabled={!readyToSync || isSyncing}
@@ -611,8 +667,8 @@ export default function ReceiptDetailsScreen() {
                     ) : (
                         <Text style={styles.syncBtnText}>Sync to Settle Up · {yen(total)}</Text>
                     )}
-                </TouchableOpacity>
-            </View>
+                </PressableScale>
+            </Entrance>
 
             {/* Group picker modal */}
             <Modal visible={isDropdownOpen} transparent animationType="fade" onRequestClose={() => setIsDropdownOpen(false)}>
@@ -620,16 +676,17 @@ export default function ReceiptDetailsScreen() {
                     <View style={styles.modalCard}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Select group</Text>
-                            <TouchableOpacity onPress={() => setIsDropdownOpen(false)} style={styles.modalClose}>
+                            <PressableScale onPress={() => setIsDropdownOpen(false)} haptic="light" style={styles.modalClose}>
                                 <Text style={styles.modalCloseText}>✕</Text>
-                            </TouchableOpacity>
+                            </PressableScale>
                         </View>
                         <FlatList
                             data={groups}
                             keyExtractor={(i) => i.id}
                             ItemSeparatorComponent={() => <View style={styles.hairline} />}
                             renderItem={({ item }) => (
-                                <TouchableOpacity
+                                <PressableScale
+                                    scaleTo={0.98}
                                     style={[styles.groupOption, selectedGroupId === item.id && styles.groupOptionSelected]}
                                     onPress={() => handleGroupSelection(item)}
                                 >
@@ -637,7 +694,7 @@ export default function ReceiptDetailsScreen() {
                                         {item.name}
                                     </Text>
                                     {selectedGroupId === item.id && <Text style={styles.checkmark}>✓</Text>}
-                                </TouchableOpacity>
+                                </PressableScale>
                             )}
                         />
                     </View>
@@ -650,13 +707,13 @@ export default function ReceiptDetailsScreen() {
                     <View style={styles.modalOverlay}>
                         <View style={styles.datePickerModal}>
                             <View style={styles.datePickerHeader}>
-                                <TouchableOpacity onPress={() => setShowDatePicker(false)} style={styles.datePickerHeaderBtn}>
+                                <PressableScale onPress={() => setShowDatePicker(false)} haptic="light" style={styles.datePickerHeaderBtn}>
                                     <Text style={styles.datePickerHeaderText}>Cancel</Text>
-                                </TouchableOpacity>
+                                </PressableScale>
                                 <Text style={styles.datePickerTitle}>Receipt date</Text>
-                                <TouchableOpacity onPress={() => setShowDatePicker(false)} style={styles.datePickerHeaderBtn}>
+                                <PressableScale onPress={() => setShowDatePicker(false)} haptic="light" style={styles.datePickerHeaderBtn}>
                                     <Text style={[styles.datePickerHeaderText, styles.datePickerDone]}>Done</Text>
-                                </TouchableOpacity>
+                                </PressableScale>
                             </View>
                             <View style={styles.datePickerBody}>
                                 <DateTimePicker
@@ -721,7 +778,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: theme.inkFaint,
     },
-    shopName: { fontSize: 28, fontWeight: '600', color: theme.ink, letterSpacing: -0.6, lineHeight: 34 },
+    shopName: { ...type.display, color: theme.ink },
     shopNameJP: { fontSize: 14, color: theme.inkMuted, marginTop: 2 },
     dateRow: {
         flexDirection: 'row',
@@ -755,6 +812,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         minHeight: 48,
+        ...shadow.sm,
     },
     groupValue: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     groupValueText: { fontSize: 14, color: theme.ink, fontWeight: '600', letterSpacing: -0.2 },
@@ -780,6 +838,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingTop: 10,
         paddingBottom: 12,
+        ...shadow.sm,
     },
     paidByRow: { flexDirection: 'row', gap: 6 },
     paidByChip: {
@@ -820,11 +879,24 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         marginTop: 28,
-        marginBottom: 10,
+        marginBottom: 8,
         paddingHorizontal: 20,
     },
     itemsHeaderTitle: { fontSize: 13, color: theme.inkMuted, fontWeight: '600', letterSpacing: 0.3, textTransform: 'uppercase' },
-    itemsHeaderMeta: { fontSize: 12, color: theme.inkFaint, fontWeight: '500' },
+    itemsHeaderMeta: { fontSize: 12, color: theme.inkFaint, fontWeight: '500', fontVariant: ['tabular-nums'] },
+
+    progressTrackWrap: { paddingHorizontal: 20, marginBottom: 12 },
+    progressTrack: {
+        height: 3,
+        borderRadius: 999,
+        backgroundColor: theme.border,
+        overflow: 'hidden',
+    },
+    progressFill: {
+        height: '100%',
+        borderRadius: 999,
+        backgroundColor: theme.accent,
+    },
 
     itemsCard: {
         backgroundColor: theme.surface,
@@ -833,6 +905,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: theme.border,
         overflow: 'hidden',
+        ...shadow.sm,
     },
     itemRow: { paddingVertical: 14, paddingHorizontal: 16 },
     itemRowDivider: { borderTopWidth: 1, borderTopColor: theme.border },
@@ -916,6 +989,7 @@ const styles = StyleSheet.create({
         borderColor: theme.border,
         paddingHorizontal: 18,
         paddingVertical: 14,
+        ...shadow.sm,
     },
     summaryLine: {
         flexDirection: 'row',
@@ -965,6 +1039,12 @@ const styles = StyleSheet.create({
         borderTopColor: theme.border,
         paddingHorizontal: 16,
         paddingTop: 12,
+        // upward shadow lifts the footer off the scrolling content behind it
+        shadowColor: '#0B0B0F',
+        shadowOffset: { width: 0, height: -8 },
+        shadowOpacity: 0.06,
+        shadowRadius: 16,
+        elevation: 16,
     },
     footerHint: {
         textAlign: 'center',
@@ -999,6 +1079,7 @@ const styles = StyleSheet.create({
         maxWidth: 420,
         maxHeight: '70%',
         overflow: 'hidden',
+        ...shadow.lg,
     },
     modalHeader: {
         flexDirection: 'row',
@@ -1025,6 +1106,7 @@ const styles = StyleSheet.create({
         width: '100%',
         maxWidth: 420,
         overflow: 'hidden',
+        ...shadow.lg,
     },
     datePickerHeader: {
         flexDirection: 'row',

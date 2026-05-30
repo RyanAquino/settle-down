@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import * as MediaLibrary from 'expo-media-library';
-import { theme } from '../utils/theme';
+import { theme, type } from '@/utils/theme';
+import { Entrance } from '@/components/motion';
 
 type StepState = 'pending' | 'active' | 'done';
 
@@ -200,7 +201,7 @@ export default function LoadingScreen() {
     <View style={styles.container}>
       <View style={styles.content}>
         {/* Photo card — polaroid style with scan beam */}
-        <View style={[styles.photoCard, { height: PHOTO_H }]}>
+        <Entrance distance={18} style={[styles.photoCard, { height: PHOTO_H }]}>
           {photoUri ? (
             <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
           ) : (
@@ -228,13 +229,17 @@ export default function LoadingScreen() {
               },
             ]}
           />
-        </View>
+        </Entrance>
 
-        <Text style={styles.title}>{statusMessage}</Text>
-        <Text style={styles.subtitle}>{statusDetail}</Text>
+        <Entrance delay={120}>
+          <Text style={styles.title}>{statusMessage}</Text>
+        </Entrance>
+        <Entrance delay={180}>
+          <Text style={styles.subtitle}>{statusDetail}</Text>
+        </Entrance>
 
         {/* 3-step progress */}
-        <View style={styles.steps}>
+        <Entrance delay={240} style={styles.steps}>
           {steps.map((s, i) => (
             <StepItem
               key={i}
@@ -243,7 +248,7 @@ export default function LoadingScreen() {
               isLast={i === steps.length - 1}
             />
           ))}
-        </View>
+        </Entrance>
 
         {isOffline && <Text style={styles.offlineNote}>Saving offline</Text>}
       </View>
@@ -252,14 +257,32 @@ export default function LoadingScreen() {
 }
 
 function StepItem({ label, state, isLast }: { label: string; state: StepState; isLast: boolean }) {
+  // The active step breathes so the user's eye lands on "what's happening now".
+  const pulse = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (state !== 'active') {
+      pulse.setValue(1);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.45, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [state, pulse]);
+
   return (
     <View style={styles.stepItem}>
       <View style={styles.stepDotWrap}>
-        <View
+        <Animated.View
           style={[
             styles.stepDot,
             state === 'done' && styles.stepDotDone,
             state === 'active' && styles.stepDotActive,
+            state === 'active' && { transform: [{ scale: pulse }] },
           ]}
         />
         {!isLast && <View style={styles.stepConnector} />}
@@ -331,10 +354,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(59,59,232,0.10)',
   },
   title: {
-    fontSize: 22,
-    fontWeight: '600',
+    ...type.title,
     color: theme.ink,
-    letterSpacing: -0.4,
     textAlign: 'center',
     marginBottom: 6,
   },
