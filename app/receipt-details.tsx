@@ -230,10 +230,14 @@ export default function ReceiptDetailsScreen() {
     // -------- handlers --------
     const updateItemCost = (index: number, cost: string) => {
         setCostInputs((p) => ({ ...p, [index]: cost }));
-        const newItems = [...editableItems];
         const parsed = cost === '' ? 0 : parseFloat(cost);
-        newItems[index].cost = Math.max(0, isNaN(parsed) ? 0 : parsed);
-        setEditableItems(newItems);
+        const next = Math.max(0, isNaN(parsed) ? 0 : parsed);
+        // Immutable update: new object for the edited row (mutating the existing
+        // one in place would break per-row memoization); functional updater avoids
+        // a stale `editableItems` closure.
+        setEditableItems((prev) =>
+            prev.map((it, i) => (i === index ? { ...it, cost: next } : it)),
+        );
     };
     // `cost` from the API is the line total (already accounts for quantity), so we
     // sum it directly — multiplying by quantity would double-count multi-unit lines.
