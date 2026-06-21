@@ -1,10 +1,12 @@
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import { useState, useRef, useEffect } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
+import { StyleSheet, Text, View, Alert, Animated, Easing } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { theme } from '../utils/theme';
+import * as Haptics from 'expo-haptics';
+import { theme } from '@/utils/theme';
+import { Entrance, PressableScale } from '@/components/motion';
 
 export default function CameraScreen() {
   const [facing] = useState<CameraType>('back');
@@ -12,6 +14,21 @@ export default function CameraScreen() {
   const cameraRef = useRef<CameraView>(null);
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
+
+  // Slow breathing pulse on the framing guides — signals "live / ready to scan"
+  // without the nervous energy of a fast blink.
+  const guidePulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(guidePulse, { toValue: 1, duration: 1400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(guidePulse, { toValue: 0, duration: 1400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [guidePulse]);
+  const guideOpacity = guidePulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] });
 
   useEffect(() => {
     if (params.message) Alert.alert('Saved', params.message as string);
@@ -23,13 +40,19 @@ export default function CameraScreen() {
   if (!permission.granted) {
     return (
       <View style={[styles.container, styles.permissionWrap]}>
-        <Text style={styles.permissionTitle}>Camera access</Text>
-        <Text style={styles.permissionBody}>
-          Settle Down needs your camera to read receipts.
-        </Text>
-        <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
-          <Text style={styles.permissionBtnText}>Allow camera</Text>
-        </TouchableOpacity>
+        <Entrance distance={16}>
+          <Text style={styles.permissionTitle}>Camera access</Text>
+        </Entrance>
+        <Entrance delay={80} distance={16}>
+          <Text style={styles.permissionBody}>
+            Settle Down needs your camera to read receipts.
+          </Text>
+        </Entrance>
+        <Entrance delay={160} distance={16}>
+          <PressableScale style={styles.permissionBtn} haptic="medium" onPress={requestPermission}>
+            <Text style={styles.permissionBtnText}>Allow camera</Text>
+          </PressableScale>
+        </Entrance>
       </View>
     );
   }
@@ -37,6 +60,7 @@ export default function CameraScreen() {
   const takePicture = async () => {
     if (!cameraRef.current) return;
     try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const photo = await cameraRef.current.takePictureAsync({
         quality: 1,
         base64: false,
@@ -97,36 +121,42 @@ export default function CameraScreen() {
       />
 
       {/* Top hint — subtle */}
-      <View style={[styles.topHint, { top: insets.top + 12 }]}>
+      <Entrance delay={120} distance={-8} style={[styles.topHint, { top: insets.top + 12 }]}>
         <Text style={styles.topHintText}>Point at a receipt</Text>
-      </View>
+      </Entrance>
 
-      {/* Framing guides */}
-      <View pointerEvents="none" style={styles.guides}>
+      {/* Framing guides — breathe gently to read as "live" */}
+      <Animated.View pointerEvents="none" style={[styles.guides, { opacity: guideOpacity }]}>
         <View style={[styles.corner, styles.cornerTL]} />
         <View style={[styles.corner, styles.cornerTR]} />
         <View style={[styles.corner, styles.cornerBL]} />
         <View style={[styles.corner, styles.cornerBR]} />
-      </View>
+      </Animated.View>
 
       {/* Bottom controls */}
-      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 24) + 8 }]}>
-        <TouchableOpacity style={styles.sideBtn} onPress={pickFromLibrary} accessibilityLabel="Pick from library">
+      <Entrance delay={80} style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 24) + 8 }]}>
+        <PressableScale style={styles.sideBtn} onPress={pickFromLibrary} accessibilityLabel="Pick from library">
           <View style={styles.sideBtnIcon}>
             <View style={styles.libraryBack} />
             <View style={styles.libraryFront} />
           </View>
           <Text style={styles.sideBtnLabel}>Library</Text>
-        </TouchableOpacity>
+        </PressableScale>
 
-        <TouchableOpacity style={styles.shutter} onPress={takePicture} accessibilityLabel="Capture receipt">
+        <PressableScale
+          style={styles.shutter}
+          scaleTo={0.9}
+          haptic="none"
+          onPress={takePicture}
+          accessibilityLabel="Capture receipt"
+        >
           <View style={styles.shutterInner} />
-        </TouchableOpacity>
+        </PressableScale>
 
         <View style={styles.sideBtn}>
           {/* placeholder spacer so shutter stays centered */}
         </View>
-      </View>
+      </Entrance>
     </View>
   );
 }

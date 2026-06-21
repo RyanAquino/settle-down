@@ -1,7 +1,8 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import CameraScreen from './camera';
+import { Entrance, PressableScale } from '@/components/motion';
 
 export default function Index() {
   const [isFocused, setIsFocused] = useState(true);
@@ -18,16 +19,17 @@ export default function Index() {
     <View style={styles.container}>
       {isFocused && <CameraScreen />}
       {showDebugButton && (
-        <View style={styles.debugOverlay}>
-          <TouchableOpacity
+        <Entrance delay={120} style={styles.debugOverlay}>
+          <PressableScale
             style={styles.debugButton}
+            haptic="light"
             onPress={() =>
               router.push({ pathname: '/receipt-details', params: { useMockData: 'true' } })
             }
           >
             <Text style={styles.debugButtonText}>Skip to Receipt</Text>
-          </TouchableOpacity>
-        </View>
+          </PressableScale>
+        </Entrance>
       )}
     </View>
   );

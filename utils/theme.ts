@@ -30,9 +30,58 @@ export const theme = {
   radius: 14,
   radiusSm: 10,
   radiusLg: 22,
+  radiusXl: 28,
 
   // per-person palette (stable, distinguishable)
   personColors: ['#E8556B', '#4E89E0', '#E8A33E', '#5FB88A', '#9066D4', '#3DAFA8'],
+} as const;
+
+// --- elevation -------------------------------------------------------------
+// Soft, low-contrast shadows. Depth comes from layering many faint shadows,
+// not one harsh drop — this is what keeps "minimal" from looking flat.
+export const shadow = {
+  sm: {
+    shadowColor: '#0B0B0F',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  md: {
+    shadowColor: '#0B0B0F',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  lg: {
+    shadowColor: '#0B0B0F',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.12,
+    shadowRadius: 30,
+    elevation: 12,
+  },
+} as const;
+
+// --- motion ----------------------------------------------------------------
+// One vocabulary for movement across the app. A single, slightly-overshooting
+// spring + a calm entrance easing read as "considered" rather than "bouncy".
+export const motion = {
+  entranceDuration: 440,
+  stagger: 70, // ms between successive revealed elements
+  pressScale: 0.965, // how far a tappable shrinks while held
+  spring: { friction: 7, tension: 140 },
+} as const;
+
+// --- type scale ------------------------------------------------------------
+// Centralized so headings/labels stay in proportion across screens.
+export const type = {
+  display: { fontSize: 30, fontWeight: '700' as const, letterSpacing: -0.8, lineHeight: 36 },
+  title: { fontSize: 22, fontWeight: '600' as const, letterSpacing: -0.4 },
+  body: { fontSize: 16, fontWeight: '500' as const, letterSpacing: -0.2 },
+  label: { fontSize: 13, fontWeight: '600' as const, letterSpacing: -0.1 },
+  eyebrow: { fontSize: 10, fontWeight: '700' as const, letterSpacing: 1.4 },
+  numeral: { fontVariant: ['tabular-nums'] as ['tabular-nums'] },
 } as const;
 
 // deterministic color per user id — same person → same color across the app.
