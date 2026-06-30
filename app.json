@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to capture high-quality photos.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select existing photos for processing.",
-        "NSPhotoLibraryAddUsageDescription": "This app saves receipt photos to your photo library when offline for later processing."
+        "NSPhotoLibraryAddUsageDescription": "This app saves receipt photos to your photo library when offline for later processing.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.ryan.aquino.settledown"
     },
@@ -27,16 +28,6 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.ACCESS_MEDIA_LOCATION",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",

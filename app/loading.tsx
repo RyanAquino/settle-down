@@ -77,15 +77,26 @@ export default function LoadingScreen() {
 
   const uploadPhotoWithRetry = useCallback(
     async (photoUri: string, attempt = 1, maxAttempts = 3): Promise<void> => {
+      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+      const uploadUrl = `${apiBaseUrl}/api/v1/receipts/receipt-items/`;
+      let response: Response | undefined;
       try {
+        // Guard: on remote EAS builds the gitignored .env isn't present at bundle time,
+        // so EXPO_PUBLIC_API_BASE_URL can be undefined. Fail loudly instead of silently
+        // fetching `undefined/api/...` and burying it in the retry/fallback path.
+        if (!apiBaseUrl) {
+          throw new Error('EXPO_PUBLIC_API_BASE_URL is undefined in this build (env not inlined at bundle time).');
+        }
+
         const formData = new FormData();
         formData.append('file', { uri: photoUri, type: 'image/jpeg', name: 'receipt.jpg' } as any);
 
-        const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
+        // Do NOT set 'Content-Type' for multipart/form-data — fetch must set it itself so
+        // it can append the required `boundary`. Hardcoding it produces a body the server
+        // can't parse.
         const headers: { [key: string]: string } = {
           'ngrok-skip-browser-warning': 'true',
-          'Content-Type': 'multipart/form-data',
         };
         if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
@@ -94,11 +105,13 @@ export default function LoadingScreen() {
           setStatusDetail('Network took a pause. Hang tight.');
         }
 
-        const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
+        console.log(`[upload] attempt ${attempt}/${maxAttempts} → ${uploadUrl} (auth=${!!authToken})`);
+        response = await fetch(uploadUrl, {
           method: 'POST',
           body: formData,
           headers,
         });
+        console.log(`[upload] response status=${response.status} ok=${response.ok}`);
 
         if (response.ok) {
           const data = await response.json();
@@ -107,7 +120,11 @@ export default function LoadingScreen() {
           return;
         }
         throw new Error(`HTTP error! status: ${response.status}`);
-      } catch {
+      } catch (err) {
+        const e = err as Error;
+        console.warn(
+          `[upload] FAILED attempt ${attempt}/${maxAttempts} name=${e?.name} message=${e?.message} status=${response?.status ?? 'no-response'} url=${uploadUrl}`,
+        );
         if (attempt < maxAttempts) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
           setStatusMessage(`Retrying in ${delay / 1000}s`);
@@ -165,7 +182,13 @@ export default function LoadingScreen() {
     async (uri: string) => {
       try {
         const netInfoState = await NetInfo.fetch();
-        const isConnected = netInfoState.isConnected === true;
+        console.log(
+          `[netinfo] isConnected=${netInfoState.isConnected} type=${netInfoState.type} isInternetReachable=${netInfoState.isInternetReachable}`,
+        );
+        // Only an explicit `false` means offline. A strict `=== true` check treats an
+        // unknown (`null`) reading as offline and routes to the save-photo path without
+        // ever attempting the upload — a silent false-negative.
+        const isConnected = netInfoState.isConnected !== false;
         if (isConnected) {
           await uploadPhoto(uri);
         } else {
