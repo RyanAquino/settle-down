@@ -17,7 +17,7 @@ export default function CameraScreen() {
 
   // Slow breathing pulse on the framing guides — signals "live / ready to scan"
   // without the nervous energy of a fast blink.
-  const guidePulse = useRef(new Animated.Value(0)).current;
+  const [guidePulse] = useState(() => new Animated.Value(0));
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
@@ -91,7 +91,7 @@ export default function CameraScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions?.Images || 'Images',
+        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 1,
         selectionLimit: 1,

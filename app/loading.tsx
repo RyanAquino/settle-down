@@ -3,7 +3,8 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
+import { File } from 'expo-file-system';
 import { theme, type } from '@/utils/theme';
 import { Entrance } from '@/components/motion';
 
@@ -23,7 +24,7 @@ export default function LoadingScreen() {
   ]);
 
   // scanning beam animation — sweeps top to bottom and back
-  const beam = useRef(new Animated.Value(0)).current;
+  const [beam] = useState(() => new Animated.Value(0));
   useEffect(() => {
     if (isOffline) return;
     const loop = Animated.loop(
@@ -89,7 +90,11 @@ export default function LoadingScreen() {
         }
 
         const formData = new FormData();
-        formData.append('file', { uri: photoUri, type: 'image/jpeg', name: 'receipt.jpg' } as any);
+        // SDK 56+ installs expo/fetch as the global `fetch`, and its multipart encoder
+        // only accepts string | Blob | { bytes() } parts — the React Native
+        // `{ uri, type, name }` convention now throws `Unsupported FormDataPart`.
+        // expo-file-system's `File` implements `bytes()`, so it encodes correctly.
+        formData.append('file', new File(photoUri) as any);
 
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
         // Do NOT set 'Content-Type' for multipart/form-data — fetch must set it itself so
@@ -130,6 +135,9 @@ export default function LoadingScreen() {
           setStatusMessage(`Retrying in ${delay / 1000}s`);
           setStatusDetail('We\u2019ll try a couple more times before giving up.');
           await new Promise((r) => setTimeout(r, delay));
+          // Bounded self-recursion (max 3 attempts). The rule cannot prove the
+          // self-reference is only reached after initialization, but it always is.
+          // eslint-disable-next-line react-hooks/immutability
           return uploadPhotoWithRetry(photoUri, attempt + 1, maxAttempts);
         }
         await savePhotoAsFallback(photoUri);
@@ -212,6 +220,9 @@ export default function LoadingScreen() {
   );
 
   useEffect(() => {
+    // Kicks off the async upload pipeline on mount; every setState inside
+    // happens after `await NetInfo.fetch()`, so none are synchronous here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (photoUri) checkConnectivityAndProcess(photoUri);
   }, [photoUri, checkConnectivityAndProcess]);
 
@@ -281,7 +292,7 @@ export default function LoadingScreen() {
 
 function StepItem({ label, state, isLast }: { label: string; state: StepState; isLast: boolean }) {
   // The active step breathes so the user's eye lands on "what's happening now".
-  const pulse = useRef(new Animated.Value(1)).current;
+  const [pulse] = useState(() => new Animated.Value(1));
   useEffect(() => {
     if (state !== 'active') {
       pulse.setValue(1);
