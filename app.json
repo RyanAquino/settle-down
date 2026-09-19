@@ -2,7 +2,7 @@
   "expo": {
     "name": "Settle Down",
     "slug": "settle-down",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "settledown",
@@ -94,7 +94,7 @@
       }
     },
     "runtimeVersion": {
-      "policy": "fingerprint"
+      "policy": "appVersion"
     },
     "updates": {
       "url": "https://u.expo.dev/654ebccb-5edc-4718-ac0d-233e6743c8b0"
