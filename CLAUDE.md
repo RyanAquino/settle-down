@@ -34,6 +34,7 @@ API calls are made with plain `fetch` in each screen; there is no shared API cli
 
 - **Item cost is the line total.** `cost` from the API already includes quantity, so never multiply it by `quantity` when computing subtotals or splits.
 - **Per-item state is keyed by `item_order`, not array index.** This covers `userSelections`, `costInputs` and React keys. Items are sorted by `item_order` once on init.
+- **Amounts display in the selected group's currency.** `GET /groups/` returns each group's ISO `currency`, and `formatMoney` in `receipt-details.tsx` formats with `Intl` `symbol` style (`¥`, `NT$`, `HK$`). Whole amounts drop `.00`. Until a group is selected, amounts are plain numbers with no symbol. Don't hardcode a currency symbol.
 - **Multipart upload:** SDK 56+ replaced the global `fetch` with `expo/fetch`. Its FormData doesn't accept React Native's `{ uri, type, name }` objects, so append `new File(uri)` from `expo-file-system`. Never set `Content-Type` manually on multipart requests, because fetch has to add the boundary itself.
 - **`EXPO_PUBLIC_*` variables are inlined at bundle time.** `.env` is gitignored, so EAS cloud builds get these values from EAS environment variables. `loading.tsx` throws on purpose if the base URL is undefined.
 - **Debug mock data:** setting `EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON=true` adds a "Skip to Receipt" button that opens the details screen with mock data, so you can work on that screen without a backend.

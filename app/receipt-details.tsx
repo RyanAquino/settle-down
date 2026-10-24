@@ -40,7 +40,8 @@ interface ReceiptData {
     receipt_date: Date;
     receipt_image_url?: string;
 }
-interface SettleUpGroup { name: string; id: string; }
+// `currency` is the ISO code the group settles in (Settle Up's convertedToCurrency).
+interface SettleUpGroup { name: string; id: string; currency: string | null; }
 interface SettleUpGroupsResponse { items: SettleUpGroup[]; count: number; }
 interface GroupUser { name: string; id: string; }
 interface GroupUsersResponse { items: GroupUser[]; count: number; }
@@ -57,7 +58,27 @@ async function retryApiCall<T>(apiCall: () => Promise<T>, maxAttempts = 3, baseD
     throw new Error('Retry failed');
 }
 
-const yen = (n: number) => `¥${Math.round(n).toLocaleString('en-US')}`;
+// Formats an amount in the selected group's currency. `symbol` display keeps
+// NT$/HK$/CN¥ distinct from $/¥. Whole amounts drop their `.00` (TWD receipts
+// are whole even though ISO gives it 2 decimals); other amounts use the
+// currency's own decimals. With no currency it's a plain number.
+const formatMoney = (n: number, currency: string | null) => {
+    const base: Intl.NumberFormatOptions = currency
+        ? { style: 'currency', currency }
+        : { maximumFractionDigits: 2 };
+    const digits = new Intl.NumberFormat('en-US', base).resolvedOptions().maximumFractionDigits ?? 2;
+    // Round first so float noise (0.1 + 0.2 + 0.7) still counts as whole.
+    const rounded = Number(n.toFixed(digits));
+    return new Intl.NumberFormat('en-US', {
+        ...base,
+        minimumFractionDigits: Number.isInteger(rounded) ? 0 : digits,
+    }).format(rounded);
+};
+
+// The bare symbol (¥, NT$, SGD) for the per-item price input prefix. Strips the
+// digits from a formatted 0 rather than using formatToParts, which Hermes may lack.
+const currencySymbol = (currency: string | null) =>
+    currency ? formatMoney(0, currency).replace(/[\d\s.,]/g, '') : null;
 
 export default function ReceiptDetailsScreen() {
     const params = useLocalSearchParams();
@@ -354,6 +375,9 @@ export default function ReceiptDetailsScreen() {
     const subtotal = calculateSubtotal();
     const taxAmount = calculateTaxAmount();
     const total = getTotal();
+    // Null until a group is selected (still loading, or the fetch failed).
+    const currency = groups.find((g) => g.id === selectedGroupId)?.currency ?? null;
+    const priceSymbol = currencySymbol(currency);
     const assignedCount = Object.keys(userSelections).length;
     const allAssigned = editableItems.length > 0 && assignedCount === editableItems.length;
     const readyToSync = allAssigned && !!selectedGroupId && !!paidByUserId;
@@ -524,7 +548,7 @@ export default function ReceiptDetailsScreen() {
                                         </View>
 
                                         <View style={styles.priceWrap}>
-                                            <Text style={styles.priceSymbol}>¥</Text>
+                                            {priceSymbol && <Text style={styles.priceSymbol}>{priceSymbol}</Text>}
                                             <TextInput
                                                 style={styles.priceInput}
                                                 value={costInputs.hasOwnProperty(item.item_order) ? costInputs[item.item_order] : item.cost.toString()}
@@ -606,7 +630,7 @@ export default function ReceiptDetailsScreen() {
                 <Entrance delay={320} style={styles.summaryCard}>
                     <View style={styles.summaryLine}>
                         <Text style={styles.summaryLabel}>Subtotal</Text>
-                        <Text style={styles.summaryValue}>{yen(subtotal)}</Text>
+                        <Text style={styles.summaryValue}>{formatMoney(subtotal, currency)}</Text>
                     </View>
                     <View style={styles.summaryLine}>
                         <Text style={styles.summaryLabel}>Tax</Text>
@@ -622,12 +646,12 @@ export default function ReceiptDetailsScreen() {
                                 />
                                 <Text style={styles.taxInputSuffix}>%</Text>
                             </View>
-                            <Text style={styles.taxAmount}>{yen(taxAmount)}</Text>
+                            <Text style={styles.taxAmount}>{formatMoney(taxAmount, currency)}</Text>
                         </View>
                     </View>
                     <View style={[styles.summaryLine, styles.summaryTotalLine]}>
                         <Text style={styles.summaryTotalLabel}>Total</Text>
-                        <Text style={styles.summaryTotal}>{yen(total)}</Text>
+                        <Text style={styles.summaryTotal}>{formatMoney(total, currency)}</Text>
                     </View>
                 </Entrance>
             </ScrollView>
@@ -656,7 +680,7 @@ export default function ReceiptDetailsScreen() {
                             <Text style={styles.syncBtnText}>Syncing…</Text>
                         </View>
                     ) : (
-                        <Text style={styles.syncBtnText}>Sync to Settle Up · {yen(total)}</Text>
+                        <Text style={styles.syncBtnText}>Sync to Settle Up · {formatMoney(total, currency)}</Text>
                     )}
                 </PressableScale>
             </Entrance>
