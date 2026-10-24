@@ -15,7 +15,7 @@ import {
     Easing,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
@@ -87,7 +87,7 @@ export default function ReceiptDetailsScreen() {
     const [taxPercentageInput, setTaxPercentageInput] = useState<string | null>(null);
 
     // Drives the thin "items assigned" progress bar in the Items header.
-    const assignProgress = useRef(new Animated.Value(0)).current;
+    const [assignProgress] = useState(() => new Animated.Value(0));
 
     const mockReceiptData: ReceiptData = {
         receipt_items: [
@@ -172,6 +172,10 @@ export default function ReceiptDetailsScreen() {
         // Sort by item_order once here so display order is stable; per-item state
         // (userSelections, costInputs, React keys) is keyed by item_order, not array index.
         const sortedItems = [...receiptData.receipt_items].sort((a, b) => a.item_order - b.item_order);
+        // Seeds editable state once from the route param. Converting this to
+        // lazy useState initializers is a worthwhile follow-up, but it has to
+        // coexist with the `!receiptData -> router.back()` guard above.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setEditableItems(sortedItems);
         setEditableTaxPercentage(receiptData.tax_percentage);
         setTaxPercentageInput(receiptData.tax_percentage.toString());
@@ -189,6 +193,8 @@ export default function ReceiptDetailsScreen() {
 
     // Fetch groups once on mount.
     useEffect(() => {
+        // Async fetch on mount; setState happens in its await continuation.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         fetchSettleUpGroups();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);

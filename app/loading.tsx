@@ -3,7 +3,8 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
+import { File } from 'expo-file-system';
 import { theme, type } from '@/utils/theme';
 import { Entrance } from '@/components/motion';
 
@@ -23,7 +24,7 @@ export default function LoadingScreen() {
   ]);
 
   // scanning beam animation — sweeps top to bottom and back
-  const beam = useRef(new Animated.Value(0)).current;
+  const [beam] = useState(() => new Animated.Value(0));
   useEffect(() => {
     if (isOffline) return;
     const loop = Animated.loop(
@@ -77,15 +78,30 @@ export default function LoadingScreen() {
 
   const uploadPhotoWithRetry = useCallback(
     async (photoUri: string, attempt = 1, maxAttempts = 3): Promise<void> => {
+      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+      const uploadUrl = `${apiBaseUrl}/api/v1/receipts/receipt-items/`;
+      let response: Response | undefined;
       try {
-        const formData = new FormData();
-        formData.append('file', { uri: photoUri, type: 'image/jpeg', name: 'receipt.jpg' } as any);
+        // Guard: on remote EAS builds the gitignored .env isn't present at bundle time,
+        // so EXPO_PUBLIC_API_BASE_URL can be undefined. Fail loudly instead of silently
+        // fetching `undefined/api/...` and burying it in the retry/fallback path.
+        if (!apiBaseUrl) {
+          throw new Error('EXPO_PUBLIC_API_BASE_URL is undefined in this build (env not inlined at bundle time).');
+        }
 
-        const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+        const formData = new FormData();
+        // SDK 56+ installs expo/fetch as the global `fetch`, and its multipart encoder
+        // only accepts string | Blob | { bytes() } parts — the React Native
+        // `{ uri, type, name }` convention now throws `Unsupported FormDataPart`.
+        // expo-file-system's `File` implements `bytes()`, so it encodes correctly.
+        formData.append('file', new File(photoUri) as any);
+
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
+        // Do NOT set 'Content-Type' for multipart/form-data — fetch must set it itself so
+        // it can append the required `boundary`. Hardcoding it produces a body the server
+        // can't parse.
         const headers: { [key: string]: string } = {
           'ngrok-skip-browser-warning': 'true',
-          'Content-Type': 'multipart/form-data',
         };
         if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
@@ -94,11 +110,13 @@ export default function LoadingScreen() {
           setStatusDetail('Network took a pause. Hang tight.');
         }
 
-        const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
+        console.log(`[upload] attempt ${attempt}/${maxAttempts} → ${uploadUrl} (auth=${!!authToken})`);
+        response = await fetch(uploadUrl, {
           method: 'POST',
           body: formData,
           headers,
         });
+        console.log(`[upload] response status=${response.status} ok=${response.ok}`);
 
         if (response.ok) {
           const data = await response.json();
@@ -107,12 +125,19 @@ export default function LoadingScreen() {
           return;
         }
         throw new Error(`HTTP error! status: ${response.status}`);
-      } catch {
+      } catch (err) {
+        const e = err as Error;
+        console.warn(
+          `[upload] FAILED attempt ${attempt}/${maxAttempts} name=${e?.name} message=${e?.message} status=${response?.status ?? 'no-response'} url=${uploadUrl}`,
+        );
         if (attempt < maxAttempts) {
           const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
           setStatusMessage(`Retrying in ${delay / 1000}s`);
           setStatusDetail('We\u2019ll try a couple more times before giving up.');
           await new Promise((r) => setTimeout(r, delay));
+          // Bounded self-recursion (max 3 attempts). The rule cannot prove the
+          // self-reference is only reached after initialization, but it always is.
+          // eslint-disable-next-line react-hooks/immutability
           return uploadPhotoWithRetry(photoUri, attempt + 1, maxAttempts);
         }
         await savePhotoAsFallback(photoUri);
@@ -165,7 +190,13 @@ export default function LoadingScreen() {
     async (uri: string) => {
       try {
         const netInfoState = await NetInfo.fetch();
-        const isConnected = netInfoState.isConnected === true;
+        console.log(
+          `[netinfo] isConnected=${netInfoState.isConnected} type=${netInfoState.type} isInternetReachable=${netInfoState.isInternetReachable}`,
+        );
+        // Only an explicit `false` means offline. A strict `=== true` check treats an
+        // unknown (`null`) reading as offline and routes to the save-photo path without
+        // ever attempting the upload — a silent false-negative.
+        const isConnected = netInfoState.isConnected !== false;
         if (isConnected) {
           await uploadPhoto(uri);
         } else {
@@ -189,6 +220,9 @@ export default function LoadingScreen() {
   );
 
   useEffect(() => {
+    // Kicks off the async upload pipeline on mount; every setState inside
+    // happens after `await NetInfo.fetch()`, so none are synchronous here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (photoUri) checkConnectivityAndProcess(photoUri);
   }, [photoUri, checkConnectivityAndProcess]);
 
@@ -258,7 +292,7 @@ export default function LoadingScreen() {
 
 function StepItem({ label, state, isLast }: { label: string; state: StepState; isLast: boolean }) {
   // The active step breathes so the user's eye lands on "what's happening now".
-  const pulse = useRef(new Animated.Value(1)).current;
+  const [pulse] = useState(() => new Animated.Value(1));
   useEffect(() => {
     if (state !== 'active') {
       pulse.setValue(1);

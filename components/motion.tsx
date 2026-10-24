@@ -6,7 +6,7 @@
 // Keeping motion in one place is what makes it feel cohesive instead of
 // scattered one-off animations.
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Animated, Easing, Pressable, type StyleProp, type ViewStyle } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { motion } from '@/utils/theme';
@@ -26,7 +26,7 @@ export function Entrance({
   duration?: number;
   style?: StyleProp<ViewStyle>;
 }) {
-  const progress = useRef(new Animated.Value(0)).current;
+  const [progress] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     const anim = Animated.timing(progress, {
@@ -95,7 +95,7 @@ export function PressableScale({
   accessibilityLabel?: string;
   hitSlop?: number;
 }) {
-  const scale = useRef(new Animated.Value(1)).current;
+  const [scale] = useState(() => new Animated.Value(1));
 
   const spring = (toValue: number) =>
     Animated.spring(scale, {
