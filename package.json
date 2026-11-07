@@ -14,7 +14,11 @@
     "build:preview": "eas build --profile preview",
     "build:production": "eas build --profile production",
     "update:preview": "eas update --channel preview --environment preview",
-    "update:production": "eas update --channel production --environment production"
+    "update:production": "eas update --channel production --environment production",
+    "build:preview:org": "EAS_PROJECT_OWNER=org-ryan eas build --profile preview",
+    "build:production:org": "EAS_PROJECT_OWNER=org-ryan eas build --profile production",
+    "update:preview:org": "EAS_PROJECT_OWNER=org-ryan eas update --channel preview --environment preview",
+    "update:production:org": "EAS_PROJECT_OWNER=org-ryan eas update --channel production --environment production"
   },
   "dependencies": {
     "@expo/metro-runtime": "~58.0.15",

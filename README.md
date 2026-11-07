@@ -125,4 +125,8 @@ npm run update:production    # Push an OTA JS update to the production channel
 
 `runtimeVersion` follows `appVersion`, so OTA updates only reach builds with the same app version (`app.json` → `expo.version`).
 
-**Sharing with testers:** Expo Go QR links from `eas update` don't open for people who aren't members of the Expo project. Use an internal-distribution build (`build:preview`) instead. iOS internal builds require a paid Apple Developer account to register devices.
+The app lives in two EAS projects: `@ryan.aquino/settle-down` (personal, the default) and `@org-ryan/settle-down` (a copy in the `org-ryan` organization).
+`app.config.ts` picks one from the `EAS_PROJECT_OWNER` environment variable, and every script above has an `:org` variant (for example `npm run update:preview:org`) that targets the org project.
+The two projects don't share anything, so publish each update to both, and keep their EAS environment variables in sync.
+
+**Sharing with testers:** Expo Go QR links from `eas update` don't open for people who aren't members of the Expo project. Invite testers to the `org-ryan` organization and share the org project's update, or use an internal-distribution build (`build:preview`). iOS internal builds require a paid Apple Developer account to register devices.
