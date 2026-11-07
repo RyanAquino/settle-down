@@ -16,6 +16,7 @@ npm run lint           # expo lint (eslint-config-expo, flat config)
 npm run type-check     # tsc --noEmit
 npm run build:preview  # EAS internal-distribution build
 npm run update:preview # EAS OTA update to the preview channel (also :production variants)
+npm run update:preview:org # same, for the org-ryan copy of the project (every build/update script has an :org variant)
 ```
 
 There is no test suite. Verify changes with `npm run lint` and `npm run type-check`. The `reset-project` script points to a file that doesn't exist, so don't use it.
@@ -49,4 +50,6 @@ API calls are made with plain `fetch` in each screen; there is no shared API cli
 ## Distribution notes
 
 - `runtimeVersion` uses the `appVersion` policy, so OTA updates only reach builds with the same `expo.version` in `app.json`.
-- Expo Go QR links from `eas update` return a 403 for people who aren't members of the Expo project. Share internal-distribution EAS builds instead; iOS builds need a paid Apple Developer account.
+- There are two EAS projects: `@ryan.aquino/settle-down` (the default) and a copy, `@org-ryan/settle-down`. `app.config.ts` sets `owner`, `extra.eas.projectId` and `updates.url` from `EAS_PROJECT_OWNER`, and every other setting stays in `app.json`. Don't put the project ID back into `app.json`. The org project has `EAS_PROJECT_OWNER=org-ryan` as an EAS env var in all environments, so cloud builds resolve to it as well.
+- The two projects share nothing on EAS. Publish each update to both, and when you change an EAS env var in one project, change it in the other too.
+- Expo Go QR links from `eas update` return a 403 for people who aren't members of the Expo project. To share, invite testers to the `org-ryan` org and use the org project's update, or share internal-distribution EAS builds. iOS builds need a paid Apple Developer account.
