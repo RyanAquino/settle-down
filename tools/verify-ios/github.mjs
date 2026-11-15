@@ -15,10 +15,11 @@ const escape = text => String(text).replaceAll('&', '&amp;').replaceAll('<', '&l
 const externalId = r => `verify-ios:${r.runId}:${r.attempt}:${r.commentId}`;
 const finalMarker = (request, attempt) => `<!-- verify-ios-final:${request.runId}:${attempt} -->`;
 const verdictSummary = {
-  PASS: 'Working in the tested scenarios. All listed scenarios replayed successfully.',
+  PASS: 'Working in the tested scenarios. All listed scenarios replayed successfully. Physical-device-only behavior, if listed, is not covered.',
   FAIL: 'Failing. At least one replayed scenario failed; inspect its assertions and logs below.',
   BLOCKED: 'Untestable. Verification could not establish whether the PR change works.',
-  SKIPPED: 'Not applicable. No relevant iOS UI change was identified; this is not a test pass.',
+  SKIPPED:
+    'Not applicable. No simulator-verifiable iOS UI change was identified; this is not a test pass.',
   CANCELLED: 'Untestable. Verification was cancelled before a final assessment could be made.',
 };
 
@@ -98,8 +99,24 @@ export function renderReport(request, result, status, stale, runUrl, artifacts, 
     lines.push(`  Evidence paths, when captured: \`replay/${scenario.id}/\` (JUnit, logs, screenshots), \`generated/${scenario.id}.yaml\` (assertions).`);
   }
   const limitations = [result?.setupError, ...(result?.limitations || [])].filter(Boolean);
-  if (limitations.length) lines.push('', '**Limitations / blockers**', '', ...limitations.map(s => `- ${escape(s).slice(0,2000)}`));
-  if (!result) lines.push('Verification did not produce a result. See the build and workflow logs.');
+  if (limitations.length)
+    lines.push(
+      '',
+      '**Limitations / blockers**',
+      '',
+      ...limitations.map((s) => `- ${escape(s).slice(0, 2000)}`),
+    );
+  if (result?.deviceOnly?.length)
+    lines.push(
+      '',
+      '**Requires a physical device (not verified in CI)**',
+      '',
+      'CI runs on a simulator only. These changes do not affect the verdict; check them on a real iPhone.',
+      '',
+      ...result.deviceOnly.map((s) => `- ${escape(s).slice(0, 2000)}`),
+    );
+  if (!result)
+    lines.push('Verification did not produce a result. See the build and workflow logs.');
   lines.push('', '### Evidence', '', `[Workflow and logs](${runUrl})`, '');
   if (!artifacts.some(a => a.name.startsWith('ios-evidence-') && !a.expired)) {
     lines.push('No downloadable test evidence is available for this attempt. Check the workflow and build logs.', '');
