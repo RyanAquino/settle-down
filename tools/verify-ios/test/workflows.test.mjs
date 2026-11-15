@@ -18,6 +18,8 @@ test('comment admission and completion reporting use separate privilege boundari
   assert.equal(main.jobs.verify.permissions.checks, undefined);
   assert.equal(report.jobs.report.permissions['pull-requests'], 'write');
   assert.equal(report.jobs.report.permissions.checks, 'write');
+  assert.equal(report.jobs.report.concurrency.group, 'verify-report-${{ github.event.workflow_run.id }}');
+  assert.equal(report.jobs.report.concurrency['cancel-in-progress'], false);
 });
 
 test('trusted tooling and PR source are explicitly checked out at distinct captured SHAs', () => {

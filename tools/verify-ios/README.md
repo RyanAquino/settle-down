@@ -11,6 +11,15 @@ the latest head. GitHub's **Re-run failed jobs** retains the original captured S
 and reuses earlier build artifacts while they remain available. Completed results
 explicitly identify stale commits.
 
+When a run finishes, the bot posts a separate **Final verdict** PR comment with
+the captured commit, scenario coverage and outcomes, failure/blocker details, and
+evidence downloads (recording, screenshots, test plan, JUnit results, and logs when
+available). PASS means working in the tested scenarios; FAIL means a replay failed;
+BLOCKED or CANCELLED means untestable; SKIPPED means no relevant iOS UI change.
+Missing evidence is explicit. The original progress comment links to the verdict.
+Re-publishing the same attempt updates its final comment without duplicating it;
+a new verification attempt posts a new final comment.
+
 Rerun reports link evidence and check details from the current attempt, while
 retaining the most recent reused build and original request artifacts. Missing
 current evidence is never replaced with an older recording or test log.
@@ -53,7 +62,8 @@ retained for seven days and the intermediate app archive for one day.
   resets the chosen backend preset before each independent replay. Exploration is
   bounded to 15 minutes / 100 tool calls; replay has a 10-minute shared budget.
 - A separate completion workflow reads data artifacts, derives the verdict, and
-  updates the check and progress comment even when building/testing was cancelled.
+  updates the check and posts a final verdict comment even when building/testing
+  was cancelled. The progress comment links to that final verdict.
   It never checks out or executes PR code or downloaded artifacts.
 
 The runner handles both `SIGINT` and `SIGTERM`. Cancellation stops detached command
