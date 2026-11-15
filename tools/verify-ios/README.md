@@ -15,7 +15,8 @@ When a run finishes, the bot posts a separate **Final verdict** PR comment with
 the captured commit, scenario coverage and outcomes, failure/blocker details, and
 evidence downloads (recording, screenshots, test plan, JUnit results, and logs when
 available). PASS means working in the tested scenarios; FAIL means a replay failed;
-BLOCKED or CANCELLED means untestable; SKIPPED means no relevant iOS UI change.
+BLOCKED or CANCELLED means untestable; SKIPPED means no simulator-verifiable iOS UI
+change. Behavior that needs a physical device is listed separately and never blocks.
 Missing evidence is explicit. The original progress comment links to the verdict.
 Re-publishing the same attempt updates its final comment without duplicating it;
 a new verification attempt posts a new final comment.
@@ -36,7 +37,8 @@ current evidence is never replaced with an older recording or test log.
    supports `CI_E2E=1`. The build refuses a binary with OTA updates enabled.
 4. Post `/verify` on a small, testable UI PR and inspect the resulting check,
    comment, and artifacts. Exercise an intentional assertion failure and a
-   hardware-only change before relying on this check for merge protection.
+   hardware-only change (expect PASS or SKIPPED with a physical-device list)
+   before relying on this check for merge protection.
 
 Copilot Free has a limited allowance. Exhausted allowance or authentication errors
 produce BLOCKED; there is no paid-model or alternate-provider fallback. Standard
@@ -55,6 +57,10 @@ retained for seven days and the intermediate app archive for one day.
   one synthetic receipt photo, and starts the fixture backend. Xcode 26.6, Node 22,
   Java 17, Maestro 2.12.1, and Copilot CLI 1.0.112 are selected explicitly.
 - Copilot reads the diff and selected source through a restricted MCP adapter.
+  Diffs, source, hierarchies, and fixture requests are paged so each tool result
+  stays under 16,000 bytes. Copilot CLI writes larger results (over 20,480 bytes)
+  to a temp file and shows the model only a 500-character preview, which the
+  sandboxed agent cannot open.
   It sees screenshots and accessibility information and performs live UI actions.
   All navigation is validated literal Maestro YAML. It cannot run arbitrary shell
   commands, edit source, follow URLs, or load the PR's agent configuration.
@@ -76,13 +82,16 @@ the independent completion workflow reports the run's GitHub conclusion.
 Only PR changes are covered; there is no mandatory whole-app smoke test. Unchanged
 screens are exercised only to reach changed behavior. PASS requires real replay,
 positive assertions, a nonempty successful JUnit report, and no declared coverage
-blockers. No relevant iOS UI change is SKIPPED. Simulator/tool/quota limitations
-are BLOCKED. Executed failures are FAIL. Only PASS makes the check successful;
+blockers. No simulator-verifiable iOS UI change is SKIPPED. Simulator/tool/quota
+limitations are BLOCKED. Executed failures are FAIL. Only PASS makes the check successful;
 SKIPPED is neutral. No branch protection setting is changed automatically.
 
-The simulator cannot validate physical camera capture/orientation, real OCR, or
-real Settle Up integration. A PR requiring those reports its missing coverage;
-a nearby screen assertion cannot turn it into PASS.
+CI is simulator-only by design. Physical camera capture, image orientation,
+autofocus, actual preview magnification, and haptics need a real device. The agent
+lists those in `deviceOnly`; they appear in the verdict comment under
+**Requires a physical device** and do not block. A PR whose simulator-observable
+changes all pass is PASS; a PR with nothing observable in the simulator is SKIPPED.
+Real OCR and real Settle Up integration are never exercised.
 
 ## Fixtures and evidence
 
@@ -93,7 +102,9 @@ one quantity-two item), JPY/TWD/HKD groups, and synthetic Alex/Sam members. Pres
 There is no upstream proxy. Transaction submissions are recorded locally only.
 
 The agent's `submit_plan` tool accepts a disposition (`ready`, `skipped`, `blocked`),
-rationale, limitations, and scenarios (`id`, `name`, `coverage`, `fixture`, `yaml`).
+rationale, limitations, `deviceOnly`, and scenarios (`id`, `name`, `coverage`,
+`fixture`, `yaml`). Limitations are blocking simulator-side gaps and require
+`blocked`; `blocked` requires at least one limitation.
 Flows must start with `launchApp` and include `assertVisible` and `takeScreenshot`.
 Unknown commands/options, scripts, nested flows, YAML aliases/tags, executable
 expressions, optional assertions, alternate app IDs, and unsafe screenshot paths

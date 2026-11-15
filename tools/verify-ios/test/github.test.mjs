@@ -196,9 +196,28 @@ test('final comments explain every verdict and include failure evidence and bloc
   assert.match(report, /generated\/zoom.yaml/);
   assert.match(report, /session.mp4/);
   assert.match(report, /\[ios-evidence-1\]\(https:\/\/github.com\/evidence\)/);
-  assert.ok(!report.includes('@user')); assert.ok(!report.includes('<button>'));
-  const expired = renderReport(request, undefined, 'BLOCKED', false, 'https://github.com/run',
-    [{ name: 'ios-evidence-1', url: 'https://github.com/evidence', expired: true }]);
+  assert.ok(!report.includes('@user'));
+  assert.ok(!report.includes('<button>'));
+  const devicePass = renderReport(
+    request,
+    {
+      rationale: 'Zoom controls enable and reset.',
+      limitations: [],
+      deviceOnly: ['Actual preview magnification needs a physical camera.'],
+      scenarios: [{ id: 'zoom', name: 'Zoom', status: 'PASS', coverage: 'Zoom controls' }],
+    },
+    'PASS',
+    false,
+    'https://github.com/run',
+    [],
+  );
+  assert.match(devicePass, /\*\*PASS\*\*/);
+  assert.match(devicePass, /Requires a physical device \(not verified in CI\)/);
+  assert.match(devicePass, /Actual preview magnification needs a physical camera/);
+  assert.doesNotMatch(devicePass, /Limitations \/ blockers/);
+  const expired = renderReport(request, undefined, 'BLOCKED', false, 'https://github.com/run', [
+    { name: 'ios-evidence-1', url: 'https://github.com/evidence', expired: true },
+  ]);
   assert.match(expired, /No downloadable test evidence/);
   assert.match(expired, /\(expired\)/);
 });
