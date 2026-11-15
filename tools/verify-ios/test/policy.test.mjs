@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { validateFlow, validatePlan, verdict, APP_ID } from '../policy.mjs';
+import { checkJUnit } from '../runner.mjs';
+
+const flow = commands => `appId: \${APP_ID}\n---\n${commands}\n`;
+const valid = flow('- launchApp\n- tapOn: Library\n- assertVisible: "Expected change"\n- takeScreenshot: result');
+test('literal UI flows and stable selectors are accepted', () => {
+  assert.equal(validateFlow(valid, { replay: true }).steps.length, 4);
+  assert.doesNotThrow(() => validateFlow(flow('- tapOn:\n    id: item-cost-1\n    index: 0')));
+  assert.doesNotThrow(() => validateFlow(flow('- launchApp:\n    permissions:\n      all: allow')));
+});
+for (const [name, yaml] of Object.entries({
+  script: flow('- runScript: evil.js'), nested: flow('- runFlow:\n    commands:\n      - evalScript: "bad"'),
+  headerHook: `appId: ${APP_ID}\nonFlowStart:\n  - runScript: bad.js\n---\n- launchApp`,
+  expression: flow('- tapOn:\n    text: "${http.get(\'https://example.com\')}"'),
+  optionalAssertion: flow('- assertVisible:\n    text: Nope\n    optional: true'),
+  pathTraversal: flow('- takeScreenshot: ../../escape'),
+  unsafeHeader: 'appId: com.apple.mobilesafari\n---\n- launchApp',
+  alternateApp: flow('- launchApp:\n    appId: com.apple.mobilesafari'),
+  alias: flow('- tapOn: &target Library\n- assertVisible: *target'),
+  tag: flow('- tapOn: !!str Library'),
+  duplicateKey: 'appId: x\nappId: ${APP_ID}\n---\n- launchApp',
+  multiCommand: flow('- tapOn: Library\n  assertVisible: Library'),
+  environment: `appId: ${APP_ID}\nenv:\n  FOO: bar\n---\n- launchApp`,
+  thirdDocument: `${valid}\n---\n- launchApp`,
+  unknownOption: flow('- tapOn:\n    text: Library\n    retryTapIfNoChange: true'),
+  prototype: flow('- constructor: null'),
+})) test(`rejects ${name}`, () => assert.throws(() => validateFlow(yaml)));
+test('replay requires launch, visible assertions, and evidence', () => {
+  for (const yaml of [flow('- launchApp'), flow('- assertVisible: Hi\n- takeScreenshot: a'), flow('- launchApp\n- assertVisible: Hi')]) {
+    assert.throws(() => validateFlow(yaml, { replay: true }));
+  }
+});
+test('plans cannot silently contain no tests or duplicate scenario IDs', () => {
+  const plan = { disposition: 'ready', rationale: 'Tests the changed receipt validation.', limitations: [], scenarios: [] };
+  assert.throws(() => validatePlan(plan));
+  const scenario = { id: 'receipt', name: 'Receipt', coverage: 'New validation', fixture: 'success', yaml: valid };
+  assert.equal(validatePlan({ ...plan, scenarios: [scenario] }).scenarios.length, 1);
+  assert.throws(() => validatePlan({ ...plan, scenarios: [scenario, scenario] }));
+  assert.throws(() => validatePlan({ ...plan, scenarios: [{ ...scenario, fixture: 'production' }] }));
+});
+test('verdicts require executed, nonempty, complete evidence', () => {
+  const result = { agentCompleted: true, disposition: 'ready', limitations: [], scenarios: [{ status: 'PASS', exitCode: 0, junitVerified: true }] };
+  assert.equal(verdict(result), 'PASS');
+  assert.equal(verdict({ ...result, scenarios: [] }), 'BLOCKED');
+  assert.equal(verdict({ ...result, agentCompleted: false }), 'BLOCKED');
+  assert.equal(verdict({ ...result, limitations: ['Physical camera is required'] }), 'BLOCKED');
+  assert.equal(verdict({ ...result, disposition: 'skipped', scenarios: [] }), 'SKIPPED');
+  assert.equal(verdict({ ...result, scenarios: [{ status: 'PASS', exitCode: 0 }] }), 'BLOCKED');
+  assert.equal(verdict({ ...result, scenarios: [{ status: 'FAIL' }] }, 'failure'), 'FAIL');
+  assert.equal(verdict(result, 'failure'), 'BLOCKED');
+  assert.equal(verdict(result, 'cancelled'), 'CANCELLED');
+  assert.equal(verdict(undefined), 'BLOCKED');
+});
+test('JUnit rejects missing, malformed, skipped, and failed execution', () => {
+  assert.equal(checkJUnit('<testsuites><testsuite tests="1" failures="0"><testcase name="change"/></testsuite></testsuites>'), true);
+  for (const xml of ['', '<broken>', '<testsuite tests="0"/>',
+    '<testsuite><testcase name="x"><skipped/></testcase></testsuite>',
+    '<testsuite><testcase name="x"><failure message="no"/></testcase></testsuite>',
+    '<testsuite failures="1"><testcase name="x"/></testsuite>',
+    '<!DOCTYPE x [<!ENTITY y SYSTEM "file:///etc/passwd">]><testsuite><testcase name="x"/></testsuite>',
+  ]) assert.equal(checkJUnit(xml), false, xml);
+});

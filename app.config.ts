@@ -23,11 +23,24 @@ export default ({ config }: ConfigContext) => {
     );
   }
   const projectId = EAS_PROJECT_IDS[owner];
+  const isE2E = process.env.CI_E2E === '1';
 
   return {
     ...config,
     owner,
     extra: { ...config.extra, eas: { projectId } },
-    updates: { url: `https://u.expo.dev/${projectId}` },
+    updates: { url: `https://u.expo.dev/${projectId}`, ...(isE2E ? { enabled: false } : {}) },
+    ...(isE2E ? {
+      ios: {
+        ...config.ios,
+        infoPlist: {
+          ...config.ios?.infoPlist,
+          NSAppTransportSecurity: {
+            ...config.ios?.infoPlist?.NSAppTransportSecurity,
+            NSAllowsLocalNetworking: true,
+          },
+        },
+      },
+    } : {}),
   };
 };

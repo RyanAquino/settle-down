@@ -105,6 +105,14 @@ npm run lint
 npm run type-check
 ```
 
+## PR verification
+
+After the CI setup is merged to `main`, repository writers can comment `/verify`
+on an open, same-repository PR. Copilot explores the changed iOS behavior, saves
+Maestro tests, and CI replays them against a synthetic local backend. The PR gets
+a commit-specific verdict and links to video, screenshots, test flows, and logs.
+Only PR changes are covered. See [setup, limits, and troubleshooting](tools/verify-ios/README.md).
+
 ## Builds and updates
 
 EAS profiles are defined in `eas.json`:
