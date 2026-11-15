@@ -1,0 +1,159 @@
+name: Verify iOS PR
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  request:
+    name: Authorize verification
+    if: github.event.issue.pull_request && contains(github.event.comment.body, '/verify') && github.event.comment.user.type == 'User'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: verify-admission-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      actions: read
+    outputs:
+      accepted: ${{ steps.request.outputs.accepted }}
+      head_sha: ${{ steps.request.outputs.head_sha }}
+      base_sha: ${{ steps.request.outputs.base_sha }}
+      request_artifact: ${{ steps.request.outputs.request_artifact }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: ci
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: npm ci --prefix ci/tools/verify-ios --ignore-scripts --omit=dev
+      - id: request
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { admit } = await import(`${process.env.GITHUB_WORKSPACE}/ci/tools/verify-ios/github.mjs`);
+            await admit({ github, context, core, outputDir: `${process.env.RUNNER_TEMP}/verify-request` });
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-request-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/verify-request/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  build:
+    name: Build captured PR
+    needs: request
+    if: needs.request.outputs.accepted == 'true'
+    runs-on: macos-26
+    timeout-minutes: 60
+    outputs:
+      app_artifact: ${{ steps.artifact.outputs.name }}
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: ci
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.request.outputs.head_sha }}
+          path: pr-source
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: pr-source/package-lock.json
+      - run: npm ci --prefix ci/tools/verify-ios --ignore-scripts --omit=dev
+      - name: Build Release simulator binary
+        run: node ci/tools/verify-ios/build.mjs pr-source "$RUNNER_TEMP/verify-build"
+      - id: artifact
+        run: echo "name=ios-app-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ runner.temp }}/verify-build/app.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-build-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/verify-build/*.log
+            ${{ runner.temp }}/verify-build/expo-config.json
+            pr-source/.expo/xcodebuild*.log
+          retention-days: 7
+          if-no-files-found: warn
+
+  verify:
+    name: Agentic iOS verification
+    needs: [request, build]
+    runs-on: macos-26
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      copilot-requests: write
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      MAESTRO_CLI_NO_ANALYTICS: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          path: ci
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.request.outputs.head_sha }}
+          path: pr-source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci --prefix ci/tools/verify-ios --ignore-scripts
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ needs.request.outputs.request_artifact }}
+          path: ${{ runner.temp }}/verify-request
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ needs.build.outputs.app_artifact }}
+          path: ${{ runner.temp }}/verify-app
+      - name: Install pinned Maestro
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.maestro"
+          curl --fail --location --retry 3 https://github.com/mobile-dev-inc/Maestro/releases/download/cli-2.12.1/maestro.zip -o "$RUNNER_TEMP/maestro.zip"
+          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP/maestro-install"
+          echo "$RUNNER_TEMP/maestro-install/maestro/bin" >> "$GITHUB_PATH"
+      - name: Explore PR behavior and replay saved tests
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node ci/tools/verify-ios/runner.mjs pr-source "$RUNNER_TEMP/verify-request" "$RUNNER_TEMP/verify-app/app.tar.gz" "$RUNNER_TEMP/ios-evidence"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-evidence-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-evidence/
+          retention-days: 7
+          if-no-files-found: warn

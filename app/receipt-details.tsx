@@ -412,7 +412,7 @@ export default function ReceiptDetailsScreen() {
                         <Text style={styles.shopNameJP}>{shopInfo.jp_shop_name}</Text>
                     ) : null}
 
-                    <PressableScale style={styles.dateRow} scaleTo={0.99} onPress={() => setShowDatePicker(true)}>
+                    <PressableScale testID="receipt-date" style={styles.dateRow} scaleTo={0.99} onPress={() => setShowDatePicker(true)}>
                         <Text style={styles.dateText}>
                             {formatDate(shopInfo.receipt_date)} · {formatTime(shopInfo.receipt_date)}
                         </Text>
@@ -432,6 +432,7 @@ export default function ReceiptDetailsScreen() {
                     ) : (
                         <PressableScale
                             style={styles.groupValue}
+                            testID="receipt-group"
                             scaleTo={0.97}
                             onPress={showGroupPicker}
                             disabled={groups.length === 0}
@@ -465,6 +466,7 @@ export default function ReceiptDetailsScreen() {
                                         ]}
                                         onPress={() => setPaidByUserId(u.id)}
                                         accessibilityLabel={`Paid by ${u.name}`}
+                                        testID={`paid-by-${u.id}`}
                                     >
                                         <View
                                             style={[
@@ -528,7 +530,7 @@ export default function ReceiptDetailsScreen() {
                         .map((item, index) => {
                             const assigned = userSelections[item.item_order];
                             return (
-                                <View key={item.item_order} style={[styles.itemRow, index > 0 && styles.itemRowDivider]}>
+                                <View key={item.item_order} testID={`receipt-item-${item.item_order}`} style={[styles.itemRow, index > 0 && styles.itemRowDivider]}>
                                     {/* Name + JP secondary */}
                                     <View style={styles.itemNameWrap}>
                                         <Text style={styles.itemName} numberOfLines={1}>
@@ -551,6 +553,8 @@ export default function ReceiptDetailsScreen() {
                                             {priceSymbol && <Text style={styles.priceSymbol}>{priceSymbol}</Text>}
                                             <TextInput
                                                 style={styles.priceInput}
+                                                testID={`item-cost-${item.item_order}`}
+                                                accessibilityLabel={`Cost of ${item.english_name || item.japanese_name}`}
                                                 value={costInputs.hasOwnProperty(item.item_order) ? costInputs[item.item_order] : item.cost.toString()}
                                                 onChangeText={(t) => updateItemCost(item.item_order, t)}
                                                 keyboardType="decimal-pad"
@@ -576,6 +580,7 @@ export default function ReceiptDetailsScreen() {
                                                         ]}
                                                         onPress={() => handleUserSelection(item.item_order, u.id)}
                                                         accessibilityLabel={`Assign to ${u.name}`}
+                                                        testID={`item-${item.item_order}-assign-${u.id}`}
                                                     >
                                                         <View
                                                             style={[
@@ -604,6 +609,7 @@ export default function ReceiptDetailsScreen() {
                                                 ]}
                                                 onPress={() => handleUserSelection(item.item_order, 'shared')}
                                                 accessibilityLabel="Mark item as shared"
+                                                testID={`item-${item.item_order}-shared`}
                                             >
                                                 <View style={styles.sharedGlyph}>
                                                     <View style={[styles.sharedDot, assigned === 'shared' && styles.sharedDotOn]} />
@@ -638,6 +644,8 @@ export default function ReceiptDetailsScreen() {
                             <View style={styles.taxInputWrap}>
                                 <TextInput
                                     style={styles.taxInput}
+                                    testID="receipt-tax"
+                                    accessibilityLabel="Tax percentage"
                                     value={taxPercentageInput !== null ? taxPercentageInput : editableTaxPercentage.toString()}
                                     onChangeText={updateTaxPercentage}
                                     keyboardType="decimal-pad"
@@ -651,7 +659,7 @@ export default function ReceiptDetailsScreen() {
                     </View>
                     <View style={[styles.summaryLine, styles.summaryTotalLine]}>
                         <Text style={styles.summaryTotalLabel}>Total</Text>
-                        <Text style={styles.summaryTotal}>{formatMoney(total, currency)}</Text>
+                        <Text testID="receipt-total" style={styles.summaryTotal}>{formatMoney(total, currency)}</Text>
                     </View>
                 </Entrance>
             </ScrollView>
@@ -672,6 +680,7 @@ export default function ReceiptDetailsScreen() {
                     haptic={readyToSync && !isSyncing ? 'medium' : 'none'}
                     style={[styles.syncBtn, (!readyToSync || isSyncing) && styles.syncBtnDisabled]}
                     onPress={syncTransaction}
+                    testID="sync-transaction"
                     disabled={!readyToSync || isSyncing}
                 >
                     {isSyncing ? (
@@ -704,6 +713,7 @@ export default function ReceiptDetailsScreen() {
                                     scaleTo={0.98}
                                     style={[styles.groupOption, selectedGroupId === item.id && styles.groupOptionSelected]}
                                     onPress={() => handleGroupSelection(item)}
+                                    testID={`group-${item.id}`}
                                 >
                                     <Text style={[styles.groupOptionText, selectedGroupId === item.id && styles.groupOptionTextSelected]}>
                                         {item.name}
