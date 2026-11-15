@@ -46,7 +46,7 @@ export default function CameraScreen() {
           </Text>
         </Entrance>
         <Entrance delay={160} distance={16}>
-          <PressableScale style={styles.permissionBtn} haptic="medium" onPress={permission.canAskAgain ? requestPermission : () => { void Linking.openSettings(); }}>
+          <PressableScale testID="allow-camera" style={styles.permissionBtn} haptic="medium" onPress={permission.canAskAgain ? requestPermission : () => { void Linking.openSettings(); }}>
             <Text style={styles.permissionBtnText}>{permission.canAskAgain ? 'Allow camera' : 'Open settings'}</Text>
           </PressableScale>
         </Entrance>

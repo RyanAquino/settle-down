@@ -173,7 +173,7 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
         </View>
         <Text style={styles.zoomHint}>Pinch to zoom</Text>
         <View style={styles.captureRow}>
-          <PressableScale style={[styles.sideButton, isCapturing && styles.disabled]} disabled={isCapturing}
+          <PressableScale testID="pick-receipt" style={[styles.sideButton, isCapturing && styles.disabled]} disabled={isCapturing}
             onPress={onPickFromLibrary} accessibilityLabel="Pick from library">
             <View style={styles.libraryIcon}>
               <View style={styles.libraryBack} />
@@ -188,6 +188,7 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
             haptic="none"
             onPress={takePicture}
             accessibilityLabel="Capture receipt"
+            testID="capture-receipt"
           >
             <View style={styles.shutterInner} />
           </PressableScale>
