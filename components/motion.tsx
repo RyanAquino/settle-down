@@ -84,6 +84,7 @@ export function PressableScale({
   haptic = 'selection',
   scaleTo = motion.pressScale,
   accessibilityLabel,
+  testID,
   hitSlop,
 }: {
   children: ReactNode;
@@ -93,6 +94,7 @@ export function PressableScale({
   haptic?: HapticKind;
   scaleTo?: number;
   accessibilityLabel?: string;
+  testID?: string;
   hitSlop?: number;
 }) {
   const [scale] = useState(() => new Animated.Value(1));
@@ -109,6 +111,7 @@ export function PressableScale({
     <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      testID={testID}
       hitSlop={hitSlop}
       disabled={disabled}
       onPressIn={() => spring(disabled ? 1 : scaleTo).start()}

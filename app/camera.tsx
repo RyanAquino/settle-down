@@ -49,7 +49,7 @@ export default function CameraScreen() {
           </Text>
         </Entrance>
         <Entrance delay={160} distance={16}>
-          <PressableScale style={styles.permissionBtn} haptic="medium" onPress={requestPermission}>
+          <PressableScale testID="allow-camera" style={styles.permissionBtn} haptic="medium" onPress={requestPermission}>
             <Text style={styles.permissionBtnText}>Allow camera</Text>
           </PressableScale>
         </Entrance>
@@ -140,7 +140,7 @@ export default function CameraScreen() {
 
       {/* Bottom controls */}
       <Entrance delay={80} style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 24) + 8 }]}>
-        <PressableScale style={styles.sideBtn} onPress={pickFromLibrary} accessibilityLabel="Pick from library">
+        <PressableScale testID="pick-receipt" style={styles.sideBtn} onPress={pickFromLibrary} accessibilityLabel="Pick from library">
           <View style={styles.sideBtnIcon}>
             <View style={styles.libraryBack} />
             <View style={styles.libraryFront} />
@@ -154,6 +154,7 @@ export default function CameraScreen() {
           haptic="none"
           onPress={takePicture}
           accessibilityLabel="Capture receipt"
+          testID="capture-receipt"
         >
           <View style={styles.shutterInner} />
         </PressableScale>
