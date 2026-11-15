@@ -14,6 +14,22 @@ const escape = text => String(text).replaceAll('&', '&amp;').replaceAll('<', '&l
   .replaceAll('@', '@\u200b').replaceAll('`', '\\`').replaceAll('[', '\\[').replaceAll(']', '\\]');
 const externalId = r => `verify-ios:${r.runId}:${r.attempt}:${r.commentId}`;
 
+export function selectArtifacts(artifacts, requestAttempt, runAttempt) {
+  const selected = [];
+  for (const prefix of ['ios-evidence', 'ios-build', 'ios-app', 'verify-request']) {
+    const candidates = artifacts.filter(a => {
+      const match = a.name.match(new RegExp(`^${prefix}-(\\d+)$`));
+      if (!match) return false;
+      const attempt = Number(match[1]);
+      if (prefix === 'ios-evidence') return attempt === runAttempt;
+      if (prefix === 'verify-request') return attempt === requestAttempt;
+      return attempt >= requestAttempt && attempt <= runAttempt;
+    }).sort((a,b) => Number(b.name.split('-').at(-1)) - Number(a.name.split('-').at(-1)));
+    if (candidates.length) selected.push(candidates[0]);
+  }
+  return selected;
+}
+
 export async function admit({ github, context, core, outputDir }) {
   const event = context.payload;
   if (!isCommand(event)) return;
@@ -107,10 +123,15 @@ export async function publish({ github, context, core, directory }) {
   const status = verdict(result, run.conclusion);
   const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: request.pr });
   const stale = pr.head.sha !== request.headSha;
-  const artifacts = (await github.paginate(github.rest.actions.listWorkflowRunArtifacts, { ...repo, run_id: run.id, per_page: 100 }))
-    .filter(a => a.name.endsWith(`-${request.attempt}`)).map(a => ({ ...a, url: `${context.serverUrl}/${fullName}/actions/runs/${run.id}/artifacts/${a.id}` }));
-  const body = renderReport(request, result, status, stale, run.html_url, artifacts);
+  const availableArtifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, { ...repo, run_id: run.id, per_page: 100 });
+  // A partial rerun reuses admission/build outputs, but its verdict must link to
+  // its own evidence. Never substitute an earlier attempt's test artifacts.
+  const artifacts = selectArtifacts(availableArtifacts, request.attempt, run.run_attempt)
+    .map(a => ({ ...a, url: `${context.serverUrl}/${fullName}/actions/runs/${run.id}/artifacts/${a.id}` }));
+  const runUrl = `${context.serverUrl}/${fullName}/actions/runs/${run.id}/attempts/${run.run_attempt}`;
+  const body = renderReport(request, result, status, stale, runUrl, artifacts);
   await github.rest.checks.update({ ...repo, check_run_id: request.checkId, status: 'completed', conclusion: checkConclusion[status],
+    details_url: runUrl,
     output: { title: `${status}${stale ? ' (stale commit)' : ''}`, summary: body },
   });
   comments ??= await github.paginate(github.rest.issues.listComments, { ...repo, issue_number: request.pr, per_page: 100 });

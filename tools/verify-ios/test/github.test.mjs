@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { isCommand, canVerify, isEligible, admit, marker, renderReport, publish } from '../github.mjs';
+import { isCommand, canVerify, isEligible, admit, marker, renderReport, publish, selectArtifacts } from '../github.mjs';
 
 const sha = 'a'.repeat(40), base = 'b'.repeat(40);
 const event = () => ({ action: 'created', issue: { number: 12, pull_request: {} }, comment: { id: 5, body: ' /verify\n', user: { type: 'User', login: 'writer' } } });
@@ -84,4 +84,36 @@ test('a build failure produces BLOCKED even without test evidence', async t => {
   h.github.rest.checks.get = async () => ({ data: { external_id: 'verify-ios:100:1:5', head_sha: sha, app: { slug: 'github-actions' } } });
   await publish({ ...h, directory });
   assert.equal(h.writes[0].conclusion, 'failure'); assert.match(h.writes[1].body, /BLOCKED/);
+});
+
+test('a partial rerun links current evidence and retains reused build and request artifacts', async t => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'verify-rerun-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(`${directory}/evidence`);
+  const h = harness();
+  const request = { version: 1, repository: 'owner/app', pr: 12, headSha: sha, runId: 100, attempt: 1, commentId: 5, checkId: 30 };
+  const result = { version: 1, headSha: sha, disposition: 'ready', agentCompleted: true, verdict: 'PASS', limitations: [],
+    scenarios: [{ id: 'changed-ui', name: 'Changed UI', coverage: 'PR change', fixture: 'success', status: 'PASS', exitCode: 0, junitVerified: true }] };
+  await writeFile(`${directory}/evidence/result.json`, JSON.stringify(result));
+  h.context.payload = { workflow_run: { id: 100, run_attempt: 3, event: 'issue_comment', path: '.github/workflows/verify-ios.yml',
+    head_repository: { full_name: 'owner/app' }, conclusion: 'success', created_at: '2026-01-01', html_url: 'https://github.com/owner/app/actions/runs/100' } };
+  h.github.rest.checks.get = async () => ({ data: { external_id: 'verify-ios:100:1:5', head_sha: sha, app: { slug: 'github-actions' } } });
+  const artifacts = ['verify-request-1', 'ios-build-1', 'ios-build-2', 'ios-app-2', 'ios-evidence-1', 'ios-evidence-2', 'ios-evidence-3', 'ios-evidence-4']
+    .map((name, id) => ({ name, id }));
+  h.github.paginate = async method => method === 'all-comments'
+    ? [{ id: 40, user: { login: 'github-actions[bot]' }, body: marker(request) }]
+    : method === 'artifacts' ? artifacts : [];
+  await publish({ ...h, directory });
+  assert.equal(h.writes[0].conclusion, 'success');
+  const body = h.writes[1].body;
+  for (const name of ['ios-evidence-3', 'ios-build-2', 'ios-app-2', 'verify-request-1']) assert.ok(body.includes(name), `Missing ${name}`);
+  for (const name of ['ios-evidence-1', 'ios-evidence-2', 'ios-evidence-4', 'ios-build-1']) assert.ok(!body.includes(name), `Stale/future ${name}`);
+  assert.match(h.writes[0].details_url, /\/attempts\/3$/);
+  assert.match(body, /\/attempts\/3\)/);
+});
+
+test('missing rerun evidence never falls back to a previous attempt', () => {
+  const artifacts = ['ios-evidence-1', 'ios-build-1', 'ios-app-1', 'verify-request-1', 'ios-build-3', 'other-2'].map(name => ({ name }));
+  assert.deepEqual(selectArtifacts(artifacts, 1, 2).map(a => a.name), ['ios-build-1', 'ios-app-1', 'verify-request-1']);
+  assert.deepEqual(selectArtifacts(artifacts, 2, 2), []);
 });

@@ -11,6 +11,10 @@ the latest head. GitHub's **Re-run failed jobs** retains the original captured S
 and reuses earlier build artifacts while they remain available. Completed results
 explicitly identify stale commits.
 
+Rerun reports link evidence and check details from the current attempt, while
+retaining the most recent reused build and original request artifacts. Missing
+current evidence is never replaced with an older recording or test log.
+
 ## Activation
 
 1. Merge the workflow files and tooling onto `main`. Both `issue_comment` and
@@ -51,6 +55,13 @@ retained for seven days and the intermediate app archive for one day.
 - A separate completion workflow reads data artifacts, derives the verdict, and
   updates the check and progress comment even when building/testing was cancelled.
   It never checks out or executes PR code or downloaded artifacts.
+
+The runner handles both `SIGINT` and `SIGTERM`. Cancellation stops detached command
+groups (including stubborn descendants), writes the result before teardown, and
+finalizes available recording/screenshots within a bounded cleanup window. An
+unresponsive simulator command cannot prevent the cancellation report from being
+written. Abrupt host loss or a direct `SIGKILL` can still leave partial evidence;
+the independent completion workflow reports the run's GitHub conclusion.
 
 Only PR changes are covered; there is no mandatory whole-app smoke test. Unchanged
 screens are exercised only to reach changed behavior. PASS requires real replay,
