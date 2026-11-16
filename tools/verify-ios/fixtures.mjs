@@ -1,3 +1,4 @@
+import { FIXTURE_ORIGIN } from './fixture-control.mjs';
 import http from 'node:http';
 import { appendFile, readFile } from 'node:fs/promises';
 import { PRESETS } from './policy.mjs';
@@ -9,7 +10,7 @@ export const receipt = {
   ],
   en_shop_name: 'CI Receipt Shop', jp_shop_name: 'テスト店', tax_percentage: 10,
   total_amount: 330, receipt_date: '2026-01-15T12:00:00.000Z',
-  receipt_image_url: 'http://localhost:8765/receipt.png',
+  receipt_image_url: `${FIXTURE_ORIGIN}/receipt.png`,
 };
 export const groups = [
   { id: 'ci-jpy', name: 'CI Japan', currency: 'JPY' },

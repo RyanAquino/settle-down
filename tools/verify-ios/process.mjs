@@ -1,3 +1,4 @@
+import { fixtureControl } from './fixture-control.mjs';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 
@@ -65,12 +66,7 @@ export function stopProcess(child, { signal = 'SIGTERM', timeout = 1000 } = {}) 
 }
 
 export async function resetScenario({ udid, appPath, appId, fixture, phase, token, signal }) {
-  const response = await fetch('http://localhost:8765/__reset', { method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ preset: fixture, phase }),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000),
-  });
-  if (!response.ok) throw new Error('Could not reset fixture backend');
+  await fixtureControl('/__reset', { token, body: { preset: fixture, phase }, signal });
   await run('xcrun', ['simctl', 'terminate', udid, appId], { allowFailure: true, signal });
   await run('xcrun', ['simctl', 'uninstall', udid, appId], { allowFailure: true, signal });
   await run('xcrun', ['simctl', 'install', udid, appPath], { signal });
