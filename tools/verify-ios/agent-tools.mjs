@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer';
+import { ExplorationBudget, ScenarioEvidence, requireScenarioEvidence } from './exploration.mjs';
 import { fixtureControl } from './fixture-control.mjs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -26,7 +28,15 @@ const maestro = process.env.VERIFY_MAESTRO || 'maestro';
 const server = new McpServer({ name: 'verify', version: '1.0.0' });
 let calls = 0, maestroClient;
 const content = value => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] });
-const started = Date.now();
+const deadline = Number(process.env.VERIFY_AGENT_DEADLINE);
+const budget = new ExplorationBudget(Number.isFinite(deadline) && deadline > 0 ? { deadline } : {});
+const scenarioEvidence = new ScenarioEvidence({ initialResetReady: process.env.VERIFY_INITIAL_RESET_READY === '1' });
+let mutationTail = Promise.resolve();
+const serialized = action => {
+  const next = mutationTail.then(action);
+  mutationTail = next.catch(() => {});
+  return next;
+};
 
 function maestroPayload(result, key) {
   for (const block of result.content || []) {
@@ -52,10 +62,13 @@ async function maestroCall(name, args) {
 function tool(name, description, inputSchema, action) {
   server.registerTool(name, { description, inputSchema }, async args => {
     const index = ++calls;
+    const toolStarted = Date.now();
     try {
-      if (index > 100 || Date.now() - started > 15 * 60_000) throw new Error('Exploration budget exhausted');
-      const result = await action(args, index);
+      budget.enter(name);
+      const { scenarioEvidence: proof, ...result } = await (['reset_scenario', 'execute_flow'].includes(name)
+        ? serialized(() => { budget.check(name); return action(args, index); }) : action(args, index));
       if (result.isError) throw new Error(JSON.stringify(result.content));
+      result.content.push({ type: 'text', text: `Trusted exploration budget: ${JSON.stringify(budget.snapshot())}. In finalize phase, submit_plan now; incomplete coverage must remain blocked.` });
       const size = resultBytes(result);
       if (size > RESULT_LIMIT_BYTES)
         throw new Error(
@@ -63,12 +76,12 @@ function tool(name, description, inputSchema, action) {
         );
       await appendFile(
         `${evidence}/tool-calls.jsonl`,
-        `${JSON.stringify({ index, tool: name, args, ok: true, time: new Date().toISOString() })}\n`,
+        `${JSON.stringify({ index, tool: name, args, ok: true, scenarioEvidence: proof, durationMs: Date.now() - toolStarted, time: new Date().toISOString() })}\n`,
       );
       return result;
     } catch (error) {
-      await appendFile(`${evidence}/tool-calls.jsonl`, `${JSON.stringify({ index, tool: name, args, ok: false, error: error.message })}\n`);
-      return { ...content(error.message), isError: true };
+      await appendFile(`${evidence}/tool-calls.jsonl`, `${JSON.stringify({ index, tool: name, args, ok: false, durationMs: Date.now() - toolStarted, time: new Date().toISOString(), error: error.message })}\n`);
+      return { ...content(`${error.message} Budget: ${JSON.stringify(budget.snapshot())}`), isError: true };
     }
   });
 }
@@ -195,7 +208,7 @@ tool(
   {},
   async (_, index) => {
     const file = `${evidence}/exploration/screen-${index}.png`;
-    await run('xcrun', ['simctl', 'io', udid, 'screenshot', file]);
+    await run('xcrun', ['simctl', 'io', udid, 'screenshot', file], { timeout: 30000 });
     return {
       content: [
         { type: 'image', mimeType: 'image/png', data: (await readFile(file)).toString('base64') },
@@ -207,14 +220,22 @@ tool(
 tool('reset_scenario', 'Reset app data and select a predefined fixture. The photo library retains one synthetic receipt.', {
   fixture: z.enum(PRESETS),
 }, async ({ fixture }, index) => {
-  await resetScenario({ udid, appPath: process.env.VERIFY_APP, appId: APP_ID, fixture,
-    phase: `exploration-${index}`, token: process.env.VERIFY_FIXTURE_TOKEN });
+  scenarioEvidence.resetStarted();
+  if (scenarioEvidence.consumeInitialReset()) {
+    // The runner just installed and launched this app, and no flow has touched it.
+    await fixtureControl('/__reset', { token: process.env.VERIFY_FIXTURE_TOKEN, body: { preset: fixture, phase: `exploration-${index}` } });
+  } else {
+    await resetScenario({ udid, appPath: process.env.VERIFY_APP, appId: APP_ID, fixture,
+      phase: `exploration-${index}`, token: process.env.VERIFY_FIXTURE_TOKEN, signal: AbortSignal.timeout(90000) });
+  }
+  scenarioEvidence.resetCompleted(fixture);
   return content({ fixture, reset: true });
 });
 
-tool('execute_flow', 'Operate the live UI with a short literal Maestro YAML flow. Header appId is required. No scripts, expressions, URLs, hooks, nested flows, or optional steps.', {
+tool('execute_flow', 'Operate the live UI with a short literal Maestro YAML flow. Header appId is required. Only one-level inline runFlow visibility branches containing navigation are allowed. No scripts, expressions, URLs, file subflows, conditional assertions, or optional steps.', {
   yaml: z.string().max(32000),
 }, async ({ yaml }, index) => {
+  const fixture = scenarioEvidence.beginFlow();
   const validated = validateFlow(yaml);
   const directory = `${evidence}/exploration/step-${index}`;
   await mkdir(directory, { recursive: true });
@@ -226,9 +247,12 @@ tool('execute_flow', 'Operate the live UI with a short literal Maestro YAML flow
   await writeFile(`${directory}/flow.yaml`, `${stringify(validated.header)}---\n${stringify(steps)}`);
   const result = await maestroCall('run', { files: [`${directory}/flow.yaml`], env: { APP_ID } });
   await writeFile(`${directory}/execution.json`, JSON.stringify(result));
-  await run('xcrun', ['simctl', 'io', udid, 'screenshot', `${directory}/screen.png`], { allowFailure: true });
+  await run('xcrun', ['simctl', 'io', udid, 'screenshot', `${directory}/screen.png`], { allowFailure: true, timeout: 10000 });
   const data = maestroPayload(result, 'success');
-  return { ...content({ success: data.success, results: data.results }), isError: data.success !== true };
+  const proof = scenarioEvidence.completed(fixture, yaml, data.success === true);
+  return { ...content({ success: data.success, results: data.results, readyEvidence: !!proof,
+    nextStep: proof ? 'This exact complete flow is eligible for a ready plan.' : 'Before submitting ready, reset_scenario and execute the entire final flow once, including launch, assertions and screenshot.' }),
+    isError: data.success !== true, scenarioEvidence: proof };
 });
 
 tool(
@@ -248,10 +272,12 @@ tool(
 
 tool(
   'submit_plan',
-  'Save final PR coverage and at most three complete replayable scenarios. Put changes that only a physical device can verify in deviceOnly; they do not block. Use manualChecks only for the predefined pinch and native camera-failure injection exclusions. Submit ready when all other simulator-verifiable changes are covered; blocked only with simulator-side limitations (unverifiable in the simulator for other reasons, or unresolved failures); skipped when nothing is verifiable in the simulator. For camera permission gaps, first attempt launchApp with explicit camera: deny and inspect the UI; a granted session alone does not establish a blocker. This does not declare PASS.',
+  'Save final PR coverage and at most three complete replayable scenarios. Put changes that only a physical device can verify in deviceOnly; they do not block. Use manualChecks only for the predefined pinch and native camera-failure injection exclusions. Submit ready when all other simulator-verifiable changes are covered; blocked only with simulator-side limitations (unverifiable in the simulator for other reasons, or unresolved failures); skipped when nothing is verifiable in the simulator. For camera permission gaps, first attempt launchApp with explicit camera: deny and inspect the UI; a granted session alone does not establish a blocker. Ready also requires each exact complete flow to have succeeded immediately after reset_scenario with its fixture. Do not combine fragments. This does not declare PASS.',
   planSchema.shape,
   async (input) => {
     const plan = validatePlan(input);
+    const journal = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    requireScenarioEvidence(plan, journal);
     await mkdir(`${evidence}/generated`, { recursive: true });
     for (const scenario of plan.scenarios) await writeFile(`${evidence}/generated/${scenario.id}.yaml`, scenario.yaml);
     await writeFile(`${evidence}/plan.json`, JSON.stringify(plan, null, 2));
@@ -276,9 +302,9 @@ tool(
         ...plan.deviceOnly.map((s) => `- ${s}`),
       ].join('\n'),
     );
-    return content(
-      'Plan saved. CI will independently replay the validated flows and determine the verdict.',
-    );
+    return content(plan.disposition === 'blocked' && budget.snapshot().phase === 'explore'
+      ? 'Blocked checkpoint saved. While time remains, continue testing the listed gaps and replace this plan when coverage is complete. Do not stop at a checkpoint if more progress is possible.'
+      : 'Final plan saved. Stop exploration and finish now. CI will independently replay the validated flows and determine the verdict.');
   },
 );
 

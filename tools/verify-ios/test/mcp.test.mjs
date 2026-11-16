@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, symlink, rm } from 'node:fs/promises';
@@ -135,4 +136,26 @@ test('subprocess environment does not contain GitHub, Copilot, or fixture creden
   delete process.env.VERIFY_FIXTURE_TOKEN;
   delete process.env.COPILOT_GITHUB_TOKEN;
   delete process.env.GITHUB_TOKEN;
+});
+
+test('finalization budget refuses more exploration but still accepts a blocked plan', async t => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'verify-budget-mcp-'));
+  const evidence = `${directory}/evidence`;
+  await mkdir(evidence);
+  const client = new Client({ name: 'budget-test', version: '1' });
+  const transport = new StdioClientTransport({ command: process.execPath,
+    args: [fileURLToPath(new URL('../agent-tools.mjs', import.meta.url))],
+    env: { ...cleanEnv(), VERIFY_SOURCE: directory, VERIFY_EVIDENCE: evidence, VERIFY_UDID: 'unused', VERIFY_AGENT_DEADLINE: String(Date.now() + 30_000) }, stderr: 'pipe',
+  });
+  t.after(async () => { await client.close(); await rm(directory, { recursive: true, force: true }); });
+  await client.connect(transport);
+  const rejected = await client.callTool({ name: 'reset_scenario', arguments: { fixture: 'success' } });
+  assert.equal(rejected.isError, true);
+  assert.match(rejected.content[0].text, /reserve time/);
+  const saved = await client.callTool({ name: 'submit_plan', arguments: {
+    disposition: 'blocked', rationale: 'Deadline reached before coverage could be completed.',
+    limitations: ['Camera permission recovery remains unverified.'], scenarios: [],
+  } });
+  assert.notEqual(saved.isError, true);
+  assert.equal(JSON.parse(await readFile(`${evidence}/plan.json`, 'utf8')).disposition, 'blocked');
 });
