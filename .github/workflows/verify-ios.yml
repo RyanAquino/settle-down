@@ -61,6 +61,9 @@ jobs:
       contents: read
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}/pr-source
+      CCACHE_NOHASHDIR: 'true'
     steps:
       - uses: actions/checkout@v6
         with:
@@ -78,8 +81,58 @@ jobs:
           cache: npm
           cache-dependency-path: pr-source/package-lock.json
       - run: npm ci --prefix ci/tools/verify-ios --ignore-scripts --omit=dev
+      - name: Compute exact build identity
+        id: build-key
+        run: node ci/tools/verify-ios/build-key.mjs pr-source
+      - name: Restore exact simulator binary
+        id: app-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/verify-build/cache
+          key: ${{ steps.build-key.outputs.key }}
+      - name: Validate reused simulator binary
+        id: cached-app
+        if: steps.app-cache.outputs.cache-hit == 'true'
+        continue-on-error: true
+        env:
+          VERIFY_BUILD_KEY: ${{ steps.build-key.outputs.key }}
+        run: node ci/tools/verify-ios/build.mjs pr-source "$RUNNER_TEMP/verify-build" --validate-only
+      - name: Cache native downloads
+        if: steps.cached-app.outcome != 'success'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/Library/Caches/ReactNative
+            ~/.cocoapods/repos
+          key: ios-downloads-macos26-xcode26.6-arm64-v1-${{ hashFiles('pr-source/package-lock.json') }}
+          restore-keys: ios-downloads-macos26-xcode26.6-arm64-v1-
+      - name: Cache native compiler results
+        if: steps.cached-app.outcome != 'success'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ios-ccache-macos26-xcode26.6-arm64-v1-${{ hashFiles('pr-source/package-lock.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ios-ccache-macos26-xcode26.6-arm64-v1-${{ hashFiles('pr-source/package-lock.json') }}-
+      - name: Prepare compiler cache
+        if: steps.cached-app.outcome != 'success'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          command -v ccache >/dev/null || brew install ccache
+          ccache --max-size=500M
+          ccache --zero-stats
       - name: Build Release simulator binary
+        if: steps.cached-app.outcome != 'success'
+        env:
+          VERIFY_BUILD_KEY: ${{ steps.build-key.outputs.key }}
         run: node ci/tools/verify-ios/build.mjs pr-source "$RUNNER_TEMP/verify-build"
+      - name: Cache validated simulator binary
+        if: success() && steps.app-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/verify-build/cache
+          key: ${{ steps.build-key.outputs.key }}
       - id: artifact
         run: echo "name=ios-app-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
@@ -87,6 +140,7 @@ jobs:
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: ${{ runner.temp }}/verify-build/app.tar.gz
+          compression-level: 0
           retention-days: 1
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
@@ -96,6 +150,7 @@ jobs:
           path: |
             ${{ runner.temp }}/verify-build/*.log
             ${{ runner.temp }}/verify-build/expo-config.json
+            ${{ runner.temp }}/verify-build/timings.json
             pr-source/.expo/xcodebuild*.log
           retention-days: 7
           if-no-files-found: warn
