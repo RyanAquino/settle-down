@@ -166,3 +166,32 @@ default launch. Test Open settings, use its live Camera switch when available,
 and resume with `stopApp: false` and explicit permissions. Runtime permission
 changes may terminate the process on iOS; evidence must distinguish app recovery
 from refresh in a surviving process. These checks remain blocking coverage.
+
+## Build performance and reuse
+
+The build job keeps a standalone Release app with OTA updates disabled. It runs
+Expo prebuild, CocoaPods, and Xcode compilation as separate timed stages. Xcode
+builds only `arm64` for the iOS simulator, skips signing and indexing, and emits
+`-showBuildTimingSummary` in `build.log`. This archive is for the Apple Silicon
+verification runner; it is not an Intel simulator or device build.
+
+Native dependency downloads (CocoaPods and React Native) persist across runs.
+`USE_CCACHE=1` enables React Native's compiler wrappers; a 500 MB ccache persists
+between builds with matching dependency locks and toolchain. Swift compilation
+and linking still run. Generated native projects and DerivedData are not cached.
+
+Before installing app dependencies, the job checks an exact binary cache keyed by
+the entire captured Git source tree, trusted build scripts/configuration, actual
+Xcode build version, Node major, and the versioned Release/arm64 build policy.
+There is no fallback key for binaries. An identical tree can reuse an archive;
+source changes, including verifier files in the PR tree, conservatively invalidate
+it. A hit must match its manifest and pass bundle ID, OTA-disabled, simulator
+platform, and arm64 checks before compilation is skipped. Failed validation falls
+back to a fresh build. Reused binaries are uploaded as this run's app artifact,
+so verification and evidence/reporting do not depend on cache access.
+
+`timings.json` and the Actions step summary show per-stage elapsed time, including
+failed stages and cache validation. Build evidence includes separate dependency,
+prebuild, pod, native compilation, and ccache-stat logs. Compare cold builds, warm
+compiler-cache builds, and exact binary hits separately; cold builds still install
+pods and compile native code. Real hosted-runner savings require a CI measurement.
