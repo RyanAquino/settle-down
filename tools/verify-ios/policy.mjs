@@ -3,6 +3,13 @@ import { z } from 'zod';
 
 export const APP_ID = 'com.ryan.aquino.settledown';
 export const PRESETS = ['success', 'upload-error', 'groups-error', 'no-groups', 'users-error', 'sync-error'];
+// Explicit harness exclusions, not a general escape hatch for missing coverage.
+export const MANUAL_CHECKS = [
+  'Pinch-to-zoom: Maestro does not support two-finger gestures.',
+  'Camera mount-error Retry: native camera failure injection is unavailable.',
+  'Camera capture-failure recovery: native camera failure injection is unavailable.',
+];
+const manualChecks = z.array(z.enum(MANUAL_CHECKS)).max(3).default([]);
 const text = z.string().min(1).max(2000);
 const selectorObject = z.strictObject({
   text: text.optional(), id: text.optional(), index: z.number().int().min(0).max(100).optional(),
@@ -16,6 +23,7 @@ const commands = {
     clearState: z.boolean().optional(), stopApp: z.boolean().optional(),
     permissions: z.strictObject({ all: z.enum(['allow', 'deny']) }).optional(),
   })]),
+  pressKey: z.enum(['Home']),
   stopApp: empty, back: empty, hideKeyboard: empty, scroll: empty,
   tapOn: selector, doubleTapOn: selector, longPressOn: selector,
   assertVisible: selector, assertNotVisible: selector,
@@ -72,18 +80,41 @@ export function validateFlow(yaml, { replay = false } = {}) {
 export const planSchema = z.strictObject({
   disposition: z.enum(['ready', 'skipped', 'blocked']),
   rationale: z.string().min(20).max(8000),
+  // Unverified changes that block a verdict: simulator-side gaps and failures.
   limitations: z.array(text).max(20),
-  scenarios: z.array(z.strictObject({
-    id: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/),
-    name: text, coverage: text, fixture: z.enum(PRESETS), yaml: z.string().max(32000),
-  })).max(3),
+  // Changes only a physical device can verify (camera sensor, orientation, focus).
+  // CI is simulator-only by design, so these are reported but never block PASS.
+  deviceOnly: z.array(text).max(20).default([]),
+  manualChecks,
+  scenarios: z
+    .array(
+      z.strictObject({
+        id: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/),
+        name: text,
+        coverage: text,
+        fixture: z.enum(PRESETS),
+        yaml: z.string().max(32000),
+      }),
+    )
+    .max(3),
 });
 
 export function validatePlan(input) {
   const plan = planSchema.parse(input);
-  if (plan.disposition === 'ready' && !plan.scenarios.length) throw new Error('Ready requires scenarios');
-  if (plan.disposition === 'skipped' && plan.scenarios.length) throw new Error('Skipped cannot contain scenarios');
-  if (new Set(plan.scenarios.map(s => s.id)).size !== plan.scenarios.length) throw new Error('Duplicate scenario IDs');
+  if (plan.disposition === 'ready' && !plan.scenarios.length)
+    throw new Error('Ready requires scenarios');
+  if (plan.disposition === 'skipped' && plan.scenarios.length)
+    throw new Error('Skipped cannot contain scenarios');
+  if (plan.disposition !== 'blocked' && plan.limitations.length)
+    throw new Error(
+      'Limitations block verification; submit blocked, or move physical-device-only gaps to deviceOnly',
+    );
+  if (plan.disposition === 'blocked' && !plan.limitations.length)
+    throw new Error(
+      'Blocked requires a simulator-side limitation. Physical-device-only gaps belong in deviceOnly with ready or skipped',
+    );
+  if (new Set(plan.scenarios.map((s) => s.id)).size !== plan.scenarios.length)
+    throw new Error('Duplicate scenario IDs');
   for (const scenario of plan.scenarios) validateFlow(scenario.yaml, { replay: true });
   return plan;
 }
@@ -107,6 +138,8 @@ export const resultSchema = z.strictObject({
   agentCompleted: z.boolean(), disposition: z.enum(['ready', 'skipped', 'blocked']),
   rationale: z.string().max(8000).optional(), setupError: z.string().max(16000).optional(),
   limitations: z.array(z.string().max(16000)).max(30),
+  deviceOnly: z.array(z.string().max(16000)).max(30).optional(),
+  manualChecks,
   verdict: z.enum(['PASS', 'FAIL', 'BLOCKED', 'SKIPPED', 'CANCELLED']),
   scenarios: z.array(z.strictObject({
     id: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/), name: text, coverage: text, fixture: z.enum(PRESETS),

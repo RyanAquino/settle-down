@@ -109,8 +109,8 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
           // Expo web drops a literal zero constraint. Epsilon rounds to the
           // minimum hardware zoom while still sending the reset to the track.
           zoom={Platform.OS === 'web' && zoom === 0 ? Number.EPSILON : zoom}
-          // Preserve the existing orientation and capture behavior.
-          responsiveOrientationWhenOrientationLocked
+          // Keep capture aligned with the portrait interface, matching main.
+          responsiveOrientationWhenOrientationLocked={false}
           animateShutter={false}
           onCameraReady={() => {
             if (!mounted.current) return;

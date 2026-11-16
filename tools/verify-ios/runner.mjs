@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,10 @@ import { receiptPng } from './receipt-image.mjs';
 import { cleanEnv, run as runCommand, resetScenario, stopProcess } from './process.mjs';
 
 const toolRoot = path.dirname(fileURLToPath(import.meta.url));
+
+// Escapes workflow command data so untrusted text cannot end or start a command.
+export const escapeCommandData = (value) =>
+  value.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 
 export function checkJUnit(xml) {
   if (XMLValidator.validate(xml) !== true || /<!DOCTYPE|<!ENTITY/i.test(xml)) return false;
@@ -57,7 +61,15 @@ async function main() {
   const [sourceArg, requestArg, archiveArg, evidenceArg] = process.argv.slice(2);
   const source = path.resolve(sourceArg), evidence = path.resolve(evidenceArg);
   await mkdir(`${evidence}/exploration`, { recursive: true });
-  const result = { version: 1, agentCompleted: false, disposition: 'blocked', limitations: [], scenarios: [] };
+  const result = {
+    version: 1,
+    agentCompleted: false,
+    disposition: 'blocked',
+    limitations: [],
+    deviceOnly: [],
+    manualChecks: [],
+    scenarios: [],
+  };
   const work = await mkdtemp(path.join(os.tmpdir(), 'verify-ios-'));
   let udid, fixtureServer, video, simulatorLog, cancelledAt;
   let cancelled = false;
@@ -78,15 +90,75 @@ async function main() {
     if (actualHead !== request.headSha) throw new Error('PR checkout SHA mismatch');
     const git = args => run('git', args, { cwd: source });
     const mergeBase = (await git(['merge-base', request.baseSha, request.headSha])).output.trim();
-    const diff = (await git(['diff', '--no-ext-diff', '--no-textconv', '--no-renames', mergeBase, request.headSha])).output;
-    const changedFiles = (await git(['diff', '--name-only', '-z', mergeBase, request.headSha])).output.split('\0').filter(Boolean);
-    const sourceFiles = (await git(['ls-files', '-z'])).output.split('\0').filter(f =>
-      /\.(tsx?|jsx?|json|md)$/.test(f) && !/(^|\/)\.|(^|\/)node_modules\//.test(f));
-    await writeFile(`${evidence}/context.json`, JSON.stringify({
-      request, pr: JSON.parse(await readFile(path.join(requestArg, 'pr.json'), 'utf8')),
-      mergeBase, changedFiles, sourceFiles, diff: diff.slice(0,150000), diffTruncated: diff.length > 150000,
-      fixtures: { presets: PRESETS, receipt, groups, members, notes: 'The app calls localhost:8765. Reset selects one preset. No real OCR or transactions. One receipt photo is preseeded.' },
-    }, null, 2));
+    const diff = (
+      await git([
+        'diff',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--no-renames',
+        mergeBase,
+        request.headSha,
+      ])
+    ).output;
+    const changedFiles = (
+      await git(['diff', '--name-only', '--no-renames', '-z', mergeBase, request.headSha])
+    ).output
+      .split('\0')
+      .filter(Boolean);
+    // Per-file diffs let the agent page through one file at a time; a single
+    // blob over Copilot's tool-output limit would be hidden from the model.
+    const diffs = [];
+    let diffBudget = 150000;
+    for (const file of changedFiles) {
+      const text = (
+        await git([
+          'diff',
+          '--no-ext-diff',
+          '--no-textconv',
+          '--no-renames',
+          mergeBase,
+          request.headSha,
+          '--',
+          `:(literal)${file}`,
+        ])
+      ).output;
+      const lines = text.split('\n');
+      diffs.push({
+        file,
+        additions: lines.filter((l) => l.startsWith('+') && !l.startsWith('+++')).length,
+        deletions: lines.filter((l) => l.startsWith('-') && !l.startsWith('---')).length,
+        truncated: text.length > diffBudget,
+        text: text.slice(0, Math.max(0, diffBudget)),
+      });
+      diffBudget -= text.length;
+    }
+    const sourceFiles = (await git(['ls-files', '-z'])).output
+      .split('\0')
+      .filter((f) => /\.(tsx?|jsx?|json|md)$/.test(f) && !/(^|\/)\.|(^|\/)node_modules\//.test(f));
+    await writeFile(
+      `${evidence}/context.json`,
+      JSON.stringify(
+        {
+          request,
+          pr: JSON.parse(await readFile(path.join(requestArg, 'pr.json'), 'utf8')),
+          mergeBase,
+          changedFiles,
+          sourceFiles,
+          diffs,
+          diffTruncated: diffs.some((d) => d.truncated),
+          fixtures: {
+            presets: PRESETS,
+            receipt,
+            groups,
+            members,
+            notes:
+              'The app calls localhost:8765. Reset selects one preset. No real OCR or transactions. One receipt photo is preseeded.',
+          },
+        },
+        null,
+        2,
+      ),
+    );
     await writeFile(`${evidence}/pr.diff`, diff);
 
     const versions = {};
@@ -152,6 +224,8 @@ async function main() {
     result.disposition = plan.disposition;
     result.rationale = plan.rationale;
     result.limitations = plan.limitations;
+    result.deviceOnly = plan.deviceOnly;
+    result.manualChecks = plan.manualChecks;
     const replayDeadline = Date.now() + 10 * 60_000;
     for (const scenario of plan.scenarios) {
       const record = { id: scenario.id, name: scenario.name, coverage: scenario.coverage, fixture: scenario.fixture, status: 'BLOCKED' };
@@ -180,13 +254,40 @@ async function main() {
     const persist = async () => {
       result.verdict = verdict(result, cancelled ? 'cancelled' : 'success');
       await writeFile(`${evidence}/result.json`, JSON.stringify(result, null, 2));
-      await writeFile(`${evidence}/report.md`, [
-        '# iOS PR Verification', '', `Verdict: **${result.verdict}**`, `Commit: ${result.headSha || 'unknown'}`, '',
-        result.rationale || result.setupError || 'No scenarios completed.', '',
-        ...result.scenarios.map(s => `- ${s.status}: ${s.name} — ${s.coverage}${s.error ? ` (${s.error})` : ''}`),
-        '', ...result.limitations.map(s => `- Limitation: ${s}`),
-      ].join('\n'));
-      if (!['PASS', 'SKIPPED'].includes(result.verdict)) process.exitCode = 1;
+      const report = [
+        '# iOS PR Verification',
+        '',
+        `Verdict: **${result.verdict}**`,
+        `Commit: ${result.headSha || 'unknown'}`,
+        '',
+        result.rationale || result.setupError || 'No scenarios completed.',
+        '',
+        ...result.scenarios.map(
+          (s) => `- ${s.status}: ${s.name} - ${s.coverage}${s.error ? ` (${s.error})` : ''}`,
+        ),
+        '',
+        ...result.limitations.map((s) => `- Limitation: ${s}`),
+        ...result.manualChecks.map(s => `- Manual check (not verified in CI): ${s}`),
+        ...result.deviceOnly.map((s) => `- Requires a physical device (not verified in CI): ${s}`),
+      ].join('\n');
+      await writeFile(`${evidence}/report.md`, report);
+      // The job log is otherwise silent; surface the verdict where a failed step is read.
+      // Agent text derives from PR content, so workflow commands are fenced off.
+      const fence = randomBytes(16).toString('hex');
+      console.log(`::stop-commands::${fence}\n${report}\n::${fence}::`);
+      if (process.env.GITHUB_STEP_SUMMARY)
+        await appendFile(process.env.GITHUB_STEP_SUMMARY, `${report}\n`).catch(() => {});
+      if (!['PASS', 'SKIPPED'].includes(result.verdict)) {
+        const detail =
+          result.setupError ||
+          result.limitations[0] ||
+          result.rationale ||
+          'See report.md in the ios-evidence artifact.';
+        console.log(
+          `::error title=iOS verification ${result.verdict}::${escapeCommandData(detail.slice(0, 1000))}`,
+        );
+        process.exitCode = 1;
+      }
     };
     try {
       // Persist before touching potentially unresponsive simulator services. On

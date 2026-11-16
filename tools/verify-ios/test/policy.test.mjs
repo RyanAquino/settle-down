@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateFlow, validatePlan, verdict, APP_ID } from '../policy.mjs';
+import { validateFlow, validatePlan, verdict, APP_ID, MANUAL_CHECKS, resultSchema } from '../policy.mjs';
 import { checkJUnit } from '../runner.mjs';
 
 const flow = commands => `appId: \${APP_ID}\n---\n${commands}\n`;
@@ -40,9 +40,67 @@ test('plans cannot silently contain no tests or duplicate scenario IDs', () => {
   assert.throws(() => validatePlan({ ...plan, scenarios: [scenario, scenario] }));
   assert.throws(() => validatePlan({ ...plan, scenarios: [{ ...scenario, fixture: 'production' }] }));
 });
+test('physical-device-only gaps never block, and blocked plans need a simulator-side limitation', () => {
+  const scenario = {
+    id: 'zoom',
+    name: 'Zoom',
+    coverage: 'Zoom controls enable and reset',
+    fixture: 'success',
+    yaml: valid,
+  };
+  const base = { rationale: 'Covers the simulator-observable zoom controls.', scenarios: [] };
+  const deviceOnly = ['Actual preview magnification needs a physical camera.'];
+  assert.deepEqual(
+    validatePlan({ ...base, disposition: 'ready', limitations: [], scenarios: [scenario] })
+      .deviceOnly,
+    [],
+  );
+  assert.deepEqual(
+    validatePlan({
+      ...base,
+      disposition: 'ready',
+      limitations: [],
+      deviceOnly,
+      scenarios: [scenario],
+    }).deviceOnly,
+    deviceOnly,
+  );
+  assert.equal(
+    validatePlan({ ...base, disposition: 'skipped', limitations: [], deviceOnly }).disposition,
+    'skipped',
+  );
+  // A device-only gap alone cannot produce BLOCKED.
+  assert.throws(
+    () => validatePlan({ ...base, disposition: 'blocked', limitations: [], deviceOnly }),
+    /deviceOnly/,
+  );
+  // Blocking limitations must use the blocked disposition.
+  assert.throws(
+    () =>
+      validatePlan({
+        ...base,
+        disposition: 'ready',
+        limitations: ['Source could not be read'],
+        scenarios: [scenario],
+      }),
+    /submit blocked/,
+  );
+  assert.throws(() =>
+    validatePlan({ ...base, disposition: 'skipped', limitations: ['Tool failed'] }),
+  );
+  assert.equal(
+    validatePlan({ ...base, disposition: 'blocked', limitations: ['Tool failed'] }).disposition,
+    'blocked',
+  );
+});
 test('verdicts require executed, nonempty, complete evidence', () => {
   const result = { agentCompleted: true, disposition: 'ready', limitations: [], scenarios: [{ status: 'PASS', exitCode: 0, junitVerified: true }] };
   assert.equal(verdict(result), 'PASS');
+  assert.equal(verdict({ ...result, deviceOnly: ['Camera orientation needs an iPhone'] }), 'PASS');
+  assert.equal(
+    verdict({ ...result, disposition: 'skipped', scenarios: [], deviceOnly: ['Autofocus'] }),
+    'SKIPPED',
+  );
   assert.equal(verdict({ ...result, scenarios: [] }), 'BLOCKED');
   assert.equal(verdict({ ...result, agentCompleted: false }), 'BLOCKED');
   assert.equal(verdict({ ...result, limitations: ['Physical camera is required'] }), 'BLOCKED');
@@ -61,4 +119,66 @@ test('JUnit rejects missing, malformed, skipped, and failed execution', () => {
     '<testsuite failures="1"><testcase name="x"/></testsuite>',
     '<!DOCTYPE x [<!ENTITY y SYSTEM "file:///etc/passwd">]><testsuite><testcase name="x"/></testsuite>',
   ]) assert.equal(checkJUnit(xml), false, xml);
+});
+
+test('background and resume are allowed without exposing other system keys', () => {
+  assert.doesNotThrow(() =>
+    validateFlow(
+      flow(
+        '- launchApp\n- pressKey: Home\n- launchApp:\n    stopApp: false\n- assertVisible: Camera\n- takeScreenshot: resumed',
+      ),
+      { replay: true },
+    ),
+  );
+  for (const key of ['Power', 'Lock', '${evil}', 'Enter']) {
+    assert.throws(() => validateFlow(flow(`- pressKey: "${key}"`)));
+  }
+});
+
+test('only explicit harness exclusions can be recorded as manual checks', () => {
+  const plan = {
+    disposition: 'ready',
+    rationale: 'Zoom controls and lifecycle replayed.',
+    limitations: [],
+    manualChecks: MANUAL_CHECKS,
+    scenarios: [
+      {
+        id: 'zoom',
+        name: 'Zoom',
+        coverage: 'Controls and lifecycle',
+        fixture: 'success',
+        yaml: valid,
+      },
+    ],
+  };
+  assert.deepEqual(validatePlan(plan).manualChecks, MANUAL_CHECKS);
+  for (const gap of ['Background reset untested', 'Tool failed', 'Zoom button did not work']) {
+    assert.throws(() => validatePlan({ ...plan, manualChecks: [gap] }));
+  }
+  const result = {
+    version: 1,
+    headSha: 'a'.repeat(40),
+    agentCompleted: true,
+    disposition: 'ready',
+    limitations: [],
+    manualChecks: MANUAL_CHECKS,
+    verdict: 'PASS',
+    scenarios: [
+      {
+        id: 'zoom',
+        name: 'Zoom',
+        coverage: 'Controls',
+        fixture: 'success',
+        status: 'PASS',
+        exitCode: 0,
+        junitVerified: true,
+      },
+    ],
+  };
+  assert.deepEqual(resultSchema.parse(result).manualChecks, MANUAL_CHECKS);
+  assert.equal(verdict(result), 'PASS');
+  assert.equal(verdict({ ...result, limitations: ['Lifecycle untested'] }), 'BLOCKED');
+  assert.equal(verdict({ ...result, scenarios: [{ status: 'FAIL' }] }), 'FAIL');
+  assert.equal(verdict({ ...result, scenarios: [] }), 'BLOCKED');
+  assert.equal(verdict(result, 'failure'), 'BLOCKED');
 });

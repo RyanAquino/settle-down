@@ -13,6 +13,15 @@ export const parseMarker = body => {
 const escape = text => String(text).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   .replaceAll('@', '@\u200b').replaceAll('`', '\\`').replaceAll('[', '\\[').replaceAll(']', '\\]');
 const externalId = r => `verify-ios:${r.runId}:${r.attempt}:${r.commentId}`;
+const finalMarker = (request, attempt) => `<!-- verify-ios-final:${request.runId}:${attempt} -->`;
+const verdictSummary = {
+  PASS: 'Working in the tested scenarios. All listed scenarios replayed successfully. Physical-device-only behavior, if listed, is not covered.',
+  FAIL: 'Failing. At least one replayed scenario failed; inspect its assertions and logs below.',
+  BLOCKED: 'Untestable. Verification could not establish whether the PR change works.',
+  SKIPPED:
+    'Not applicable. No simulator-verifiable iOS UI change was identified; this is not a test pass.',
+  CANCELLED: 'Untestable. Verification was cancelled before a final assessment could be made.',
+};
 
 export function selectArtifacts(artifacts, requestAttempt, runAttempt) {
   const selected = [];
@@ -76,20 +85,60 @@ export async function admit({ github, context, core, outputDir }) {
   core.setOutput('request_artifact', `verify-request-${request.attempt}`);
 }
 
-export function renderReport(request, result, status, stale, runUrl, artifacts) {
-  const lines = [marker(request), '## iOS PR Verification', '', `**${status}** · Tested commit: \`${request.headSha}\``, ''];
+export function renderReport(request, result, status, stale, runUrl, artifacts, attempt = request.attempt) {
+  const lines = [marker(request), finalMarker(request, attempt), '## iOS PR Verification — Final verdict', '',
+    `**${status}** · Commit: \`${request.headSha}\` · Attempt: ${attempt}`, '', verdictSummary[status], ''];
   if (stale) lines.push('**Stale:** the PR head has changed. Post `/verify` again to test the new commit.', '');
   lines.push('Coverage: PR changes only, using a synthetic local backend.', '');
   if (result?.rationale) lines.push(escape(result.rationale).slice(0,8000), '');
+  lines.push('### Tested scenarios', '');
+  if (!result?.scenarios?.length) lines.push('No scenario replay results are available.');
   for (const scenario of result?.scenarios || []) {
     lines.push(`- **${escape(scenario.status)}** — ${escape(scenario.name)}: ${escape(scenario.coverage)}`);
+    if (scenario.error) lines.push(`  Replay error: ${escape(scenario.error).slice(0,2000)}`);
+    lines.push(`  Evidence paths, when captured: \`replay/${scenario.id}/\` (JUnit, logs, screenshots), \`generated/${scenario.id}.yaml\` (assertions).`);
   }
   const limitations = [result?.setupError, ...(result?.limitations || [])].filter(Boolean);
-  if (limitations.length) lines.push('', '**Limitations / blockers**', '', ...limitations.map(s => `- ${escape(s).slice(0,2000)}`));
-  if (!result) lines.push('Verification did not produce a result. See the build and workflow logs.');
-  lines.push('', `[Workflow and logs](${runUrl})`, '', ...artifacts.map(a =>
-    `- [${escape(a.name)}](${a.url})${a.expired ? ' (expired)' : ''}`));
-  lines.push('', 'Evidence expires after seven days. PASS covers only the listed assertions; real OCR, Settle Up, and camera hardware are not verified.');
+  if (limitations.length)
+    lines.push(
+      '',
+      '**Limitations / blockers**',
+      '',
+      ...limitations.map((s) => `- ${escape(s).slice(0, 2000)}`),
+    );
+  if (result?.manualChecks?.length)
+    lines.push(
+      '',
+      '**Manual checks required (not verified in CI)**',
+      '',
+      'PASS covers only the replayed assertions. These harness exclusions remain unverified and do not affect the CI verdict.',
+      '',
+      ...result.manualChecks.map((s) => `- ${escape(s).slice(0, 2000)}`),
+    );
+  if (result?.deviceOnly?.length)
+    lines.push(
+      '',
+      '**Requires a physical device (not verified in CI)**',
+      '',
+      'CI runs on a simulator only. These changes do not affect the verdict; check them on a real iPhone.',
+      '',
+      ...result.deviceOnly.map((s) => `- ${escape(s).slice(0, 2000)}`),
+    );
+  if (!result)
+    lines.push('Verification did not produce a result. See the build and workflow logs.');
+  lines.push('', '### Evidence', '', `[Workflow and logs](${runUrl})`, '');
+  if (!artifacts.some(a => a.name.startsWith('ios-evidence-') && !a.expired)) {
+    lines.push('No downloadable test evidence is available for this attempt. Check the workflow and build logs.', '');
+  }
+  for (const artifact of artifacts) {
+    const description = artifact.name.startsWith('ios-evidence-')
+      ? ' — recording (`session.mp4`), screenshots, test plan, replay assertions, JUnit results, and logs, when captured'
+      : artifact.name.startsWith('ios-build-') ? ' — build logs'
+      : artifact.name.startsWith('ios-app-') ? ' — simulator app archive'
+      : ' — captured verification request';
+    lines.push(`- [${escape(artifact.name)}](${artifact.url})${artifact.expired ? ' (expired)' : ''}${description}`);
+  }
+  lines.push('', 'Evidence and logs expire after seven days; the app archive expires after one day. PASS covers only the listed assertions; real OCR, Settle Up, and camera hardware are not verified.');
   return Buffer.from(lines.join('\n')).subarray(0,60000).toString('utf8');
 }
 
@@ -129,14 +178,25 @@ export async function publish({ github, context, core, directory }) {
   const artifacts = selectArtifacts(availableArtifacts, request.attempt, run.run_attempt)
     .map(a => ({ ...a, url: `${context.serverUrl}/${fullName}/actions/runs/${run.id}/artifacts/${a.id}` }));
   const runUrl = `${context.serverUrl}/${fullName}/actions/runs/${run.id}/attempts/${run.run_attempt}`;
-  const body = renderReport(request, result, status, stale, runUrl, artifacts);
+  const body = renderReport(request, result, status, stale, runUrl, artifacts, run.run_attempt);
   await github.rest.checks.update({ ...repo, check_run_id: request.checkId, status: 'completed', conclusion: checkConclusion[status],
     details_url: runUrl,
     output: { title: `${status}${stale ? ' (stale commit)' : ''}`, summary: body },
   });
   comments ??= await github.paginate(github.rest.issues.listComments, { ...repo, issue_number: request.pr, per_page: 100 });
-  const existing = comments.find(c => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker(request)));
-  if (existing) await github.rest.issues.updateComment({ ...repo, comment_id: existing.id, body });
-  else await github.rest.issues.createComment({ ...repo, issue_number: request.pr, body });
+  const ownComments = comments.filter(c => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker(request)));
+  const existing = ownComments.find(c => c.body.includes(finalMarker(request, run.run_attempt)));
+  // Post completion separately so it appears as new PR activity. Re-publishing
+  // the same attempt updates its verdict; a new verification attempt gets its own.
+  const { data: finalComment } = existing
+    ? await github.rest.issues.updateComment({ ...repo, comment_id: existing.id, body })
+    : await github.rest.issues.createComment({ ...repo, issue_number: request.pr, body });
+  const progress = ownComments.find(c => !c.body.includes('<!-- verify-ios-final:'));
+  if (progress) {
+    const finalUrl = finalComment.html_url || `${context.serverUrl}/${fullName}/pull/${request.pr}#issuecomment-${finalComment.id}`;
+    await github.rest.issues.updateComment({ ...repo, comment_id: progress.id,
+      body: `${marker(request)}\n## iOS PR Verification\n\nCompleted: **${status}** for \`${request.headSha}\` (attempt ${run.run_attempt}).${stale ? ' **Stale:** the PR head has changed.' : ''}\n\n[Final verdict and evidence](${finalUrl})`,
+    });
+  }
   await core.summary.addRaw(body).write();
 }
