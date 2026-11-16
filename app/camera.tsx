@@ -118,9 +118,10 @@ export default function CameraScreen() {
         pictureSize="High"
         videoQuality="4:3"
         ratio="4:3"
-        // SDK 58 tags iOS captures with the locked (portrait) UI orientation; keep tagging
-        // sideways receipts as landscape, and skip the preview blink — takePicture plays a haptic.
-        responsiveOrientationWhenOrientationLocked
+        // Keep iOS capture aligned with the portrait interface so the loading preview
+        // matches the viewfinder, even when the phone is sideways or pointing down.
+        responsiveOrientationWhenOrientationLocked={false}
+        // Skip the preview blink — takePicture plays a haptic.
         animateShutter={false}
       />
 
