@@ -1,3 +1,4 @@
+import { FIXTURE_ORIGIN } from './fixture-control.mjs';
 import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { APP_ID } from './policy.mjs';
@@ -7,7 +8,7 @@ const source = path.resolve(process.argv[2]);
 const output = path.resolve(process.argv[3]);
 await mkdir(output, { recursive: true });
 const env = { ...cleanEnv(), CI: '1', CI_E2E: '1', EXPO_NO_DOTENV: '1',
-  EXPO_PUBLIC_API_BASE_URL: 'http://localhost:8765', EXPO_PUBLIC_AUTH_TOKEN: '',
+  EXPO_PUBLIC_API_BASE_URL: FIXTURE_ORIGIN, EXPO_PUBLIC_AUTH_TOKEN: '',
   EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON: 'false' };
 await run('npm', ['ci'], { cwd: source, env, timeout: 15 * 60_000, log: `${output}/dependencies.log` });
 const expo = path.join(source, 'node_modules/.bin/expo');

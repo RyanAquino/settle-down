@@ -1,3 +1,4 @@
+import { fixtureControl } from './fixture-control.mjs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -235,12 +236,8 @@ tool(
   'Read synthetic backend requests from the current scenario, including submitted transaction data. Paged oldest first; pass page to read more.',
   { page },
   async ({ page: requested }) => {
-    const response = await fetch('http://localhost:8765/__requests', {
-      headers: { authorization: `Bearer ${process.env.VERIFY_FIXTURE_TOKEN}` },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!response.ok) throw new Error('Could not read fixture requests');
-    const pages = paginateItems(await response.json());
+    const requests = await fixtureControl('/__requests', { token: process.env.VERIFY_FIXTURE_TOKEN });
+    const pages = paginateItems(requests);
     return content({
       page: requested ?? 1,
       pages: pages.length,

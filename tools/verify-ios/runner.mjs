@@ -152,7 +152,7 @@ async function main() {
             groups,
             members,
             notes:
-              'The app calls localhost:8765. Reset selects one preset. No real OCR or transactions. One receipt photo is preseeded.',
+              'The app calls 127.0.0.1:8765. Reset selects one preset. No real OCR or transactions. One receipt photo is preseeded.',
           },
         },
         null,
