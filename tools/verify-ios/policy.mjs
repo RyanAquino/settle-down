@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { parseAllDocuments, visit, isAlias } from 'yaml';
 import { z } from 'zod';
 
@@ -16,6 +17,9 @@ const selectorObject = z.strictObject({
   enabled: z.boolean().optional(), checked: z.boolean().optional(), focused: z.boolean().optional(),
 }).refine(s => s.text !== undefined || s.id !== undefined, 'A text or id selector is required');
 const selector = z.union([text, selectorObject]);
+const relativePoint = z.string().max(24).regex(/^\d{1,3}(?:\.\d{1,2})?%,\s*\d{1,3}(?:\.\d{1,2})?%$/)
+  .refine(value => value.split(',').every(part => parseFloat(part) >= 0 && parseFloat(part) <= 100), 'Point must stay within the selected element');
+const tapSelector = z.union([text, selectorObject.safeExtend({ point: relativePoint.optional() })]);
 const direction = z.enum(['UP', 'DOWN', 'LEFT', 'RIGHT']);
 const empty = z.union([z.null(), z.strictObject({})]);
 const permissionState = z.enum(['allow', 'deny']);
@@ -32,7 +36,7 @@ const commands = {
   })]),
   pressKey: z.enum(['Home']),
   stopApp: empty, back: empty, hideKeyboard: empty, scroll: empty,
-  tapOn: selector, doubleTapOn: selector, longPressOn: selector,
+  tapOn: tapSelector, doubleTapOn: selector, longPressOn: selector,
   assertVisible: selector, assertNotVisible: selector,
   inputText: z.string().max(1000), eraseText: z.union([empty, z.number().int().min(1).max(500)]),
   takeScreenshot: z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/),
@@ -68,16 +72,30 @@ export function validateFlow(yaml, { replay = false } = {}) {
   if (JSON.stringify(steps).includes('${') || JSON.stringify(header.name || '').includes('${')) {
     throw new Error('Executable expressions are forbidden');
   }
-  const names = steps.map(step => {
+  let count = 0;
+  const validateSteps = (items, depth = 0) => items.map(step => {
+    if (++count > 80) throw new Error('Expected 1–80 commands including conditional bodies');
     const entry = typeof step === 'string' ? { [step]: null } : step;
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || Object.keys(entry).length !== 1) {
-      throw new Error('Expected exactly one command per step');
-    }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || Object.keys(entry).length !== 1) throw new Error('Expected exactly one command per step');
     const [name, value] = Object.entries(entry)[0];
-    if (!Object.hasOwn(commands, name)) throw new Error(`Forbidden command: ${name}`);
-    commands[name].parse(value);
+    if (name === 'runFlow') {
+      if (depth > 0) throw new Error('Nested conditional flows are forbidden');
+      // Only literal, inline navigation branches. No file/env/JavaScript/hook
+      // options, optional assertions, app launches, or screenshots in branches.
+      const branch = z.strictObject({
+        when: z.strictObject({ visible: selector.optional(), notVisible: selector.optional() })
+          .refine(v => Number(v.visible !== undefined) + Number(v.notVisible !== undefined) === 1),
+        commands: z.array(z.unknown()).min(1).max(20),
+      }).parse(value);
+      const names = validateSteps(branch.commands, depth + 1);
+      if (names.some(command => !['tapOn', 'back', 'scroll', 'scrollUntilVisible', 'swipe', 'hideKeyboard', 'waitForAnimationToEnd'].includes(command))) throw new Error('Conditional bodies may only navigate; keep assertions unconditional');
+    } else {
+      if (!Object.hasOwn(commands, name)) throw new Error(`Forbidden command: ${name}`);
+      commands[name].parse(value);
+    }
     return name;
   });
+  const names = validateSteps(steps);
   if (replay && (names[0] !== 'launchApp' || !names.includes('assertVisible') || !names.includes('takeScreenshot'))) {
     throw new Error('Replay must start with launchApp and include assertVisible and takeScreenshot');
   }

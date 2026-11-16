@@ -217,3 +217,25 @@ for (const [name, steps] of Object.entries({
   executablePermission: '- setPermissions:\n    permissions:\n      camera: "${evil}"',
   unknownLaunchPermission: '- launchApp:\n    permissions:\n      camera: deny\n      location: allow',
 })) test(`rejects ${name}`, () => assert.throws(() => validateFlow(flow(steps))));
+
+test('bounded visibility branches normalize navigation while assertions remain unconditional', () => {
+  const branch = '- runFlow:\n    when:\n      visible:\n        id: app-row\n    commands:\n      - tapOn:\n          id: app-row';
+  assert.doesNotThrow(() => validateFlow(flow(`- launchApp\n${branch}\n- assertVisible: Camera\n- takeScreenshot: camera`), { replay: true }));
+  for (const commands of ['- assertVisible: Missing', '- takeScreenshot: ../escape', '- runScript: evil.js', '- launchApp', '- runFlow:\n          when:\n            visible: X\n          commands:\n            - tapOn: X']) {
+    assert.throws(() => validateFlow(flow('- runFlow:\n    when:\n      visible: Camera\n    commands:\n      ' + commands)));
+  }
+  for (const condition of ['true: "${evil}"', 'platform: iOS', 'visible: X\n      notVisible: Y', '{}']) {
+    assert.throws(() => validateFlow(flow(`- runFlow:\n    when:\n      ${condition}\n    commands:\n      - tapOn: X`)));
+  }
+  assert.throws(() => validateFlow(flow('- runFlow:\n    file: evil.yaml\n    when:\n      visible: X\n    commands:\n      - tapOn: X')));
+  assert.throws(() => validateFlow(flow('- runFlow:\n    when:\n      visible: X\n    commands:\n' + '      - tapOn: X\n'.repeat(81))));
+});
+
+test('switch taps may use bounded points within an identified element, never global coordinates', () => {
+  assert.doesNotThrow(() => validateFlow(flow('- tapOn:\n    id: Camera\n    checked: false\n    point: "90%,50%"')));
+  for (const point of ['101%,50%', '-1%,50%', '100.1%,50%', '100,200', '${evil}']) {
+    assert.throws(() => validateFlow(flow(`- tapOn:\n    id: Camera\n    point: "${point}"`)));
+  }
+  assert.throws(() => validateFlow(flow('- tapOn:\n    point: "90%,50%"')));
+  assert.throws(() => validateFlow(flow('- assertVisible:\n    id: Camera\n    point: "90%,50%"')));
+});

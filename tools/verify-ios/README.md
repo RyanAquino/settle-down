@@ -107,7 +107,7 @@ rationale, limitations, `deviceOnly`, and scenarios (`id`, `name`, `coverage`,
 Limitations are blocking simulator-side gaps and require
 `blocked`; `blocked` requires at least one limitation.
 Flows must start with `launchApp` and include `assertVisible` and `takeScreenshot`.
-Unknown commands/options, scripts, nested flows, YAML aliases/tags, executable
+Unknown commands/options, scripts, file subflows, nested branches, YAML aliases/tags, executable
 expressions, optional assertions, alternate app IDs, and unsafe screenshot paths
 are rejected before execution. The one allowed interpolation is `${APP_ID}` in
 the header. Screenshots, evidence writes, and source reads are path constrained.
@@ -195,3 +195,40 @@ failed stages and cache validation. Build evidence includes separate dependency,
 prebuild, pod, native compilation, and ccache-stat logs. Compare cold builds, warm
 compiler-cache builds, and exact binary hits separately; cold builds still install
 pods and compile native code. Real hosted-runner savings require a CI measurement.
+
+## Exploration reliability
+
+Maestro's cold XCTest driver starts via a bounded `hierarchy` warm-up before the
+15-minute Copilot deadline. The first scenario reset reuses the runner's fresh
+install only while no flow has touched the app; later resets still reinstall it.
+Every tool reports remaining time/calls. The adapter reserves two minutes for
+final submission, stops starting UI work that could consume that reserve, and
+keeps `submit_plan` available after exploration/call limits. The prompt requests
+a blocked checkpoint after the first complete scenario. Timeouts remain BLOCKED;
+no partial exploration is promoted to PASS. Failure reports name recent tools
+instead of suggesting that every timeout is an authentication/quota problem.
+
+A ready plan must reference complete flows that succeeded as the first flow after
+`reset_scenario` with the same fixture. Action/assertion changes invalidate that
+evidence, and a later failed attempt invalidates prior success. The adapter and
+runner independently check the trusted tool journal. Independent CLI replay is
+still mandatory. Blocked plans can preserve failing scenarios for replay.
+
+System Settings retains navigation state across reinstalls. Literal inline
+`runFlow` branches may normalize that navigation using one `when.visible` or
+`when.notVisible` selector. Only one branch level and navigation commands are
+allowed. Files, env, JavaScript, nested branches, conditional assertions, and
+conditional screenshots remain forbidden. Final assertions and screenshots stay
+unconditional, and branch bodies count toward the 80-command limit.
+
+For local diagnostics, `VERIFY_LOCAL_IOS_RUNTIME` can select an installed runtime
+identifier. GitHub Actions rejects this override and retains pinned iOS 26.5.
+Record local Xcode/runtime differences alongside the evidence; local runs do not
+publish or replace the GitHub verification check.
+
+Settings switches can expose the whole row as their accessibility frame. `tapOn`
+may therefore use a bounded percentage `point` within an observed text/id target.
+Standalone points, pixels, out-of-bounds percentages, and points on assertions are
+forbidden. Camera-switch assertions must use that switch's ID and checked state;
+labels "0"/"1" alone may match a different permission. Direct permission injection
+requires a stop/relaunch check; use the native switch to assess foreground refresh.
