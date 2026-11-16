@@ -33,3 +33,17 @@ test('trusted tooling and PR source are explicitly checked out at distinct captu
   assert.equal(reportCheckouts.length, 1);
   assert.equal(reportCheckouts[0].with.ref, undefined); // workflow_run's trusted default branch
 });
+
+test('binary reuse is exact-only and validated before bypassing compilation', () => {
+  const steps = main.jobs.build.steps;
+  const restore = steps.find(s => s.id === 'app-cache');
+  assert.equal(restore.with.key, '${{ steps.build-key.outputs.key }}');
+  assert.equal(restore.with['restore-keys'], undefined);
+  const validate = steps.find(s => s.id === 'cached-app');
+  assert.match(validate.run, /--validate-only/);
+  assert.equal(validate['continue-on-error'], true);
+  const build = steps.find(s => s.name === 'Build Release simulator binary');
+  assert.equal(build.if, "steps.cached-app.outcome != 'success'");
+  assert.equal(build.env.VERIFY_BUILD_KEY, '${{ steps.build-key.outputs.key }}');
+  assert.equal(steps.find(s => s.name === 'Cache validated simulator binary').if, "success() && steps.app-cache.outputs.cache-hit != 'true'");
+});
