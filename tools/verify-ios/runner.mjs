@@ -67,6 +67,7 @@ async function main() {
     disposition: 'blocked',
     limitations: [],
     deviceOnly: [],
+    manualChecks: [],
     scenarios: [],
   };
   const work = await mkdtemp(path.join(os.tmpdir(), 'verify-ios-'));
@@ -224,6 +225,7 @@ async function main() {
     result.rationale = plan.rationale;
     result.limitations = plan.limitations;
     result.deviceOnly = plan.deviceOnly;
+    result.manualChecks = plan.manualChecks;
     const replayDeadline = Date.now() + 10 * 60_000;
     for (const scenario of plan.scenarios) {
       const record = { id: scenario.id, name: scenario.name, coverage: scenario.coverage, fixture: scenario.fixture, status: 'BLOCKED' };
@@ -265,6 +267,7 @@ async function main() {
         ),
         '',
         ...result.limitations.map((s) => `- Limitation: ${s}`),
+        ...result.manualChecks.map(s => `- Manual check (not verified in CI): ${s}`),
         ...result.deviceOnly.map((s) => `- Requires a physical device (not verified in CI): ${s}`),
       ].join('\n');
       await writeFile(`${evidence}/report.md`, report);

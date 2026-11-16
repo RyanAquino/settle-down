@@ -3,6 +3,13 @@ import { z } from 'zod';
 
 export const APP_ID = 'com.ryan.aquino.settledown';
 export const PRESETS = ['success', 'upload-error', 'groups-error', 'no-groups', 'users-error', 'sync-error'];
+// Explicit harness exclusions, not a general escape hatch for missing coverage.
+export const MANUAL_CHECKS = [
+  'Pinch-to-zoom: Maestro does not support two-finger gestures.',
+  'Camera mount-error Retry: native camera failure injection is unavailable.',
+  'Camera capture-failure recovery: native camera failure injection is unavailable.',
+];
+const manualChecks = z.array(z.enum(MANUAL_CHECKS)).max(3).default([]);
 const text = z.string().min(1).max(2000);
 const selectorObject = z.strictObject({
   text: text.optional(), id: text.optional(), index: z.number().int().min(0).max(100).optional(),
@@ -16,6 +23,7 @@ const commands = {
     clearState: z.boolean().optional(), stopApp: z.boolean().optional(),
     permissions: z.strictObject({ all: z.enum(['allow', 'deny']) }).optional(),
   })]),
+  pressKey: z.enum(['Home']),
   stopApp: empty, back: empty, hideKeyboard: empty, scroll: empty,
   tapOn: selector, doubleTapOn: selector, longPressOn: selector,
   assertVisible: selector, assertNotVisible: selector,
@@ -77,6 +85,7 @@ export const planSchema = z.strictObject({
   // Changes only a physical device can verify (camera sensor, orientation, focus).
   // CI is simulator-only by design, so these are reported but never block PASS.
   deviceOnly: z.array(text).max(20).default([]),
+  manualChecks,
   scenarios: z
     .array(
       z.strictObject({
@@ -130,6 +139,7 @@ export const resultSchema = z.strictObject({
   rationale: z.string().max(8000).optional(), setupError: z.string().max(16000).optional(),
   limitations: z.array(z.string().max(16000)).max(30),
   deviceOnly: z.array(z.string().max(16000)).max(30).optional(),
+  manualChecks,
   verdict: z.enum(['PASS', 'FAIL', 'BLOCKED', 'SKIPPED', 'CANCELLED']),
   scenarios: z.array(z.strictObject({
     id: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/), name: text, coverage: text, fixture: z.enum(PRESETS),

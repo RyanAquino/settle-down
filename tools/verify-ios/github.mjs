@@ -106,6 +106,15 @@ export function renderReport(request, result, status, stale, runUrl, artifacts, 
       '',
       ...limitations.map((s) => `- ${escape(s).slice(0, 2000)}`),
     );
+  if (result?.manualChecks?.length)
+    lines.push(
+      '',
+      '**Manual checks required (not verified in CI)**',
+      '',
+      'PASS covers only the replayed assertions. These harness exclusions remain unverified and do not affect the CI verdict.',
+      '',
+      ...result.manualChecks.map((s) => `- ${escape(s).slice(0, 2000)}`),
+    );
   if (result?.deviceOnly?.length)
     lines.push(
       '',

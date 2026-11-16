@@ -83,14 +83,14 @@ Only PR changes are covered; there is no mandatory whole-app smoke test. Unchang
 screens are exercised only to reach changed behavior. PASS requires real replay,
 positive assertions, a nonempty successful JUnit report, and no declared coverage
 blockers. No simulator-verifiable iOS UI change is SKIPPED. Simulator/tool/quota
-limitations are BLOCKED. Executed failures are FAIL. Only PASS makes the check successful;
+limitations outside the fixed camera harness exclusions below are BLOCKED. Executed failures are FAIL. Only PASS makes the check successful;
 SKIPPED is neutral. No branch protection setting is changed automatically.
 
 CI is simulator-only by design. Physical camera capture, image orientation,
 autofocus, actual preview magnification, and haptics need a real device. The agent
 lists those in `deviceOnly`; they appear in the verdict comment under
 **Requires a physical device** and do not block. A PR whose simulator-observable
-changes all pass is PASS; a PR with nothing observable in the simulator is SKIPPED.
+changes outside the fixed harness exclusions all pass is PASS; a PR with nothing observable in the simulator is SKIPPED.
 Real OCR and real Settle Up integration are never exercised.
 
 ## Fixtures and evidence
@@ -103,7 +103,8 @@ There is no upstream proxy. Transaction submissions are recorded locally only.
 
 The agent's `submit_plan` tool accepts a disposition (`ready`, `skipped`, `blocked`),
 rationale, limitations, `deviceOnly`, and scenarios (`id`, `name`, `coverage`,
-`fixture`, `yaml`). Limitations are blocking simulator-side gaps and require
+`fixture`, `yaml`). `manualChecks` records only the fixed harness exclusions documented below.
+Limitations are blocking simulator-side gaps and require
 `blocked`; `blocked` requires at least one limitation.
 Flows must start with `launchApp` and include `assertVisible` and `takeScreenshot`.
 Unknown commands/options, scripts, nested flows, YAML aliases/tags, executable
@@ -134,3 +135,20 @@ ignore above suppresses only that diagnostic, retaining all other checks.
 The dependencies and lockfile are separate from the app. Update the pinned Maestro,
 Copilot, and runner versions together after confirming their actual tool schemas
 and replay output; a missing runtime or incompatible interface must stay BLOCKED.
+
+## Camera coverage boundaries
+
+`pressKey: Home` followed by `launchApp: { stopApp: false }` exercises background
+and foreground without restarting the process. Lifecycle reset must be tested;
+navigation and process termination are not substitutes.
+
+The plan and result `manualChecks` field accepts only three fixed harness
+exclusions: pinch-to-zoom (Maestro lacks two-finger gestures), camera mount-error
+Retry, and camera capture-failure recovery (no native failure injection). These
+are prominently reported as unverified manual checks and do not block a scoped
+CI PASS. They are distinct from physical-device checks. All other coverage gaps,
+setup/tool failures, and observed regressions remain blocking. Every PASS still
+requires independently replayed assertions and successful JUnit evidence.
+
+Deploy these trusted verifier changes to `main`, then request a fresh `/verify`.
+Rerunning an old workflow attempt can retain the old trusted verifier revision.
