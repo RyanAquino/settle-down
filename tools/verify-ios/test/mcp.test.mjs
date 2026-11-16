@@ -10,10 +10,12 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { cleanEnv } from '../process.mjs';
 import { RESULT_LIMIT_BYTES } from '../paging.mjs';
 
-test('the MCP adapter confines source reads and writes and rejects unsafe actions before execution', async t => {
+test('the MCP adapter confines source reads and writes and rejects unsafe actions before execution', async (t) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'verify-mcp-'));
-  const source = `${directory}/source`, evidence = `${directory}/evidence`;
-  await mkdir(source); await mkdir(`${evidence}/exploration`, { recursive: true });
+  const source = `${directory}/source`,
+    evidence = `${directory}/evidence`;
+  await mkdir(source);
+  await mkdir(`${evidence}/exploration`, { recursive: true });
   await writeFile(`${source}/screen.tsx`, 'export const label = "Synthetic screen";');
   await writeFile(`${directory}/outside.ts`, 'Do not read');
   await symlink(`${directory}/outside.ts`, `${source}/escape.ts`);
@@ -50,11 +52,16 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
     }),
   );
   const client = new Client({ name: 'test', version: '1' });
-  const transport = new StdioClientTransport({ command: process.execPath,
+  const transport = new StdioClientTransport({
+    command: process.execPath,
     args: [fileURLToPath(new URL('../agent-tools.mjs', import.meta.url))],
-    env: { ...cleanEnv(), VERIFY_SOURCE: source, VERIFY_EVIDENCE: evidence, VERIFY_UDID: 'unused' }, stderr: 'pipe',
+    env: { ...cleanEnv(), VERIFY_SOURCE: source, VERIFY_EVIDENCE: evidence, VERIFY_UDID: 'unused' },
+    stderr: 'pipe',
   });
-  t.after(async () => { await client.close(); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => {
+    await client.close();
+    await rm(directory, { recursive: true, force: true });
+  });
   await client.connect(transport);
   const tools = await client.listTools();
   assert.deepEqual(
@@ -113,9 +120,32 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
   assert.equal((await call('get_diff', { file: 'missing.tsx' })).isError, true);
   assert.equal((await call('read_source', { file: '../outside.ts' })).isError, true);
   assert.equal((await call('read_source', { file: 'escape.ts' })).isError, true);
-  assert.equal((await call('execute_flow', { yaml: 'appId: ${APP_ID}\n---\n- runScript: evil.js' })).isError, true);
-  assert.equal((await call('submit_plan', { disposition: 'ready', rationale: 'Nothing has actually executed yet.', limitations: [], scenarios: [] })).isError, true);
-  assert.notEqual((await call('submit_plan', { disposition: 'skipped', rationale: 'The PR changes documentation without changing any iOS UI.', limitations: [], scenarios: [] })).isError, true);
+  assert.equal(
+    (await call('execute_flow', { yaml: 'appId: ${APP_ID}\n---\n- runScript: evil.js' })).isError,
+    true,
+  );
+  assert.equal(
+    (
+      await call('submit_plan', {
+        disposition: 'ready',
+        rationale: 'Nothing has actually executed yet.',
+        limitations: [],
+        scenarios: [],
+      })
+    ).isError,
+    true,
+  );
+  assert.notEqual(
+    (
+      await call('submit_plan', {
+        disposition: 'skipped',
+        rationale: 'The PR changes documentation without changing any iOS UI.',
+        limitations: [],
+        scenarios: [],
+      })
+    ).isError,
+    true,
+  );
   const plan = JSON.parse(await readFile(`${evidence}/plan.json`, 'utf8'));
   assert.equal(plan.disposition, 'skipped');
   const log = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8'))
@@ -139,24 +169,43 @@ test('subprocess environment does not contain GitHub, Copilot, or fixture creden
   delete process.env.GITHUB_TOKEN;
 });
 
-test('finalization budget refuses more exploration but still accepts a blocked plan', async t => {
+test('finalization budget refuses more exploration but still accepts a blocked plan', async (t) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'verify-budget-mcp-'));
   const evidence = `${directory}/evidence`;
   await mkdir(evidence);
   const client = new Client({ name: 'budget-test', version: '1' });
-  const transport = new StdioClientTransport({ command: process.execPath,
+  const transport = new StdioClientTransport({
+    command: process.execPath,
     args: [fileURLToPath(new URL('../agent-tools.mjs', import.meta.url))],
-    env: { ...cleanEnv(), VERIFY_SOURCE: directory, VERIFY_EVIDENCE: evidence, VERIFY_UDID: 'unused', VERIFY_AGENT_DEADLINE: String(Date.now() + 30_000) }, stderr: 'pipe',
+    env: {
+      ...cleanEnv(),
+      VERIFY_SOURCE: directory,
+      VERIFY_EVIDENCE: evidence,
+      VERIFY_UDID: 'unused',
+      VERIFY_AGENT_DEADLINE: String(Date.now() + 30_000),
+    },
+    stderr: 'pipe',
   });
-  t.after(async () => { await client.close(); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => {
+    await client.close();
+    await rm(directory, { recursive: true, force: true });
+  });
   await client.connect(transport);
-  const rejected = await client.callTool({ name: 'reset_scenario', arguments: { fixture: 'success' } });
+  const rejected = await client.callTool({
+    name: 'reset_scenario',
+    arguments: { fixture: 'success' },
+  });
   assert.equal(rejected.isError, true);
   assert.match(rejected.content[0].text, /reserve time/);
-  const saved = await client.callTool({ name: 'submit_plan', arguments: {
-    disposition: 'blocked', rationale: 'Deadline reached before coverage could be completed.',
-    limitations: ['Camera permission recovery remains unverified.'], scenarios: [],
-  } });
+  const saved = await client.callTool({
+    name: 'submit_plan',
+    arguments: {
+      disposition: 'blocked',
+      rationale: 'Deadline reached before coverage could be completed.',
+      limitations: ['Camera permission recovery remains unverified.'],
+      scenarios: [],
+    },
+  });
   assert.notEqual(saved.isError, true);
   assert.equal(JSON.parse(await readFile(`${evidence}/plan.json`, 'utf8')).disposition, 'blocked');
 });

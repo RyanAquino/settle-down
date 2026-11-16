@@ -2,7 +2,16 @@ import { CameraView } from 'expo-camera';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, PanResponder, Platform, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
+import {
+  Alert,
+  PanResponder,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { PressableScale } from '@/components/motion';
@@ -36,7 +45,10 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; ready.current = false; };
+    return () => {
+      mounted.current = false;
+      ready.current = false;
+    };
   }, []);
 
   const changeZoom = (value: number) => {
@@ -47,23 +59,35 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
 
   // PanResponder stores these callbacks; refs are read only when a gesture fires.
   // eslint-disable-next-line react-hooks/refs
-  const [pinch] = useState(() => PanResponder.create({
-    onStartShouldSetPanResponder: (event) => ready.current && !capturing.current && event.nativeEvent.touches.length === 2,
-    onMoveShouldSetPanResponder: (event) => ready.current && !capturing.current && event.nativeEvent.touches.length === 2,
-    onPanResponderGrant: (event) => { pinchRef.current = pinchDistance(event); },
-    onPanResponderMove: (event) => {
-      const distance = pinchDistance(event);
-      const previous = pinchRef.current;
-      pinchRef.current = distance;
-      if (distance && previous && ready.current && !capturing.current) {
-        zoomRef.current = Math.min(1, Math.max(0,
-          zoomRef.current + Math.log2(distance / previous) * PINCH_SENSITIVITY));
-        setZoom(zoomRef.current);
-      }
-    },
-    onPanResponderRelease: () => { pinchRef.current = null; },
-    onPanResponderTerminate: () => { pinchRef.current = null; },
-  }));
+  const [pinch] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: (event) =>
+        ready.current && !capturing.current && event.nativeEvent.touches.length === 2,
+      onMoveShouldSetPanResponder: (event) =>
+        ready.current && !capturing.current && event.nativeEvent.touches.length === 2,
+      onPanResponderGrant: (event) => {
+        pinchRef.current = pinchDistance(event);
+      },
+      onPanResponderMove: (event) => {
+        const distance = pinchDistance(event);
+        const previous = pinchRef.current;
+        pinchRef.current = distance;
+        if (distance && previous && ready.current && !capturing.current) {
+          zoomRef.current = Math.min(
+            1,
+            Math.max(0, zoomRef.current + Math.log2(distance / previous) * PINCH_SENSITIVITY),
+          );
+          setZoom(zoomRef.current);
+        }
+      },
+      onPanResponderRelease: () => {
+        pinchRef.current = null;
+      },
+      onPanResponderTerminate: () => {
+        pinchRef.current = null;
+      },
+    }),
+  );
 
   const takePicture = async () => {
     if (!cameraRef.current || !ready.current || capturing.current) return;
@@ -132,7 +156,10 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
             <Text style={styles.errorText}>Unable to start the camera</Text>
             <PressableScale
               style={styles.retryButton}
-              onPress={() => { setCameraError(false); setCameraKey((key) => key + 1); }}
+              onPress={() => {
+                setCameraError(false);
+                setCameraKey((key) => key + 1);
+              }}
               accessibilityLabel="Retry camera"
             >
               <Text style={styles.controlText}>Try again</Text>
@@ -173,8 +200,15 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
         </View>
         <Text style={styles.zoomHint}>Pinch to zoom</Text>
         <View style={styles.captureRow}>
-          <PressableScale testID="pick-receipt" style={[styles.sideButton, isCapturing && styles.disabled]} disabled={isCapturing}
-            onPress={onPickFromLibrary} accessibilityLabel="Pick from library">
+          <PressableScale
+            testID="pick-receipt"
+            style={[styles.sideButton, isCapturing && styles.disabled]}
+            disabled={isCapturing}
+            onPress={() => {
+              void onPickFromLibrary();
+            }}
+            accessibilityLabel="Pick from library"
+          >
             <View style={styles.libraryIcon}>
               <View style={styles.libraryBack} />
               <View style={styles.libraryFront} />
@@ -186,7 +220,9 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
             disabled={controlsDisabled}
             scaleTo={0.9}
             haptic="none"
-            onPress={takePicture}
+            onPress={() => {
+              void takePicture();
+            }}
             accessibilityLabel="Capture receipt"
             testID="capture-receipt"
           >
@@ -202,25 +238,96 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   preview: { flex: 1, overflow: 'hidden', ...Platform.select({ web: { touchAction: 'none' } }) },
-  topHint: { position: 'absolute', alignSelf: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.45)' },
+  topHint: {
+    position: 'absolute',
+    alignSelf: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
   topHintText: { color: '#fff', fontSize: 13, fontWeight: '500' },
-  bottomBar: { paddingTop: 16, paddingHorizontal: 32, alignItems: 'center', backgroundColor: '#000' },
-  zoomControls: { flexDirection: 'row', alignItems: 'center', borderRadius: 999, backgroundColor: '#242424', padding: 2, gap: 6 },
-  zoomButton: { width: 48, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
+  bottomBar: {
+    paddingTop: 16,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  zoomControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    backgroundColor: '#242424',
+    padding: 2,
+    gap: 6,
+  },
+  zoomButton: {
+    width: 48,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 22,
+  },
   resetButton: { minWidth: 64, height: 44, alignItems: 'center', justifyContent: 'center' },
   zoomSymbol: { color: '#fff', fontSize: 26, fontWeight: '400' },
   controlText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   zoomHint: { color: '#aaa', fontSize: 12, marginTop: 8, marginBottom: 18 },
-  captureRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' },
+  captureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
   sideButton: { width: 64, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   sideLabel: { color: '#ddd', fontSize: 11, marginTop: 4, fontWeight: '500' },
   libraryIcon: { width: 32, height: 28 },
-  libraryBack: { position: 'absolute', top: 0, left: 4, width: 22, height: 22, borderRadius: 4, borderWidth: 1.5, borderColor: '#999' },
-  libraryFront: { position: 'absolute', bottom: 0, right: 2, width: 22, height: 22, borderRadius: 4, borderWidth: 1.5, borderColor: '#fff', backgroundColor: '#242424' },
-  shutter: { width: 78, height: 78, borderRadius: 39, borderWidth: 3, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  libraryBack: {
+    position: 'absolute',
+    top: 0,
+    left: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#999',
+  },
+  libraryFront: {
+    position: 'absolute',
+    bottom: 0,
+    right: 2,
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    backgroundColor: '#242424',
+  },
+  shutter: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    borderWidth: 3,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   shutterInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#fff' },
   disabled: { opacity: 0.35 },
-  errorPanel: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: '#161616' },
+  errorPanel: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#161616',
+  },
   errorText: { color: '#fff', fontSize: 16, marginBottom: 16 },
-  retryButton: { paddingHorizontal: 20, paddingVertical: 14, backgroundColor: '#333', borderRadius: 24 },
+  retryButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#333',
+    borderRadius: 24,
+  },
 });

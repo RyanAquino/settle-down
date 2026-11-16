@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "ignoreBinaries": ["eas"]
+    },
+    "tools/verify-ios": {
+      "entry": ["github.mjs", "agent-tools.mjs", "test/*.test.mjs"],
+      "ignoreDependencies": ["@github/copilot"]
+    }
+  }
+}

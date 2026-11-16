@@ -26,13 +26,18 @@ const source = await realpath(process.env.VERIFY_SOURCE);
 const udid = process.env.VERIFY_UDID;
 const maestro = process.env.VERIFY_MAESTRO || 'maestro';
 const server = new McpServer({ name: 'verify', version: '1.0.0' });
-let calls = 0, maestroClient;
-const content = value => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }] });
+let calls = 0,
+  maestroClient;
+const content = (value) => ({
+  content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
+});
 const deadline = Number(process.env.VERIFY_AGENT_DEADLINE);
 const budget = new ExplorationBudget(Number.isFinite(deadline) && deadline > 0 ? { deadline } : {});
-const scenarioEvidence = new ScenarioEvidence({ initialResetReady: process.env.VERIFY_INITIAL_RESET_READY === '1' });
+const scenarioEvidence = new ScenarioEvidence({
+  initialResetReady: process.env.VERIFY_INITIAL_RESET_READY === '1',
+});
 let mutationTail = Promise.resolve();
-const serialized = action => {
+const serialized = (action) => {
   const next = mutationTail.then(action);
   mutationTail = next.catch(() => {});
   return next;
@@ -44,7 +49,9 @@ function maestroPayload(result, key) {
     try {
       const parsed = JSON.parse(block.text);
       if (parsed && Object.hasOwn(parsed, key)) return parsed;
-    } catch { /* Ignore viewer advertisements and other non-data text. */ }
+    } catch {
+      /* Ignore viewer advertisements and other non-data text. */
+    }
   }
   throw new Error(`Maestro returned no ${key} data. Check the pinned MCP version.`);
 }
@@ -53,27 +60,42 @@ async function maestroCall(name, args) {
   const firstConnection = !maestroClient;
   if (!maestroClient) {
     maestroClient = new Client({ name: 'verify-ios', version: '1.0.0' });
-    const transport = new StdioClientTransport({ command: maestro, args: ['mcp', '--no-viewer'],
-      env: { ...cleanEnv(), MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000' }, stderr: 'pipe' });
-    transport.stderr?.on('data', data => process.stderr.write(data));
+    const transport = new StdioClientTransport({
+      command: maestro,
+      args: ['mcp', '--no-viewer'],
+      env: { ...cleanEnv(), MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000' },
+      stderr: 'pipe',
+    });
+    transport.stderr?.on('data', (data) => process.stderr.write(data));
     await maestroClient.connect(transport, { timeout: budget.uiTimeout(120000) });
   }
   // The MCP server installs its own driver on the first UI call. Keep startup
   // inside the exploration deadline while preserving the finalization reserve.
-  return maestroClient.callTool({ name, arguments: { device_id: udid, ...args } }, undefined,
-    { timeout: budget.uiTimeout(firstConnection ? 300000 : 180000) });
+  return maestroClient.callTool({ name, arguments: { device_id: udid, ...args } }, undefined, {
+    timeout: budget.uiTimeout(firstConnection ? 300000 : 180000),
+  });
 }
 
 function tool(name, description, inputSchema, action) {
-  server.registerTool(name, { description, inputSchema }, async args => {
+  server.registerTool(name, { description, inputSchema }, async (args) => {
     const index = ++calls;
     const toolStarted = Date.now();
     try {
       budget.enter(name);
-      const { scenarioEvidence: proof, ...result } = await (['reset_scenario', 'execute_flow'].includes(name)
-        ? serialized(() => { budget.check(name); return action(args, index); }) : action(args, index));
+      const { scenarioEvidence: proof, ...result } = await ([
+        'reset_scenario',
+        'execute_flow',
+      ].includes(name)
+        ? serialized(() => {
+            budget.check(name);
+            return action(args, index);
+          })
+        : action(args, index));
       if (result.isError) throw new Error(JSON.stringify(result.content));
-      result.content.push({ type: 'text', text: `Trusted exploration budget: ${JSON.stringify(budget.snapshot())}. In finalize phase, submit_plan now; incomplete coverage must remain blocked.` });
+      result.content.push({
+        type: 'text',
+        text: `Trusted exploration budget: ${JSON.stringify(budget.snapshot())}. In finalize phase, submit_plan now; incomplete coverage must remain blocked.`,
+      });
       const size = resultBytes(result);
       if (size > RESULT_LIMIT_BYTES)
         throw new Error(
@@ -85,8 +107,14 @@ function tool(name, description, inputSchema, action) {
       );
       return result;
     } catch (error) {
-      await appendFile(`${evidence}/tool-calls.jsonl`, `${JSON.stringify({ index, tool: name, args, ok: false, durationMs: Date.now() - toolStarted, time: new Date().toISOString(), error: error.message })}\n`);
-      return { ...content(`${error.message} Budget: ${JSON.stringify(budget.snapshot())}`), isError: true };
+      await appendFile(
+        `${evidence}/tool-calls.jsonl`,
+        `${JSON.stringify({ index, tool: name, args, ok: false, durationMs: Date.now() - toolStarted, time: new Date().toISOString(), error: error.message })}\n`,
+      );
+      return {
+        ...content(`${error.message} Budget: ${JSON.stringify(budget.snapshot())}`),
+        isError: true,
+      };
     }
   });
 }
@@ -155,8 +183,10 @@ tool(
   'Read a required deterministic camera regression and its trusted execution status. Copy record.scenario unchanged into plan.scenarios, without the status/evidence wrapper fields; successful host execution counts as complete-flow evidence, but CI still independently replays it. Read the source to decide whether other changed behavior needs additional coverage.',
   { id: z.enum(['camera-zoom-bounds', 'camera-settings-recovery']) },
   async ({ id }) => {
-    const records = JSON.parse(await readFile(`${evidence}/regressions.json`, 'utf8').catch(() => '[]'));
-    const record = records.find(item => item.scenario.id === id);
+    const records = JSON.parse(
+      await readFile(`${evidence}/regressions.json`, 'utf8').catch(() => '[]'),
+    );
+    const record = records.find((item) => item.scenario.id === id);
     if (!record) throw new Error('No required regression with that id applies to this PR');
     return content(record);
   },
@@ -235,50 +265,90 @@ tool(
   },
 );
 
-tool('reset_scenario', 'Reset app data and select a predefined fixture. The photo library retains one synthetic receipt.', {
-  fixture: z.enum(PRESETS),
-}, async ({ fixture }, index) => {
-  scenarioEvidence.resetStarted();
-  if (scenarioEvidence.consumeInitialReset()) {
-    // The runner just installed and launched this app, and no flow has touched it.
-    await fixtureControl('/__reset', { token: process.env.VERIFY_FIXTURE_TOKEN, body: { preset: fixture, phase: `exploration-${index}` } });
-  } else {
-    await resetScenario({ udid, appPath: process.env.VERIFY_APP, appId: APP_ID, fixture,
-      phase: `exploration-${index}`, token: process.env.VERIFY_FIXTURE_TOKEN, signal: AbortSignal.timeout(90000) });
-  }
-  scenarioEvidence.resetCompleted(fixture);
-  return content({ fixture, reset: true });
-});
+tool(
+  'reset_scenario',
+  'Reset app data and select a predefined fixture. The photo library retains one synthetic receipt.',
+  {
+    fixture: z.enum(PRESETS),
+  },
+  async ({ fixture }, index) => {
+    scenarioEvidence.resetStarted();
+    if (scenarioEvidence.consumeInitialReset()) {
+      // The runner just installed and launched this app, and no flow has touched it.
+      await fixtureControl('/__reset', {
+        token: process.env.VERIFY_FIXTURE_TOKEN,
+        body: { preset: fixture, phase: `exploration-${index}` },
+      });
+    } else {
+      await resetScenario({
+        udid,
+        appPath: process.env.VERIFY_APP,
+        appId: APP_ID,
+        fixture,
+        phase: `exploration-${index}`,
+        token: process.env.VERIFY_FIXTURE_TOKEN,
+        signal: AbortSignal.timeout(90000),
+      });
+    }
+    scenarioEvidence.resetCompleted(fixture);
+    return content({ fixture, reset: true });
+  },
+);
 
-tool('execute_flow', 'Operate the live UI with a short literal Maestro YAML flow. Header appId is required. Only one-level inline runFlow visibility branches containing navigation are allowed. No scripts, expressions, URLs, file subflows, conditional assertions, or optional steps.', {
-  yaml: z.string().max(32000),
-}, async ({ yaml }, index) => {
-  const fixture = scenarioEvidence.beginFlow();
-  const validated = validateFlow(yaml);
-  const directory = `${evidence}/exploration/step-${index}`;
-  await mkdir(directory, { recursive: true });
-  await writeFile(`${directory}/requested.yaml`, yaml);
-  // MCP execution does not have the CLI's --test-output-dir. Rewrite only
-  // validated screenshot stems to confined absolute paths before forwarding.
-  const steps = validated.steps.map(step => typeof step === 'object' && step?.takeScreenshot
-    ? { takeScreenshot: `${directory}/${step.takeScreenshot}` } : step);
-  await writeFile(`${directory}/flow.yaml`, `${stringify(validated.header)}---\n${stringify(steps)}`);
-  const result = await maestroCall('run', { files: [`${directory}/flow.yaml`], env: { APP_ID } });
-  await writeFile(`${directory}/execution.json`, JSON.stringify(result));
-  await run('xcrun', ['simctl', 'io', udid, 'screenshot', `${directory}/screen.png`], { allowFailure: true, timeout: 10000 });
-  const data = maestroPayload(result, 'success');
-  const proof = scenarioEvidence.completed(fixture, yaml, data.success === true);
-  return { ...content({ success: data.success, results: data.results, readyEvidence: !!proof,
-    nextStep: proof ? 'This exact complete flow is eligible for a ready plan.' : 'Before submitting ready, reset_scenario and execute the entire final flow once, including launch, assertions and screenshot.' }),
-    isError: data.success !== true, scenarioEvidence: proof };
-});
+tool(
+  'execute_flow',
+  'Operate the live UI with a short literal Maestro YAML flow. Header appId is required. Only one-level inline runFlow visibility branches containing navigation are allowed. No scripts, expressions, URLs, file subflows, conditional assertions, or optional steps.',
+  {
+    yaml: z.string().max(32000),
+  },
+  async ({ yaml }, index) => {
+    const fixture = scenarioEvidence.beginFlow();
+    const validated = validateFlow(yaml);
+    const directory = `${evidence}/exploration/step-${index}`;
+    await mkdir(directory, { recursive: true });
+    await writeFile(`${directory}/requested.yaml`, yaml);
+    // MCP execution does not have the CLI's --test-output-dir. Rewrite only
+    // validated screenshot stems to confined absolute paths before forwarding.
+    const steps = validated.steps.map((step) =>
+      typeof step === 'object' && step?.takeScreenshot
+        ? { takeScreenshot: `${directory}/${step.takeScreenshot}` }
+        : step,
+    );
+    await writeFile(
+      `${directory}/flow.yaml`,
+      `${stringify(validated.header)}---\n${stringify(steps)}`,
+    );
+    const result = await maestroCall('run', { files: [`${directory}/flow.yaml`], env: { APP_ID } });
+    await writeFile(`${directory}/execution.json`, JSON.stringify(result));
+    await run('xcrun', ['simctl', 'io', udid, 'screenshot', `${directory}/screen.png`], {
+      allowFailure: true,
+      timeout: 10000,
+    });
+    const data = maestroPayload(result, 'success');
+    const proof = scenarioEvidence.completed(fixture, yaml, data.success === true);
+    return {
+      ...content({
+        success: data.success,
+        results: data.results,
+        readyEvidence: !!proof,
+        nextStep: proof
+          ? 'This exact complete flow is eligible for a ready plan.'
+          : 'Before submitting ready, reset_scenario and execute the entire final flow once, including launch, assertions and screenshot.',
+      }),
+      isError: data.success !== true,
+      scenarioEvidence: proof,
+    };
+  },
+);
 
 tool(
   'fixture_requests',
   'Read synthetic backend requests from the current scenario, including submitted transaction data. Paged oldest first; pass page to read more.',
   { page },
   async ({ page: requested }) => {
-    const requests = await fixtureControl('/__requests', { token: process.env.VERIFY_FIXTURE_TOKEN });
+    const requests = await fixtureControl('/__requests', {
+      token: process.env.VERIFY_FIXTURE_TOKEN,
+    });
     const pages = paginateItems(requests);
     return content({
       page: requested ?? 1,
@@ -294,11 +364,18 @@ tool(
   planSchema.shape,
   async (input) => {
     const plan = validatePlan(input);
-    const journal = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-    const regressions = JSON.parse(await readFile(`${evidence}/regressions.json`, 'utf8').catch(() => '[]'));
+    const journal = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8').catch(() => ''))
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const regressions = JSON.parse(
+      await readFile(`${evidence}/regressions.json`, 'utf8').catch(() => '[]'),
+    );
     requireScenarioEvidence(plan, journal, regressions);
     await mkdir(`${evidence}/generated`, { recursive: true });
-    for (const scenario of plan.scenarios) await writeFile(`${evidence}/generated/${scenario.id}.yaml`, scenario.yaml);
+    for (const scenario of plan.scenarios)
+      await writeFile(`${evidence}/generated/${scenario.id}.yaml`, scenario.yaml);
     await writeFile(`${evidence}/plan.json`, JSON.stringify(plan, null, 2));
     await writeFile(
       `${evidence}/test-plan.md`,
@@ -315,17 +392,23 @@ tool(
         ...plan.limitations.map((s) => `- ${s}`),
         '',
         '## Manual checks required (not verified in CI)',
-        ...plan.manualChecks.map(s => `- ${s}`),
+        ...plan.manualChecks.map((s) => `- ${s}`),
         '',
         '## Requires a physical device (not verified in CI)',
         ...plan.deviceOnly.map((s) => `- ${s}`),
       ].join('\n'),
     );
-    return content(plan.disposition === 'blocked' && budget.snapshot().phase === 'explore'
-      ? 'Blocked checkpoint saved. While time remains, continue testing the listed gaps and replace this plan when coverage is complete. Do not stop at a checkpoint if more progress is possible.'
-      : 'Final plan saved. Stop exploration and finish now. CI will independently replay the validated flows and determine the verdict.');
+    return content(
+      plan.disposition === 'blocked' && budget.snapshot().phase === 'explore'
+        ? 'Blocked checkpoint saved. While time remains, continue testing the listed gaps and replace this plan when coverage is complete. Do not stop at a checkpoint if more progress is possible.'
+        : 'Final plan saved. Stop exploration and finish now. CI will independently replay the validated flows and determine the verdict.',
+    );
   },
 );
 
-process.on('SIGTERM', async () => { await maestroClient?.close(); await server.close(); process.exit(0); });
+process.on('SIGTERM', async () => {
+  await maestroClient?.close();
+  await server.close();
+  process.exit(0);
+});
 await server.connect(new StdioServerTransport());

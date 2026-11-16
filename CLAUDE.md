@@ -19,7 +19,7 @@ npm run update:preview # EAS OTA update to the preview channel (also :production
 npm run update:preview:org # same, for the org-ryan copy of the project (every build/update script has an :org variant)
 ```
 
-There is no test suite. Verify changes with `npm run lint` and `npm run type-check`. The `reset-project` script points to a file that doesn't exist, so don't use it.
+Run `npm run check` for formatting, typed lint, TypeScript, Jest/RNTL app tests, verification-tool tests, and Knip. Install tooling dependencies with `npm ci --prefix tools/verify-ios --ignore-scripts --omit=dev`. See `docs/ci.md` for native checks and CI activation. Tests live in `tests/`, outside Expo Router's `app/` directory. Receipt calculations, parsing, and API schemas live in `utils/receipt.ts`; retry logic is in `utils/retry.ts`. The removed `reset-project` script referenced a nonexistent file.
 
 ## Architecture
 

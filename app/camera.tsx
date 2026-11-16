@@ -14,10 +14,12 @@ export default function CameraScreen() {
   const pickingFromLibrary = useRef(false);
   const params = useLocalSearchParams();
 
-  useFocusEffect(useCallback(() => {
-    setIsFocused(true);
-    return () => setIsFocused(false);
-  }, []));
+  useFocusEffect(
+    useCallback(() => {
+      setIsFocused(true);
+      return () => setIsFocused(false);
+    }, []),
+  );
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -41,13 +43,26 @@ export default function CameraScreen() {
           <Text style={styles.permissionTitle}>Camera access</Text>
         </Entrance>
         <Entrance delay={80} distance={16}>
-          <Text style={styles.permissionBody}>
-            Settle Down needs your camera to read receipts.
-          </Text>
+          <Text style={styles.permissionBody}>Settle Down needs your camera to read receipts.</Text>
         </Entrance>
         <Entrance delay={160} distance={16}>
-          <PressableScale testID="allow-camera" style={styles.permissionBtn} haptic="medium" onPress={permission.canAskAgain ? requestPermission : () => { void Linking.openSettings(); }}>
-            <Text style={styles.permissionBtnText}>{permission.canAskAgain ? 'Allow camera' : 'Open settings'}</Text>
+          <PressableScale
+            testID="allow-camera"
+            style={styles.permissionBtn}
+            haptic="medium"
+            onPress={() => {
+              if (permission.canAskAgain) {
+                void requestPermission().catch(() =>
+                  Alert.alert('Error', 'Unable to request camera access.'),
+                );
+              } else {
+                void Linking.openSettings();
+              }
+            }}
+          >
+            <Text style={styles.permissionBtnText}>
+              {permission.canAskAgain ? 'Allow camera' : 'Open settings'}
+            </Text>
           </PressableScale>
         </Entrance>
       </View>
@@ -59,15 +74,16 @@ export default function CameraScreen() {
     pickingFromLibrary.current = true;
     try {
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (permissionResult.status !== 'granted') {
-        Alert.alert(
-          'Permission required',
-          'Settle Down needs access to your photo library.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open settings', onPress: () => { void Linking.openSettings(); } },
-          ],
-        );
+      if (permissionResult.status !== ImagePicker.PermissionStatus.GRANTED) {
+        Alert.alert('Permission required', 'Settle Down needs access to your photo library.', [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open settings',
+            onPress: () => {
+              void Linking.openSettings();
+            },
+          },
+        ]);
         return;
       }
 
@@ -93,9 +109,7 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
-      {isFocused && appState === 'active' && (
-        <CameraSession onPickFromLibrary={pickFromLibrary} />
-      )}
+      {isFocused && appState === 'active' && <CameraSession onPickFromLibrary={pickFromLibrary} />}
     </View>
   );
 }

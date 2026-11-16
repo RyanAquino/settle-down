@@ -4,8 +4,11 @@ import { APP_ID, validateFlow } from './policy.mjs';
 
 export const cameraRegressions = [
   {
-    id: 'camera-zoom-bounds', name: 'Camera zoom bounds, Reset, and foreground lifecycle', fixture: 'success',
-    coverage: 'Checks minimum disabled states, twenty zoom steps to the maximum and disabled Zoom in, Reset to zero, and a fresh zero-zoom session after Home/resume.',
+    id: 'camera-zoom-bounds',
+    name: 'Camera zoom bounds, Reset, and foreground lifecycle',
+    fixture: 'success',
+    coverage:
+      'Checks minimum disabled states, twenty zoom steps to the maximum and disabled Zoom in, Reset to zero, and a fresh zero-zoom session after Home/resume.',
     yaml: `appId: ${APP_ID}
 name: Camera zoom bounds and lifecycle
 ---
@@ -49,8 +52,11 @@ ${'- tapOn: Zoom in\n'.repeat(20)}- assertVisible:
 `,
   },
   {
-    id: 'camera-settings-recovery', name: 'Native Settings camera permission recovery', fixture: 'success',
-    coverage: 'Explicit denial shows Open settings; navigate Settings root/Apps/app details, verify the Camera switch is off, toggle that switch on, and resume to enabled camera controls.',
+    id: 'camera-settings-recovery',
+    name: 'Native Settings camera permission recovery',
+    fixture: 'success',
+    coverage:
+      'Explicit denial shows Open settings; navigate Settings root/Apps/app details, verify the Camera switch is off, toggle that switch on, and resume to enabled camera controls.',
     yaml: `appId: ${APP_ID}
 name: Native camera permission recovery
 ---
@@ -107,10 +113,23 @@ name: Native camera permission recovery
 ];
 
 export function cameraRegressionsApply(changedFiles) {
-  return changedFiles.some(file => ['app/camera.tsx', 'components/camera-session.tsx'].includes(file));
+  return changedFiles.some((file) =>
+    ['app/camera.tsx', 'components/camera-session.tsx'].includes(file),
+  );
 }
 
-export async function runCameraRegressions({ udid, appPath, evidence, token, run, resetScenario, checkJUnit, signal, initialResetReady = false, resetFixture = fixtureControl }) {
+export async function runCameraRegressions({
+  udid,
+  appPath,
+  evidence,
+  token,
+  run,
+  resetScenario,
+  checkJUnit,
+  signal,
+  initialResetReady = false,
+  resetFixture = fixtureControl,
+}) {
   const records = [];
   for (const scenario of cameraRegressions) {
     validateFlow(scenario.yaml, { replay: true });
@@ -123,21 +142,62 @@ export async function runCameraRegressions({ udid, appPath, evidence, token, run
     // assertion. Bound startup and the complete unchanged flow together.
     const deadline = Date.now() + 360000;
     try {
-      const resetSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(180000)]) : AbortSignal.timeout(180000);
+      const resetSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(180000)])
+        : AbortSignal.timeout(180000);
       if (initialResetReady && records.length === 0) {
-        await resetFixture('/__reset', { token, body: { preset: scenario.fixture, phase: scenario.id }, signal: resetSignal });
+        await resetFixture('/__reset', {
+          token,
+          body: { preset: scenario.fixture, phase: scenario.id },
+          signal: resetSignal,
+        });
       } else {
-        await resetScenario({ udid, appPath, appId: APP_ID, fixture: scenario.fixture, phase: scenario.id, token, signal: resetSignal });
+        await resetScenario({
+          udid,
+          appPath,
+          appId: APP_ID,
+          fixture: scenario.fixture,
+          phase: scenario.id,
+          token,
+          signal: resetSignal,
+        });
       }
-      const execution = await run('maestro', ['--device', udid, 'test', '--format', 'junit', '--output', `${directory}/junit.xml`,
-        '--debug-output', directory, '--test-output-dir', directory, `${directory}/flow.yaml`],
-      { timeout: Math.max(1, deadline - Date.now()), allowFailure: true, log: `${directory}/maestro.log` });
+      const execution = await run(
+        'maestro',
+        [
+          '--device',
+          udid,
+          'test',
+          '--format',
+          'junit',
+          '--output',
+          `${directory}/junit.xml`,
+          '--debug-output',
+          directory,
+          '--test-output-dir',
+          directory,
+          `${directory}/flow.yaml`,
+        ],
+        {
+          timeout: Math.max(1, deadline - Date.now()),
+          allowFailure: true,
+          log: `${directory}/maestro.log`,
+        },
+      );
       record.exitCode = execution.code;
-      if (execution.timedOut) record.error = 'Required regression exceeded its six-minute startup and execution budget';
+      if (execution.timedOut)
+        record.error = 'Required regression exceeded its six-minute startup and execution budget';
       const junit = await readFile(`${directory}/junit.xml`, 'utf8').catch(() => '');
       record.junitVerified = !!junit && checkJUnit(junit);
-      record.status = execution.timedOut || !junit ? 'BLOCKED' : execution.code === 0 && record.junitVerified ? 'PASS' : 'FAIL';
-    } catch (error) { record.error = error.message; }
+      record.status =
+        execution.timedOut || !junit
+          ? 'BLOCKED'
+          : execution.code === 0 && record.junitVerified
+            ? 'PASS'
+            : 'FAIL';
+    } catch (error) {
+      record.error = error.message;
+    }
     records.push(record);
     await writeFile(`${evidence}/regressions.json`, JSON.stringify(records, null, 2));
     console.log(`Required camera regression ${scenario.id}: ${record.status}`);

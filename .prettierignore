@@ -1,0 +1,14 @@
+node_modules
+ios
+android
+.expo
+dist
+coverage
+test-results
+package-lock.json
+tools/verify-ios/package-lock.json
+AGENTS.md
+.claude
+.cursor
+.idea
+.vscode

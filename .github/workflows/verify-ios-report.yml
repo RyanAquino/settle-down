@@ -22,28 +22,28 @@ jobs:
       checks: write
     steps:
       # Never check out the PR or execute anything from downloaded artifacts.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22'
       - run: npm ci --prefix tools/verify-ios --ignore-scripts --omit=dev
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         continue-on-error: true
         with:
           name: verify-request-${{ github.event.workflow_run.run_attempt }}
           path: ${{ runner.temp }}/verify-report/request
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         continue-on-error: true
         with:
           name: ios-evidence-${{ github.event.workflow_run.run_attempt }}
           path: ${{ runner.temp }}/verify-report/evidence
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const { publish } = await import(`${process.env.GITHUB_WORKSPACE}/tools/verify-ios/github.mjs`);

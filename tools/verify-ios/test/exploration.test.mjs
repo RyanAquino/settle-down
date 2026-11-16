@@ -1,13 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ExplorationBudget, ScenarioEvidence, scenarioFingerprint, requireScenarioEvidence, EXPLORATION_MS, FINALIZE_MS , agentFailureMessage } from '../exploration.mjs';
+import {
+  ExplorationBudget,
+  ScenarioEvidence,
+  scenarioFingerprint,
+  requireScenarioEvidence,
+  EXPLORATION_MS,
+  FINALIZE_MS,
+  agentFailureMessage,
+} from '../exploration.mjs';
 
-
-const yaml = 'appId: ${APP_ID}\nname: Test\n---\n- launchApp\n- tapOn: Camera\n- assertVisible: Ready\n- takeScreenshot: ready\n';
+const yaml =
+  'appId: ${APP_ID}\nname: Test\n---\n- launchApp\n- tapOn: Camera\n- assertVisible: Ready\n- takeScreenshot: ready\n';
 const scenario = { id: 'camera', fixture: 'success', yaml };
 const plan = { disposition: 'ready', scenarios: [scenario] };
 const reset = { tool: 'reset_scenario', ok: true, args: { fixture: 'success' } };
-const passed = { tool: 'execute_flow', ok: true, args: { yaml }, scenarioEvidence: scenarioFingerprint('success', yaml) };
+const passed = {
+  tool: 'execute_flow',
+  ok: true,
+  args: { yaml },
+  scenarioEvidence: scenarioFingerprint('success', yaml),
+};
 
 test('tools share the runner deadline and reserve time/calls for final submission', () => {
   let now = 0;
@@ -46,24 +59,44 @@ test('slow driver calls can use startup time without consuming the finalization 
 test('only the first complete successful flow after a successful reset earns evidence', () => {
   const evidence = new ScenarioEvidence();
   assert.equal(evidence.completed(evidence.beginFlow(), yaml, true), undefined);
-  evidence.resetStarted(); evidence.resetCompleted('success');
+  evidence.resetStarted();
+  evidence.resetCompleted('success');
   const fixture = evidence.beginFlow();
   assert.equal(evidence.completed(fixture, yaml, false), undefined);
   assert.equal(evidence.completed(evidence.beginFlow(), yaml, true), undefined);
   evidence.resetCompleted('success');
   assert.equal(evidence.completed(evidence.beginFlow(), yaml, true), passed.scenarioEvidence);
-  evidence.resetCompleted('success'); evidence.resetStarted();
+  evidence.resetCompleted('success');
+  evidence.resetStarted();
   assert.equal(evidence.beginFlow(), undefined);
 });
 
 test('ready plans cannot assemble fragments or change fixtures/assertions after execution', () => {
   assert.doesNotThrow(() => requireScenarioEvidence(plan, [reset, passed]));
-  for (const journal of [[], [reset], [passed], [reset, { ...passed, scenarioEvidence: undefined }],
-    [reset, passed, { ...passed, ok: false }]]) assert.throws(() => requireScenarioEvidence(plan, journal), /complete flow/);
-  for (const change of [{ fixture: 'upload-error' }, { yaml: yaml.replace('Ready', 'Other') }, { yaml: yaml.replace('- tapOn: Camera', '- tapOn: Camera\n- tapOn: Settings') }]) {
-    assert.throws(() => requireScenarioEvidence({ ...plan, scenarios: [{ ...scenario, ...change }] }, [reset, passed]));
+  for (const journal of [
+    [],
+    [reset],
+    [passed],
+    [reset, { ...passed, scenarioEvidence: undefined }],
+    [reset, passed, { ...passed, ok: false }],
+  ])
+    assert.throws(() => requireScenarioEvidence(plan, journal), /complete flow/);
+  for (const change of [
+    { fixture: 'upload-error' },
+    { yaml: yaml.replace('Ready', 'Other') },
+    { yaml: yaml.replace('- tapOn: Camera', '- tapOn: Camera\n- tapOn: Settings') },
+  ]) {
+    assert.throws(() =>
+      requireScenarioEvidence({ ...plan, scenarios: [{ ...scenario, ...change }] }, [
+        reset,
+        passed,
+      ]),
+    );
   }
-  assert.equal(scenarioFingerprint('success', yaml.replace('name: Test', 'name: Another')), passed.scenarioEvidence);
+  assert.equal(
+    scenarioFingerprint('success', yaml.replace('name: Test', 'name: Another')),
+    passed.scenarioEvidence,
+  );
   assert.doesNotThrow(() => requireScenarioEvidence({ ...plan, disposition: 'blocked' }, []));
 });
 

@@ -45,3 +45,7 @@ app-example
 .idea/
 .env
 .env.production
+
+# Quality reports
+coverage/
+test-results/
