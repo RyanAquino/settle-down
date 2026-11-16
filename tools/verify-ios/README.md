@@ -52,7 +52,7 @@ retained for seven days and the intermediate app archive for one day.
 - A separate macOS job builds the captured PR in Release mode. It has no Copilot
   or PR-writing permissions and executes no EAS cloud builds. `EXPO_NO_DOTENV=1`
   prevents local env files from supplying production credentials. The CI build
-  uses `http://localhost:8765`, disables the debug shortcut, and disables OTA updates.
+  uses `http://127.0.0.1:8765`, disables the debug shortcut, and disables OTA updates.
 - A fresh macOS runner installs that binary, boots an iPhone 17 / iOS 26.5, seeds
   one synthetic receipt photo, and starts the fixture backend. Xcode 26.6, Node 22,
   Java 17, Maestro 2.12.1, and Copilot CLI 1.0.112 are selected explicitly.
