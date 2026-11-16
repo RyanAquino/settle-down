@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateFlow, validatePlan, verdict, APP_ID } from '../policy.mjs';
+import { validateFlow, validatePlan, verdict, APP_ID, MANUAL_CHECKS, resultSchema } from '../policy.mjs';
 import { checkJUnit } from '../runner.mjs';
 
 const flow = commands => `appId: \${APP_ID}\n---\n${commands}\n`;
@@ -119,4 +119,66 @@ test('JUnit rejects missing, malformed, skipped, and failed execution', () => {
     '<testsuite failures="1"><testcase name="x"/></testsuite>',
     '<!DOCTYPE x [<!ENTITY y SYSTEM "file:///etc/passwd">]><testsuite><testcase name="x"/></testsuite>',
   ]) assert.equal(checkJUnit(xml), false, xml);
+});
+
+test('background and resume are allowed without exposing other system keys', () => {
+  assert.doesNotThrow(() =>
+    validateFlow(
+      flow(
+        '- launchApp\n- pressKey: Home\n- launchApp:\n    stopApp: false\n- assertVisible: Camera\n- takeScreenshot: resumed',
+      ),
+      { replay: true },
+    ),
+  );
+  for (const key of ['Power', 'Lock', '${evil}', 'Enter']) {
+    assert.throws(() => validateFlow(flow(`- pressKey: "${key}"`)));
+  }
+});
+
+test('only explicit harness exclusions can be recorded as manual checks', () => {
+  const plan = {
+    disposition: 'ready',
+    rationale: 'Zoom controls and lifecycle replayed.',
+    limitations: [],
+    manualChecks: MANUAL_CHECKS,
+    scenarios: [
+      {
+        id: 'zoom',
+        name: 'Zoom',
+        coverage: 'Controls and lifecycle',
+        fixture: 'success',
+        yaml: valid,
+      },
+    ],
+  };
+  assert.deepEqual(validatePlan(plan).manualChecks, MANUAL_CHECKS);
+  for (const gap of ['Background reset untested', 'Tool failed', 'Zoom button did not work']) {
+    assert.throws(() => validatePlan({ ...plan, manualChecks: [gap] }));
+  }
+  const result = {
+    version: 1,
+    headSha: 'a'.repeat(40),
+    agentCompleted: true,
+    disposition: 'ready',
+    limitations: [],
+    manualChecks: MANUAL_CHECKS,
+    verdict: 'PASS',
+    scenarios: [
+      {
+        id: 'zoom',
+        name: 'Zoom',
+        coverage: 'Controls',
+        fixture: 'success',
+        status: 'PASS',
+        exitCode: 0,
+        junitVerified: true,
+      },
+    ],
+  };
+  assert.deepEqual(resultSchema.parse(result).manualChecks, MANUAL_CHECKS);
+  assert.equal(verdict(result), 'PASS');
+  assert.equal(verdict({ ...result, limitations: ['Lifecycle untested'] }), 'BLOCKED');
+  assert.equal(verdict({ ...result, scenarios: [{ status: 'FAIL' }] }), 'FAIL');
+  assert.equal(verdict({ ...result, scenarios: [] }), 'BLOCKED');
+  assert.equal(verdict(result, 'failure'), 'BLOCKED');
 });

@@ -204,6 +204,7 @@ test('final comments explain every verdict and include failure evidence and bloc
       rationale: 'Zoom controls enable and reset.',
       limitations: [],
       deviceOnly: ['Actual preview magnification needs a physical camera.'],
+      manualChecks: ['Pinch-to-zoom: Maestro does not support two-finger gestures.'],
       scenarios: [{ id: 'zoom', name: 'Zoom', status: 'PASS', coverage: 'Zoom controls' }],
     },
     'PASS',
@@ -214,6 +215,9 @@ test('final comments explain every verdict and include failure evidence and bloc
   assert.match(devicePass, /\*\*PASS\*\*/);
   assert.match(devicePass, /Requires a physical device \(not verified in CI\)/);
   assert.match(devicePass, /Actual preview magnification needs a physical camera/);
+  assert.match(devicePass, /Manual checks required \(not verified in CI\)/);
+  assert.match(devicePass, /Pinch-to-zoom/);
+  assert.match(devicePass, /remain unverified/);
   assert.doesNotMatch(devicePass, /Limitations \/ blockers/);
   const expired = renderReport(request, undefined, 'BLOCKED', false, 'https://github.com/run', [
     { name: 'ios-evidence-1', url: 'https://github.com/evidence', expired: true },
