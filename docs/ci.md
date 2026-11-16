@@ -118,6 +118,7 @@ credentials; privileged iOS reporting remains separate from executing PR code.
 
 Push the changes and inspect the first hosted runs. After `Quality gate` has
 reported successfully, add it to the main branch's required checks/ruleset.
+The dependency graph and Dependabot alerts must be enabled for dependency review.
 Repository settings are not modified by these files. Enable/review GitHub code
 scanning alerts as appropriate. Weekly workflows and Dependabot activate after
 merging their configuration onto the default branch.

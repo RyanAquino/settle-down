@@ -132,4 +132,15 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
-          node -e 'const results = JSON.parse(process.env.RESULTS); for (const [name, job] of Object.entries(results)) { const optional = name === "dependencies" && !["pull_request", "merge_group"].includes(process.env.GITHUB_EVENT_NAME) && job.result === "skipped"; if (job.result !== "success" && !optional) { console.error(`${name}: ${job.result}`); process.exitCode = 1; } }'
+          node <<'NODE'
+          const results = JSON.parse(process.env.RESULTS);
+          for (const [name, job] of Object.entries(results)) {
+            const optional = name === 'dependencies'
+              && !['pull_request', 'merge_group'].includes(process.env.GITHUB_EVENT_NAME)
+              && job.result === 'skipped';
+            if (job.result !== 'success' && !optional) {
+              console.error(name + ': ' + job.result);
+              process.exitCode = 1;
+            }
+          }
+          NODE
