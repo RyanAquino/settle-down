@@ -1,3 +1,4 @@
+import { EXPLORATION_MS, requireScenarioEvidence, agentFailureMessage } from './exploration.mjs';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -168,9 +169,10 @@ async function main() {
     ]) versions[name] = (await run(command, args)).output.trim();
     versions.copilot = JSON.parse(await readFile(`${toolRoot}/node_modules/@github/copilot/package.json`, 'utf8')).version;
     await writeFile(`${evidence}/versions.json`, JSON.stringify(versions, null, 2));
-    const runtime = 'com.apple.CoreSimulator.SimRuntime.iOS-26-5';
+    if (process.env.GITHUB_ACTIONS === 'true' && process.env.VERIFY_LOCAL_IOS_RUNTIME) throw new Error('Simulator runtime overrides are local-only');
+    const runtime = process.env.VERIFY_LOCAL_IOS_RUNTIME || 'com.apple.CoreSimulator.SimRuntime.iOS-26-5';
     const runtimes = JSON.parse((await run('xcrun', ['simctl', 'list', 'runtimes', '-j'])).output);
-    if (!runtimes.runtimes.some(r => r.identifier === runtime && r.isAvailable)) throw new Error('Required iOS 26.5 runtime is unavailable');
+    if (!runtimes.runtimes.some(r => r.identifier === runtime && r.isAvailable)) throw new Error(`Required simulator runtime ${runtime} is unavailable`);
     udid = (await run('xcrun', ['simctl', 'create', `Verify-${request.runId}`, 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', runtime])).output.trim();
     await run('xcrun', ['simctl', 'boot', udid]);
     await run('xcrun', ['simctl', 'bootstatus', udid, '-b'], { timeout: 180000 });
@@ -192,6 +194,8 @@ async function main() {
     await run('xcrun', ['simctl', 'addmedia', udid, `${evidence}/receipt.png`]);
     await resetScenario({ udid, appPath, appId: APP_ID, fixture: 'success', phase: 'initial', token: fixtureToken, signal: cancellation.signal });
     await run('xcrun', ['simctl', 'io', udid, 'screenshot', `${evidence}/initial.png`]);
+    // Cold XCTest driver installation must finish before Copilot's fixed budget.
+    await run('maestro', ['--device', udid, 'hierarchy'], { timeout: 180000, log: `${evidence}/driver-warmup.log` });
     video = spawn('xcrun', ['simctl', 'io', udid, 'recordVideo', '--codec=h264', `${evidence}/session.mp4`], { env: cleanEnv(), stdio: 'ignore' });
     video.once('error', error => console.error(`Recording failed: ${error.message}`));
     simulatorLog = spawn('xcrun', ['simctl', 'spawn', udid, 'log', 'stream', '--level', 'error', '--style', 'compact'], { env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
@@ -202,9 +206,11 @@ async function main() {
     const agentWork = `${work}/agent`;
     await mkdir(agentWork);
     const agentEnv = { ...cleanEnv(), GITHUB_TOKEN: process.env.GITHUB_TOKEN, COPILOT_HOME: `${work}/copilot-home` };
+    const agentDeadline = Date.now() + EXPLORATION_MS;
     const config = { mcpServers: { verify: { type: 'local', command: process.execPath,
       args: [`${toolRoot}/agent-tools.mjs`], tools: ['*'], env: {
         GITHUB_TOKEN: '', GH_TOKEN: '', COPILOT_GITHUB_TOKEN: '',
+        VERIFY_AGENT_DEADLINE: String(agentDeadline), VERIFY_INITIAL_RESET_READY: '1',
         VERIFY_EVIDENCE: evidence, VERIFY_SOURCE: source, VERIFY_UDID: udid, VERIFY_APP: appPath,
         VERIFY_FIXTURE_TOKEN: fixtureToken, MAESTRO_CLI_NO_ANALYTICS: '1',
       } } } };
@@ -214,10 +220,11 @@ async function main() {
       '--additional-mcp-config', `@${work}/mcp.json`, '--disable-builtin-mcps', '--disable-mcp-server', 'computer-use',
       '--no-custom-instructions', '--no-ask-user', '--no-auto-update', '--output-format', 'json',
       '--allow-tool', 'verify', '--deny-tool', 'shell,read,write,url,task',
-    ], { cwd: agentWork, env: agentEnv, timeout: 15 * 60_000, log: `${evidence}/agent.jsonl`, allowFailure: true });
-    if (cancelled || agent.timedOut || agent.code !== 0) throw new Error(`Copilot ${agent.timedOut ? 'exceeded the exploration budget' : `exited ${agent.code}`}. Check agent.jsonl for authentication, quota, or tool errors.`);
+    ], { cwd: agentWork, env: agentEnv, timeout: Math.max(1, agentDeadline - Date.now()), log: `${evidence}/agent.jsonl`, allowFailure: true });
+    const journal = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    if (cancelled || agent.timedOut || agent.code !== 0) throw new Error(agentFailureMessage(agent, journal));
     const plan = validatePlan(JSON.parse(await readFile(`${evidence}/plan.json`, 'utf8')));
-    const journal = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
+    requireScenarioEvidence(plan, journal);
     if (plan.disposition === 'ready' && (!journal.some(c => c.tool === 'inspect_screen' && c.ok)
       || !journal.some(c => c.tool === 'execute_flow'))) throw new Error('Agent did not inspect and interact with the live UI');
     result.agentCompleted = true;
