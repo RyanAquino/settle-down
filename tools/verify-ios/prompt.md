@@ -36,6 +36,26 @@ For lifecycle coverage, use pressKey: Home, then launchApp with stopApp: false.
 Assert the changed state after resuming. stopApp or navigation alone is not a
 background/foreground test. Never list lifecycle coverage as a harness exclusion.
 
+Camera permission scenarios are supported and must not be marked manual checks.
+Before reporting that denial is unreachable, execute an explicit camera-denied
+launch and inspect its live UI. An already-granted session is not evidence that
+denial cannot be tested.
+launchApp grants permissions by default. To test permanent denial, explicitly use
+launchApp with permissions: { all: allow, camera: deny }, then navigate to the
+camera and assert Open settings. Do not issue a later default launchApp and expect
+denial to persist: it grants permissions again.
+Use the app's Open settings control to enter Settings and inspect the live Camera
+switch. Toggle it there, return with launchApp using stopApp: false and an explicit
+camera permission matching the desired state, and assert the resulting app UI.
+When the Settings switch cannot be targeted, setPermissions with
+permissions: { camera: allow } or { camera: deny } changes only this app's camera
+permission. Background before changing permission and resume with stopApp: false.
+Permission changes may cause iOS to terminate the app; do not claim a same-process
+permission refresh unless the observed journey establishes it. Describe coverage
+accurately. Observed failures and unreachable states still block; do not invent a pass.
+Save a self-contained permission scenario, including denial setup, recovery, final
+assertions and a screenshot. A standalone setPermissions tool call is not coverage.
+
 Use reset_scenario before each scenario. Inspect live accessibility hierarchy and
 screenshots, interact using execute_flow, and adapt navigation to what is actually
 present. You must inspect the live UI and execute interactions before submitting a
@@ -45,7 +65,7 @@ Handle camera/library permission UI through the app and system prompts as needed
 Fixture data and supported error presets are in get_context. Use fixture_requests
 to inspect request payloads when relevant. Real OCR and Settle Up are not running.
 
-Allowed flow commands: launchApp, stopApp, pressKey (Home only), back, hideKeyboard, scroll, tapOn,
+Allowed flow commands: launchApp, setPermissions (camera allow/deny only), stopApp, pressKey (Home only), back, hideKeyboard, scroll, tapOn,
 doubleTapOn, longPressOn, assertVisible, assertNotVisible, inputText, eraseText,
 takeScreenshot, waitForAnimationToEnd, extendedWaitUntil, scrollUntilVisible,
 swipe (direction only). Use literal values. No JavaScript ${...} expressions except

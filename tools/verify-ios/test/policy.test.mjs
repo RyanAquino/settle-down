@@ -182,3 +182,38 @@ test('only explicit harness exclusions can be recorded as manual checks', () => 
   assert.equal(verdict({ ...result, scenarios: [] }), 'BLOCKED');
   assert.equal(verdict(result, 'failure'), 'BLOCKED');
 });
+
+
+test('camera permission denial and recovery are replayable for the app under test', () => {
+  const yaml = flow(`- launchApp:
+    permissions:
+      all: allow
+      camera: deny
+- assertVisible: Open settings
+- tapOn: Open settings
+- pressKey: Home
+- setPermissions:
+    permissions:
+      camera: allow
+- launchApp:
+    stopApp: false
+    permissions:
+      camera: allow
+- assertVisible: Capture receipt
+- takeScreenshot: permission-recovered`);
+  assert.doesNotThrow(() => validateFlow(yaml, { replay: true }));
+  for (const camera of ['allow', 'deny']) {
+    assert.doesNotThrow(() => validateFlow(flow(`- setPermissions:\n    permissions:\n      camera: ${camera}`)));
+  }
+});
+
+for (const [name, steps] of Object.entries({
+  alternatePermissionApp: '- setPermissions:\n    appId: com.apple.mobilesafari\n    permissions:\n      camera: allow',
+  unrelatedPermission: '- setPermissions:\n    permissions:\n      location: allow',
+  allRuntimePermissions: '- setPermissions:\n    permissions:\n      all: allow',
+  emptyPermissions: '- setPermissions:\n    permissions: {}',
+  emptyLaunchPermissions: '- launchApp:\n    permissions: {}',
+  invalidPermission: '- setPermissions:\n    permissions:\n      camera: arbitrary',
+  executablePermission: '- setPermissions:\n    permissions:\n      camera: "${evil}"',
+  unknownLaunchPermission: '- launchApp:\n    permissions:\n      camera: deny\n      location: allow',
+})) test(`rejects ${name}`, () => assert.throws(() => validateFlow(flow(steps))));
