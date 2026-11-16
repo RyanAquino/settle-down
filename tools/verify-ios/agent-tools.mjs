@@ -248,7 +248,7 @@ tool(
 
 tool(
   'submit_plan',
-  'Save final PR coverage and at most three complete replayable scenarios. Put changes that only a physical device can verify in deviceOnly; they do not block. Use manualChecks only for the predefined pinch and native camera-failure injection exclusions. Submit ready when all other simulator-verifiable changes are covered; blocked only with simulator-side limitations (unverifiable in the simulator for other reasons, or unresolved failures); skipped when nothing is verifiable in the simulator. This does not declare PASS.',
+  'Save final PR coverage and at most three complete replayable scenarios. Put changes that only a physical device can verify in deviceOnly; they do not block. Use manualChecks only for the predefined pinch and native camera-failure injection exclusions. Submit ready when all other simulator-verifiable changes are covered; blocked only with simulator-side limitations (unverifiable in the simulator for other reasons, or unresolved failures); skipped when nothing is verifiable in the simulator. For camera permission gaps, first attempt launchApp with explicit camera: deny and inspect the UI; a granted session alone does not establish a blocker. This does not declare PASS.',
   planSchema.shape,
   async (input) => {
     const plan = validatePlan(input);

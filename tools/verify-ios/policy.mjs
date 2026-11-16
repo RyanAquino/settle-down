@@ -18,10 +18,17 @@ const selectorObject = z.strictObject({
 const selector = z.union([text, selectorObject]);
 const direction = z.enum(['UP', 'DOWN', 'LEFT', 'RIGHT']);
 const empty = z.union([z.null(), z.strictObject({})]);
+const permissionState = z.enum(['allow', 'deny']);
+const launchPermissions = z.strictObject({
+  all: permissionState.optional(),
+  camera: permissionState.optional(),
+}).refine(value => Object.keys(value).length > 0, 'At least one permission is required');
 const commands = {
+  // Restrict runtime changes to camera permission for the app under test.
+  setPermissions: z.strictObject({ permissions: z.strictObject({ camera: permissionState }) }),
   launchApp: z.union([empty, z.strictObject({
     clearState: z.boolean().optional(), stopApp: z.boolean().optional(),
-    permissions: z.strictObject({ all: z.enum(['allow', 'deny']) }).optional(),
+    permissions: launchPermissions.optional(),
   })]),
   pressKey: z.enum(['Home']),
   stopApp: empty, back: empty, hideKeyboard: empty, scroll: empty,

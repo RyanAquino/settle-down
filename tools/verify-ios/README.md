@@ -152,3 +152,17 @@ requires independently replayed assertions and successful JUnit evidence.
 
 Deploy these trusted verifier changes to `main`, then request a fresh `/verify`.
 Rerunning an old workflow attempt can retain the old trusted verifier revision.
+
+## Camera permission scenarios
+
+Flows can set `launchApp.permissions.camera` to `allow` or `deny`, with an optional
+`all` default. Mid-flow `setPermissions: { permissions: { camera: allow } }` (or
+`deny`) targets only the app in the flow header. Alternate app IDs, other permission
+keys, empty maps, and arbitrary values remain forbidden.
+
+Maestro grants permissions on a default `launchApp`. A denial scenario must pass
+an explicit camera denial and must not accidentally grant access with a later
+default launch. Test Open settings, use its live Camera switch when available,
+and resume with `stopApp: false` and explicit permissions. Runtime permission
+changes may terminate the process on iOS; evidence must distinguish app recovery
+from refresh in a surviving process. These checks remain blocking coverage.
