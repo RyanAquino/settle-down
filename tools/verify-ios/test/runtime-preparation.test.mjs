@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { CI_RUNTIME, prepareRuntime } from '../runtime-preparation.mjs';
 
-async function harness(t, { installed = true, core = '1174.9.2', build = CI_RUNTIME.build, failDownload = false, failCache = false } = {}) {
+async function harness(t, { installed = true, core = '1174.9.2', version = CI_RUNTIME.version, build = '23F73', failDownload = false, failCache = false } = {}) {
   const evidence = await mkdtemp(path.join(os.tmpdir(), 'runtime-preparation-'));
   t.after(() => rm(evidence, { recursive: true, force: true }));
   const calls = [];
@@ -18,7 +18,7 @@ async function harness(t, { installed = true, core = '1174.9.2', build = CI_RUNT
       return { output: '' };
     }
     if (args[1] === 'list') return { output: JSON.stringify({ runtimes: installed
-      ? [{ identifier: CI_RUNTIME.identifier, isAvailable: true, version: CI_RUNTIME.version, buildversion: build }] : [] }) };
+      ? [{ identifier: CI_RUNTIME.identifier, isAvailable: true, version, buildversion: build }] : [] }) };
     if (failCache) throw new Error('Runtime cache preparation timed out');
     return { output: '' };
   };
@@ -54,11 +54,27 @@ test('a local invocation does not implicitly download a missing runtime', async 
   assert.equal((await h.record()).status, 'blocked');
 });
 
-test('a different runtime build is blocked without replacing it or claiming readiness', async t => {
-  const h = await harness(t, { build: 'unexpected-build' });
-  await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /Expected iOS 26.5 \(23F73\)/);
+test('a reissued Apple build is accepted and recorded after CI installs the pinned OS', async t => {
+  const h = await harness(t, { installed: false, build: '23F77' });
+  const result = await prepareRuntime({ ...h.input, allowDownload: true });
+  assert.equal(result.downloaded, true);
+  assert.equal(result.status, 'ready');
+  assert.equal(result.version, '26.5');
+  assert.equal(result.build, '23F77');
+  assert.equal((await h.record()).build, '23F77');
+});
+
+test('a different OS version remains blocked before cache preparation', async t => {
+  const h = await harness(t, { version: '26.6', build: '23G1' });
+  await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /Expected iOS 26.5; found 26.6/);
   assert.ok(!h.calls.some(c => c.command === 'xcodebuild' || c.args.includes('dyld_shared_cache')));
   assert.equal((await h.record()).cachePrepared, false);
+});
+
+test('missing build provenance is blocked', async t => {
+  const h = await harness(t, { build: '' });
+  await assert.rejects(prepareRuntime(h.input), /missing its build metadata/);
+  assert.equal((await h.record()).status, 'blocked');
 });
 
 test('the older simulator service is rejected before runtime provisioning', async t => {
