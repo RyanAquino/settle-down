@@ -203,9 +203,11 @@ Simulator provisioning records each command stage and duration in
 headless: it does not launch the Simulator GUI or run in-device language/locale
 `defaults` writes. The pinned hosted image supplies English system UI, and flow
 assertions still require the expected text. This avoids optional service calls
-that stalled after boot in hosted evidence. It warms
-Maestro's cold XCTest driver on SpringBoard before importing the receipt photo
-and installing the app. Fresh devices install directly without a redundant
+that stalled after boot in hosted evidence. It installs and launches the app
+before warming Maestro's cold XCTest driver, so hierarchy reads target the app
+instead of SpringBoard. Receipt photo import follows warm-up. Driver state and
+internal debug logs are isolated under `setup-<attempt>-state/` in the evidence.
+Fresh devices install directly without a redundant
 terminate/uninstall. A provisioning timeout discards only that isolated device
 and allows one fresh-device retry, with a twelve-minute deadline per attempt.
 The boot stage allows six minutes for hosted iOS data migration. Driver warm-up

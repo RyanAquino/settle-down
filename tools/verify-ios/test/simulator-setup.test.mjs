@@ -20,10 +20,12 @@ async function harness(t, fail = () => {}) {
   return { input, calls, evidence };
 }
 
-test('a fresh device warms the driver before photo import/install without redundant uninstall', async t => {
+test('a fresh device warms the driver on the app before photo import without redundant uninstall', async t => {
   const h = await harness(t);
   assert.equal(await provisionSimulator(h.input), 'device-1');
+  assert.ok(h.calls.findIndex(c => c.args[1] === 'launch') < h.calls.findIndex(c => c.command === 'maestro'));
   assert.ok(h.calls.findIndex(c => c.command === 'maestro') < h.calls.findIndex(c => c.args[1] === 'addmedia'));
+  assert.equal(h.calls.find(c => c.command === 'maestro').options.env.XDG_STATE_HOME, `${h.evidence}/setup-1-state`);
   assert.ok(!h.calls.some(c => ['uninstall', 'terminate'].includes(c.args[1])));
   assert.ok(!h.calls.some(c => c.command === 'open' || c.args[1] === 'spawn'), 'fresh provisioning stays headless without in-device defaults writes');
   const log = await readFile(`${h.evidence}/setup-commands.jsonl`, 'utf8');
@@ -73,8 +75,8 @@ test('the provisioning deadline bounds the full attempt rather than restarting p
   let elapsed = 0;
   const h = await harness(t, (command) => { if (command === 'maestro') elapsed += 710000; });
   await provisionSimulator({ ...h.input, now: () => elapsed });
-  const install = h.calls.find(c => c.args[1] === 'install');
-  assert.equal(install.options.timeout, 10000);
+  const photoImport = h.calls.find(c => c.args[1] === 'addmedia');
+  assert.equal(photoImport.options.timeout, 10000);
 });
 
 test('hosted cold migration leaves enough time for full driver startup on the same device', async t => {

@@ -40,15 +40,16 @@ export async function provisionSimulator({ run, cleanupRun = run, evidence, runt
       record.udid = udid;
       await execute('boot device', 'xcrun', ['simctl', 'boot', udid]);
       await execute('wait for boot', 'xcrun', ['simctl', 'bootstatus', udid, '-b'], { timeout: 360000, log: `${evidence}/setup-${attempt}-boot.log` });
-      // Let XCTest and simulator services settle while still on SpringBoard,
-      // before the first Photos import or application install.
-      await execute('warm XCTest driver', 'maestro', ['--verbose', '--device', udid, 'hierarchy'], { timeout: 300000,
-        env: { ...cleanEnv(), MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000' }, log: `${evidence}/setup-${attempt}-driver.log` });
-      await execute('seed receipt photo', 'xcrun', ['simctl', 'addmedia', udid, imagePath], { timeout: 60000 });
       await perform('reset fixture', remaining => resetFixture('/__reset', { token, body: { preset: 'success', phase: `initial-${attempt}` }, signal, timeout: Math.min(5000, remaining) }));
       // A new device has no previous installation to terminate or uninstall.
       await execute('install application', 'xcrun', ['simctl', 'install', udid, appPath], { timeout: 120000 });
       await execute('launch application', 'xcrun', ['simctl', 'launch', udid, APP_ID], { timeout: 60000 });
+      // Warm against the app's small UI. SpringBoard hierarchy traversal can
+      // stall on hosted simulators even after the XCTest server is reachable.
+      await execute('warm XCTest driver', 'maestro', ['--verbose', '--device', udid, 'hierarchy'], { timeout: 300000,
+        env: { ...cleanEnv(), MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000', XDG_STATE_HOME: `${evidence}/setup-${attempt}-state` },
+        log: `${evidence}/setup-${attempt}-driver.log` });
+      await execute('seed receipt photo', 'xcrun', ['simctl', 'addmedia', udid, imagePath], { timeout: 60000 });
       await execute('initial screenshot', 'xcrun', ['simctl', 'io', udid, 'screenshot', `${evidence}/initial.png`], { timeout: 30000 });
       await writeFile(`${evidence}/simulator.json`, JSON.stringify({ udid, runtime, model: 'iPhone 17', setupAttempt: attempt }));
       record.status = 'success';
