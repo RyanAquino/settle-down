@@ -201,14 +201,16 @@ pods and compile native code. Real hosted-runner savings require a CI measuremen
 
 The build job remains on `macos-26` / Xcode 26.6. Verification runs on the
 standard `xcode-27` image with Xcode 27.1, using the same iPhone 17
-and pinned iOS 26.5 runtime (23F73). This changes the host simulator service while
+and pinned iOS 26.5 runtime. This changes the host simulator service while
 preserving the app SDK and tested iOS version. CoreSimulator older than 1174 is
 rejected explicitly. GitHub documents slow runtime enumeration on older service
 versions in [runner-images #15247](https://github.com/actions/runner-images/issues/15247).
 
 When the pinned runtime is missing in CI, the runner downloads and installs its
-arm64 variant from Apple, then revalidates the version/build and prepares only
-that runtime's shared cache. Downloads are limited to 15 minutes and cache
+arm64 variant from Apple, then revalidates the runtime identifier and OS version
+and prepares only that runtime's shared cache. Apple may reissue a build under the same OS version;
+the actual build revision is required and recorded in the evidence rather than
+compared with a hard-coded revision. Downloads are limited to 15 minutes and cache
 preparation to 10 minutes; the job has 60 minutes to accommodate those stages
 alongside the existing verification budgets. Local runs require an already
 installed runtime and never download one implicitly. A preparation failure stays

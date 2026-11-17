@@ -3,7 +3,6 @@ import { writeFile } from 'node:fs/promises';
 export const CI_RUNTIME = Object.freeze({
   identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-26-5',
   version: '26.5',
-  build: '23F73',
 });
 
 export async function prepareRuntime({ run, evidence, runtime = CI_RUNTIME.identifier, allowDownload = false }) {
@@ -28,8 +27,13 @@ export async function prepareRuntime({ run, evidence, runtime = CI_RUNTIME.ident
     if (!installed) throw new Error(`Required simulator runtime ${runtime} is unavailable`);
     record.version = installed.version;
     record.build = installed.buildversion;
-    if (runtime === CI_RUNTIME.identifier && (installed.version !== CI_RUNTIME.version || installed.buildversion !== CI_RUNTIME.build)) {
-      throw new Error(`Expected iOS ${CI_RUNTIME.version} (${CI_RUNTIME.build}); found ${installed.version} (${installed.buildversion})`);
+    if (runtime === CI_RUNTIME.identifier && installed.version !== CI_RUNTIME.version) {
+      throw new Error(`Expected iOS ${CI_RUNTIME.version}; found ${installed.version} (${installed.buildversion})`);
+    }
+    // Apple's version-based installer can return a reissued build of the same OS.
+    // Preserve that build as provenance instead of rejecting a valid OS version.
+    if (typeof installed.buildversion !== 'string' || !installed.buildversion.trim()) {
+      throw new Error(`Runtime ${runtime} is missing its build metadata`);
     }
     console.log(`Preparing shared cache for simulator runtime ${runtime}`);
     await run('xcrun', ['simctl', 'runtime', 'dyld_shared_cache', 'update', runtime],
