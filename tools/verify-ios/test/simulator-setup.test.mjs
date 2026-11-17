@@ -16,7 +16,7 @@ async function harness(t, fail = () => {}) {
     if (args[1] === 'create') return { output: `device-${++created}` };
     return { output: '', code: 0 };
   };
-  const input = { run, evidence, runtime: 'synthetic-runtime', runId: 7, appPath: '/app', imagePath: '/receipt.png', token: 'must-not-log', resetFixture: async () => {} };
+  const input = { run, evidence, runtime: 'synthetic-runtime', runId: 7, appPath: '/app', imagePath: '/receipt.png', token: 'must-not-log', resetFixture: async (route, options) => { calls.push({ command: 'fixture-control', args: [route], options }); } };
   return { input, calls, evidence };
 }
 
@@ -48,6 +48,7 @@ test('only setup timeouts retry once, after discarding the failed isolated devic
 test('permanent installation errors are not retried or hidden', async t => {
   const h = await harness(t, (_command, args) => { if (args[1] === 'install') throw new Error('Invalid app binary exited 1'); });
   await assert.rejects(provisionSimulator(h.input), /install application: Invalid app binary/);
+  assert.ok(!h.calls.some(c => ['ps', 'vm_stat', 'sysctl', 'df'].includes(c.command)));
   assert.equal(h.calls.filter(c => c.args[1] === 'create').length, 1);
 });
 
@@ -65,10 +66,11 @@ test('cancellation cleans up the isolated device without starting another attemp
       throw new Error('simctl timed out');
     }
   });
-  await assert.rejects(provisionSimulator({ ...h.input, signal: controller.signal }), /seed receipt photo/);
+  await assert.rejects(provisionSimulator({ ...h.input, signal: controller.signal, collectDiagnostics: true }), /seed receipt photo/);
   assert.equal(h.calls.filter(c => c.args[1] === 'create').length, 1);
   assert.ok(h.calls.some(c => c.args[1] === 'delete' && c.options.timeout === 1500));
   assert.ok(!h.calls.some(c => c.args.includes('screenshot')));
+  assert.ok(!h.calls.some(c => ['ps', 'vm_stat', 'sysctl', 'df'].includes(c.command)));
 });
 
 test('the provisioning deadline bounds the full attempt rather than restarting per command', async t => {
@@ -91,4 +93,26 @@ test('hosted cold migration leaves enough time for full driver startup on the sa
   const driver = h.calls.find(c => c.command === 'maestro');
   assert.ok(driver.args.includes('--verbose'));
   assert.equal(driver.options.env.MAESTRO_DRIVER_STARTUP_TIMEOUT, '240000');
+});
+
+test('fixture readiness precedes device creation and has a bounded cold-start allowance', async t => {
+  const h = await harness(t);
+  let elapsed = 0;
+  const resetFixture = async (_route, options) => {
+    assert.equal(h.calls.length, 0);
+    if (options.timeout < 6000) throw new Error('Cold fixture startup timed out');
+    elapsed += 6000;
+  };
+  await provisionSimulator({ ...h.input, resetFixture, now: () => elapsed });
+  const launch = h.calls.find(c => c.args[1] === 'launch');
+  assert.equal(launch.options.timeout, 180000);
+});
+
+test('CI setup failures capture bounded process-name and resource diagnostics', async t => {
+  const h = await harness(t, (_command, args) => { if (args[1] === 'install') throw new Error('Invalid app binary'); });
+  await assert.rejects(provisionSimulator({ ...h.input, collectDiagnostics: true }), /Invalid app binary/);
+  const diagnostics = h.calls.filter(c => ['ps', 'vm_stat', 'sysctl', 'df'].includes(c.command));
+  assert.equal(diagnostics.length, 4);
+  assert.ok(diagnostics.every(c => c.options.timeout === 1000 && c.options.killGraceMs === 100));
+  assert.deepEqual(diagnostics.find(c => c.command === 'ps').args, ['-axo', 'pid,ppid,stat,pcpu,pmem,rss,comm']);
 });

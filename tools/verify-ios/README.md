@@ -226,8 +226,12 @@ that stalled after boot in hosted evidence. It installs and launches the app
 before warming Maestro's cold XCTest driver, so hierarchy reads target the app
 instead of SpringBoard. Receipt photo import follows warm-up. Driver state and
 internal debug logs are isolated under `setup-<attempt>-state/` in the evidence.
-Fresh devices install directly without a redundant
-terminate/uninstall. A provisioning timeout discards only that isolated device
+Fixture control initializes before device creation, with a 30-second startup
+limit, so its first request does not compete with cold simulator services.
+Fresh devices install directly without a redundant terminate/uninstall. First
+app launch allows three minutes within the existing per-attempt deadline.
+CI setup failures also save bounded host process-name, memory, swap, and disk
+snapshots under `setup-<attempt>-host-*.log`; local runs do not collect them. A provisioning timeout discards only that isolated device
 and allows one fresh-device retry, with a twelve-minute deadline per attempt.
 The boot stage allows six minutes for hosted iOS data migration. Driver warm-up
 has a separate five-minute command limit and a four-minute Maestro startup
