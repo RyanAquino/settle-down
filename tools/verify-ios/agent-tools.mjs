@@ -139,8 +139,21 @@ tool(
       }),
       sourceFiles: context.sourceFiles,
       fixtures: context.fixtures,
+      regressions: context.regressions || [],
       reading: `Results are paged to stay under ${PAGE_BYTES} bytes. Call get_diff with a changed file (and page) for its diff, and read_source with an exact sourceFiles path (and page) for its contents. Only listed paths are readable.`,
     });
+  },
+);
+
+tool(
+  'get_regression',
+  'Read a required deterministic camera regression and its trusted execution status. Copy record.scenario unchanged into plan.scenarios, without the status/evidence wrapper fields; successful host execution counts as complete-flow evidence, but CI still independently replays it. Read the source to decide whether other changed behavior needs additional coverage.',
+  { id: z.enum(['camera-zoom-bounds', 'camera-settings-recovery']) },
+  async ({ id }) => {
+    const records = JSON.parse(await readFile(`${evidence}/regressions.json`, 'utf8').catch(() => '[]'));
+    const record = records.find(item => item.scenario.id === id);
+    if (!record) throw new Error('No required regression with that id applies to this PR');
+    return content(record);
   },
 );
 
@@ -277,7 +290,8 @@ tool(
   async (input) => {
     const plan = validatePlan(input);
     const journal = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-    requireScenarioEvidence(plan, journal);
+    const regressions = JSON.parse(await readFile(`${evidence}/regressions.json`, 'utf8').catch(() => '[]'));
+    requireScenarioEvidence(plan, journal, regressions);
     await mkdir(`${evidence}/generated`, { recursive: true });
     for (const scenario of plan.scenarios) await writeFile(`${evidence}/generated/${scenario.id}.yaml`, scenario.yaml);
     await writeFile(`${evidence}/plan.json`, JSON.stringify(plan, null, 2));

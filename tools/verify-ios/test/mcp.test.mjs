@@ -64,6 +64,7 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
       'fixture_requests',
       'get_context',
       'get_diff',
+      'get_regression',
       'inspect_screen',
       'read_source',
       'reset_scenario',

@@ -1,3 +1,4 @@
+import { cameraRegressionsApply, runCameraRegressions } from './camera-regressions.mjs';
 import { EXPLORATION_MS, requireScenarioEvidence, agentFailureMessage } from './exploration.mjs';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -203,6 +204,11 @@ async function main() {
     const logStream = createWriteStream(`${evidence}/simulator.log`);
     simulatorLog.stdout.pipe(logStream); simulatorLog.stderr.pipe(logStream, { end: false });
 
+    const regressions = cameraRegressionsApply(changedFiles)
+      ? await runCameraRegressions({ udid, appPath, evidence, token: fixtureToken, run, resetScenario, checkJUnit, signal: cancellation.signal, initialResetReady: true }) : [];
+    const capturedContext = JSON.parse(await readFile(`${evidence}/context.json`, 'utf8'));
+    capturedContext.regressions = regressions.map(record => ({ id: record.scenario.id, name: record.scenario.name, coverage: record.scenario.coverage, status: record.status, evidencePath: record.evidencePath, error: record.error }));
+    await writeFile(`${evidence}/context.json`, JSON.stringify(capturedContext, null, 2));
     const agentWork = `${work}/agent`;
     await mkdir(agentWork);
     const agentEnv = { ...cleanEnv(), GITHUB_TOKEN: process.env.GITHUB_TOKEN, COPILOT_HOME: `${work}/copilot-home` };
@@ -210,7 +216,7 @@ async function main() {
     const config = { mcpServers: { verify: { type: 'local', command: process.execPath,
       args: [`${toolRoot}/agent-tools.mjs`], tools: ['*'], env: {
         GITHUB_TOKEN: '', GH_TOKEN: '', COPILOT_GITHUB_TOKEN: '',
-        VERIFY_AGENT_DEADLINE: String(agentDeadline), VERIFY_INITIAL_RESET_READY: '1',
+        VERIFY_AGENT_DEADLINE: String(agentDeadline), VERIFY_INITIAL_RESET_READY: regressions.length ? '0' : '1',
         VERIFY_EVIDENCE: evidence, VERIFY_SOURCE: source, VERIFY_UDID: udid, VERIFY_APP: appPath,
         VERIFY_FIXTURE_TOKEN: fixtureToken, MAESTRO_CLI_NO_ANALYTICS: '1',
       } } } };
@@ -224,9 +230,9 @@ async function main() {
     const journal = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
     if (cancelled || agent.timedOut || agent.code !== 0) throw new Error(agentFailureMessage(agent, journal));
     const plan = validatePlan(JSON.parse(await readFile(`${evidence}/plan.json`, 'utf8')));
-    requireScenarioEvidence(plan, journal);
+    requireScenarioEvidence(plan, journal, regressions);
     if (plan.disposition === 'ready' && (!journal.some(c => c.tool === 'inspect_screen' && c.ok)
-      || !journal.some(c => c.tool === 'execute_flow'))) throw new Error('Agent did not inspect and interact with the live UI');
+      || (!journal.some(c => c.tool === 'execute_flow') && !regressions.some(record => record.status === 'PASS')))) throw new Error('Agent did not inspect and interact with the live UI');
     result.agentCompleted = true;
     result.disposition = plan.disposition;
     result.rationale = plan.rationale;

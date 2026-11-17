@@ -232,3 +232,28 @@ Standalone points, pixels, out-of-bounds percentages, and points on assertions a
 forbidden. Camera-switch assertions must use that switch's ID and checked state;
 labels "0"/"1" alone may match a different permission. Direct permission injection
 requires a stop/relaunch check; use the native switch to assess foreground refresh.
+
+## Required camera regressions
+
+Changes to `app/camera.tsx` or `components/camera-session.tsx` select two trusted,
+deterministic regressions before Copilot exploration: both zoom bounds (including
+twenty zoom-in steps and the disabled upper-bound control), Reset and foreground
+lifecycle; and native Settings permission recovery with checked-state assertions
+and an element-anchored switch tap. The first flow reuses the untouched initial installation; the second runs after a fresh reinstall through
+Maestro CLI and requires successful JUnit evidence. Each has a three-minute bound
+including reset. The flows contain no scripts or optional assertions.
+
+Results and logs are stored in `regressions.json` and `regressions/<id>/`. The
+agent reads summaries in get_context and exact scenarios with get_regression,
+reviews the diff/source, and inspects the live UI. It reuses verified coverage
+instead of spending its exploration budget rebuilding these tests. A ready plan
+must include both exact required scenarios; a failed, missing, or altered required
+regression cannot be waived. Independent fresh-reset replay still runs after the
+plan is submitted. An extra scenario remains available for other changed behavior.
+
+These are stable application UI contracts, not PR-number-specific exceptions.
+Intentional changes to those contracts need a reviewed update to the trusted
+regression; assertions are never removed merely to obtain PASS. Other PRs retain
+the existing exploration flow. A verifier-only change to these recipes does not
+require merging tooling into the application PR: a fresh /verify captures current
+trusted main and can reuse the exact already-built application binary.

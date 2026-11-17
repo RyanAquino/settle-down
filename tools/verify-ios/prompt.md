@@ -16,6 +16,18 @@ slow simulator. Save a blocked checkpoint plan after your first complete scenari
 A checkpoint is not the final result: continue while the budget phase is explore,
 and replace it with ready once the full changed scope has verified coverage.
 
+get_context lists required regression results when camera files change. Read those
+scenarios with get_regression early. They have already run as complete, fresh-reset
+CLI tests before your exploration clock. Read the diff and source, inspect the live
+UI, and assess whether they cover the changed scope. Successful required scenarios
+already have trusted execution evidence: reuse their exact YAML in your ready plan
+instead of re-exploring or re-running that coverage during your budget. Independent
+CLI replay still runs after submission. Ready must include both required camera
+regressions; failed/blocked required tests cannot be omitted or waived. Add at most
+one extra scenario for changed behavior they do not cover. If a stable camera UI
+contract changed intentionally, the trusted regression needs an explicit update;
+do not remove an assertion to make a regression pass.
+
 Scope: PR changes only. Choose 1–3 focused scenarios tied to changed behavior.
 Do not run an unrelated whole-app smoke suite. Prefer one or two focused scenarios
 that combine related changed behavior. Do not exhaust time rechecking unchanged
@@ -87,8 +99,9 @@ assertions and a screenshot. A standalone setPermissions tool call is not covera
 
 Use reset_scenario before each scenario. Inspect live accessibility hierarchy and
 screenshots, interact using execute_flow, and adapt navigation to what is actually
-present. You must inspect the live UI and execute interactions before submitting a
-ready plan. Before submitting each ready scenario, reset_scenario with its fixture,
+present. You must inspect the live UI before submitting ready. Successful required
+regressions provide real interaction evidence; without them, execute the changed
+behavior yourself. For an additional scenario without successful required-regression evidence, before submitting it, reset_scenario with its fixture,
 then execute_flow once with that entire final YAML, including all unconditional
 assertions and its screenshot. No other execute_flow may intervene between that
 reset and the complete flow. submit_plan rejects unexecuted combinations of
