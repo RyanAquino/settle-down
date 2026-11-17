@@ -1,3 +1,4 @@
+import { provisionSimulator } from './simulator-setup.mjs';
 import { cameraRegressionsApply, runCameraRegressions } from './camera-regressions.mjs';
 import { EXPLORATION_MS, requireScenarioEvidence, agentFailureMessage } from './exploration.mjs';
 import { spawn } from 'node:child_process';
@@ -174,13 +175,6 @@ async function main() {
     const runtime = process.env.VERIFY_LOCAL_IOS_RUNTIME || 'com.apple.CoreSimulator.SimRuntime.iOS-26-5';
     const runtimes = JSON.parse((await run('xcrun', ['simctl', 'list', 'runtimes', '-j'])).output);
     if (!runtimes.runtimes.some(r => r.identifier === runtime && r.isAvailable)) throw new Error(`Required simulator runtime ${runtime} is unavailable`);
-    udid = (await run('xcrun', ['simctl', 'create', `Verify-${request.runId}`, 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', runtime])).output.trim();
-    await run('xcrun', ['simctl', 'boot', udid]);
-    await run('xcrun', ['simctl', 'bootstatus', udid, '-b'], { timeout: 180000 });
-    await writeFile(`${evidence}/simulator.json`, JSON.stringify({ udid, runtime, model: 'iPhone 17' }));
-    await run('xcrun', ['simctl', 'spawn', udid, 'defaults', 'write', 'NSGlobalDomain', 'AppleLanguages', '-array', 'en']);
-    await run('xcrun', ['simctl', 'spawn', udid, 'defaults', 'write', 'NSGlobalDomain', 'AppleLocale', '-string', 'en_US']);
-
     const entries = (await run('tar', ['-tzf', path.resolve(archiveArg)])).output.trim().split('\n');
     const appName = entries[0]?.split('/')[0];
     if (!/^[a-zA-Z0-9_-]+\.app$/.test(appName) || entries.some(e => e.startsWith('/') || e.split('/').includes('..') || e.split('/')[0] !== appName)) {
@@ -192,11 +186,10 @@ async function main() {
     const fixtureToken = randomBytes(24).toString('hex');
     await writeFile(`${evidence}/receipt.png`, receiptPng());
     fixtureServer = await startFixtures({ token: fixtureToken, logPath: `${evidence}/backend.jsonl`, imagePath: `${evidence}/receipt.png` });
-    await run('xcrun', ['simctl', 'addmedia', udid, `${evidence}/receipt.png`]);
-    await resetScenario({ udid, appPath, appId: APP_ID, fixture: 'success', phase: 'initial', token: fixtureToken, signal: cancellation.signal });
-    await run('xcrun', ['simctl', 'io', udid, 'screenshot', `${evidence}/initial.png`]);
-    // Cold XCTest driver installation must finish before Copilot's fixed budget.
-    await run('maestro', ['--device', udid, 'hierarchy'], { timeout: 180000, log: `${evidence}/driver-warmup.log` });
+    udid = await provisionSimulator({ run, cleanupRun: runCommand, evidence, runtime, runId: request.runId,
+      appPath, imagePath: `${evidence}/receipt.png`, token: fixtureToken, signal: cancellation.signal,
+      simulatorApp: process.env.GITHUB_ACTIONS === 'true' && process.env.DEVELOPER_DIR
+        ? path.join(process.env.DEVELOPER_DIR, 'Applications/Simulator.app') : undefined });
     video = spawn('xcrun', ['simctl', 'io', udid, 'recordVideo', '--codec=h264', `${evidence}/session.mp4`], { env: cleanEnv(), stdio: 'ignore' });
     video.once('error', error => console.error(`Recording failed: ${error.message}`));
     simulatorLog = spawn('xcrun', ['simctl', 'spawn', udid, 'log', 'stream', '--level', 'error', '--style', 'compact'], { env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
