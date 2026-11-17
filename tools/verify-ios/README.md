@@ -198,9 +198,15 @@ pods and compile native code. Real hosted-runner savings require a CI measuremen
 
 ## Exploration reliability
 
-Maestro's cold XCTest driver starts via a bounded `hierarchy` warm-up before the
-15-minute Copilot deadline. The first scenario reset reuses the runner's fresh
-install only while no flow has touched the app; later resets still reinstall it.
+Simulator provisioning records each command stage and duration in
+`setup-commands.jsonl`, with attempt outcomes in `setup-attempts.json`. It warms
+Maestro's cold XCTest driver on SpringBoard before importing the receipt photo
+and installing the app. Fresh devices install directly without a redundant
+terminate/uninstall. A provisioning timeout discards only that isolated device
+and allows one fresh-device retry, with a five-minute deadline per attempt.
+Permanent setup failures and app assertions are never retried. The setup budget
+is separate from the 15-minute Copilot deadline. The first scenario reset reuses
+the runner's fresh install only while no flow has touched the app; later resets still reinstall it.
 Every tool reports remaining time/calls. The adapter reserves two minutes for
 final submission, stops starting UI work that could consume that reserve, and
 keeps `submit_plan` available after exploration/call limits. The prompt requests
