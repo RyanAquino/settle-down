@@ -49,9 +49,12 @@ export class ScenarioEvidence {
   }
 }
 
-export function requireScenarioEvidence(plan, journal) {
+export function requireScenarioEvidence(plan, journal, regressions = []) {
+  if (regressions.length && plan.disposition === 'skipped') throw new Error('Required camera regressions apply; this UI change cannot be skipped');
   if (plan.disposition !== 'ready') return;
-  const proven = new Set();
+  const passedRegressions = regressions.filter(record => record.status === 'PASS' && record.exitCode === 0 && record.junitVerified === true);
+  if (passedRegressions.length !== regressions.length) throw new Error('A required camera regression failed or is blocked. Preserve it as a blocking limitation; ready is not permitted');
+  const proven = new Set(passedRegressions.map(record => scenarioFingerprint(record.scenario.fixture, record.scenario.yaml)));
   let fixture;
   for (const call of [...journal].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))) {
     if (call.tool === 'reset_scenario') fixture = call.ok ? call.args.fixture : undefined;
@@ -60,6 +63,10 @@ export function requireScenarioEvidence(plan, journal) {
     try { fingerprint = scenarioFingerprint(fixture, call.args.yaml); } catch { continue; }
     if (!call.ok) proven.delete(fingerprint);
     else if (call.scenarioEvidence === fingerprint) proven.add(fingerprint);
+  }
+  const selected = new Set(plan.scenarios.map(scenario => scenarioFingerprint(scenario.fixture, scenario.yaml)));
+  for (const record of regressions) {
+    if (!selected.has(scenarioFingerprint(record.scenario.fixture, record.scenario.yaml))) throw new Error(`Ready must include required regression ${record.scenario.id}; obtain its exact scenario with get_regression`);
   }
   for (const scenario of plan.scenarios) {
     if (!proven.has(scenarioFingerprint(scenario.fixture, scenario.yaml))) {
