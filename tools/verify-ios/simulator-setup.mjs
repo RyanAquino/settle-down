@@ -2,6 +2,7 @@ import { appendFile, writeFile, access } from 'node:fs/promises';
 import path from 'node:path';
 import { APP_ID } from './policy.mjs';
 import { fixtureControl } from './fixture-control.mjs';
+import { cleanEnv } from './process.mjs';
 
 // Only infrastructure provisioning is retried. No app assertions or test flows
 // run here, and every failed attempt discards its own isolated device.
@@ -9,7 +10,9 @@ export async function provisionSimulator({ run, cleanupRun = run, evidence, runt
   signal, resetFixture = fixtureControl, now = Date.now, simulatorApp }) {
   const attempts = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const deadline = now() + 5 * 60_000;
+    // Hosted iOS 26 cold boots can spend over three minutes in data migration.
+    // Preserve room for the full driver startup allowance after that migration.
+    const deadline = now() + 12 * 60_000;
     let udid;
     const record = { attempt, status: 'running' };
     attempts.push(record);
@@ -42,12 +45,13 @@ export async function provisionSimulator({ run, cleanupRun = run, evidence, runt
           await execute('open simulator window', 'open', ['-a', simulatorApp, '--args', '-CurrentDeviceUDID', udid], { allowFailure: true, timeout: 15000 });
         }
       }
-      await execute('wait for boot', 'xcrun', ['simctl', 'bootstatus', udid, '-b'], { timeout: 180000, log: `${evidence}/setup-${attempt}-boot.log` });
+      await execute('wait for boot', 'xcrun', ['simctl', 'bootstatus', udid, '-b'], { timeout: 360000, log: `${evidence}/setup-${attempt}-boot.log` });
       await execute('set language', 'xcrun', ['simctl', 'spawn', udid, 'defaults', 'write', 'NSGlobalDomain', 'AppleLanguages', '-array', 'en'], { timeout: 30000 });
       await execute('set locale', 'xcrun', ['simctl', 'spawn', udid, 'defaults', 'write', 'NSGlobalDomain', 'AppleLocale', '-string', 'en_US'], { timeout: 30000 });
       // Let XCTest and simulator services settle while still on SpringBoard,
       // before the first Photos import or application install.
-      await execute('warm XCTest driver', 'maestro', ['--device', udid, 'hierarchy'], { timeout: 180000, log: `${evidence}/setup-${attempt}-driver.log` });
+      await execute('warm XCTest driver', 'maestro', ['--verbose', '--device', udid, 'hierarchy'], { timeout: 300000,
+        env: { ...cleanEnv(), MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000' }, log: `${evidence}/setup-${attempt}-driver.log` });
       await execute('seed receipt photo', 'xcrun', ['simctl', 'addmedia', udid, imagePath], { timeout: 60000 });
       await perform('reset fixture', remaining => resetFixture('/__reset', { token, body: { preset: 'success', phase: `initial-${attempt}` }, signal, timeout: Math.min(5000, remaining) }));
       // A new device has no previous installation to terminate or uninstall.
