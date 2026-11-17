@@ -54,7 +54,8 @@ retained for seven days and the intermediate app archive for one day.
   prevents local env files from supplying production credentials. The CI build
   uses `http://127.0.0.1:8765`, disables the debug shortcut, and disables OTA updates.
 - A fresh macOS runner installs that binary, boots an iPhone 17 / iOS 26.5, seeds
-  one synthetic receipt photo, and starts the fixture backend. Xcode 26.6, Node 22,
+  one synthetic receipt photo, and starts the fixture backend. The binary is built
+  with Xcode 26.6; verification uses Xcode 27.1 and CoreSimulator 1174 or newer on the standard `xcode-27` preview image. Node 22,
   Java 17, Maestro 2.12.1, and Copilot CLI 1.0.112 are selected explicitly.
 - Copilot reads the diff and selected source through a restricted MCP adapter.
   Diffs, source, hierarchies, and fixture requests are paged so each tool result
@@ -195,6 +196,24 @@ failed stages and cache validation. Build evidence includes separate dependency,
 prebuild, pod, native compilation, and ccache-stat logs. Compare cold builds, warm
 compiler-cache builds, and exact binary hits separately; cold builds still install
 pods and compile native code. Real hosted-runner savings require a CI measurement.
+
+## Simulator service and runtime preparation
+
+The build job remains on `macos-26` / Xcode 26.6. Verification runs on the
+standard `xcode-27` public preview image with Xcode 27.1, using the same iPhone 17
+and pinned iOS 26.5 runtime (23F73). This changes the host simulator service while
+preserving the app SDK and tested iOS version. CoreSimulator older than 1174 is
+rejected explicitly. GitHub documents slow runtime enumeration on older service
+versions in [runner-images #15247](https://github.com/actions/runner-images/issues/15247).
+
+When the pinned runtime is missing in CI, the runner downloads and installs its
+arm64 variant from Apple, then revalidates the version/build and prepares only
+that runtime's shared cache. Downloads are limited to 15 minutes and cache
+preparation to 10 minutes; the job has 60 minutes to accommodate those stages
+alongside the existing verification budgets. Local runs require an already
+installed runtime and never download one implicitly. A preparation failure stays
+BLOCKED. `runtime-preparation.json`, `runtime-download.log`, `runtime-list.log`,
+and `runtime-cache.log` record what happened.
 
 ## Exploration reliability
 

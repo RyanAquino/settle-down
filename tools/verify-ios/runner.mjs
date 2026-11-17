@@ -1,3 +1,4 @@
+import { CI_RUNTIME, prepareRuntime } from './runtime-preparation.mjs';
 import { provisionSimulator } from './simulator-setup.mjs';
 import { cameraRegressionsApply, runCameraRegressions } from './camera-regressions.mjs';
 import { EXPLORATION_MS, requireScenarioEvidence, agentFailureMessage } from './exploration.mjs';
@@ -172,9 +173,10 @@ async function main() {
     versions.copilot = JSON.parse(await readFile(`${toolRoot}/node_modules/@github/copilot/package.json`, 'utf8')).version;
     await writeFile(`${evidence}/versions.json`, JSON.stringify(versions, null, 2));
     if (process.env.GITHUB_ACTIONS === 'true' && process.env.VERIFY_LOCAL_IOS_RUNTIME) throw new Error('Simulator runtime overrides are local-only');
-    const runtime = process.env.VERIFY_LOCAL_IOS_RUNTIME || 'com.apple.CoreSimulator.SimRuntime.iOS-26-5';
-    const runtimes = JSON.parse((await run('xcrun', ['simctl', 'list', 'runtimes', '-j'])).output);
-    if (!runtimes.runtimes.some(r => r.identifier === runtime && r.isAvailable)) throw new Error(`Required simulator runtime ${runtime} is unavailable`);
+    const runtime = process.env.VERIFY_LOCAL_IOS_RUNTIME || CI_RUNTIME.identifier;
+    const runtimeDetails = await prepareRuntime({ run, evidence, runtime, allowDownload: process.env.GITHUB_ACTIONS === 'true' });
+    versions.coreSimulator = runtimeDetails.coreSimulator;
+    await writeFile(`${evidence}/versions.json`, JSON.stringify(versions, null, 2));
     const entries = (await run('tar', ['-tzf', path.resolve(archiveArg)])).output.trim().split('\n');
     const appName = entries[0]?.split('/')[0];
     if (!/^[a-zA-Z0-9_-]+\.app$/.test(appName) || entries.some(e => e.startsWith('/') || e.split('/').includes('..') || e.split('/')[0] !== appName)) {
