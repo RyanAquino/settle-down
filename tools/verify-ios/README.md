@@ -203,10 +203,15 @@ Simulator provisioning records each command stage and duration in
 Maestro's cold XCTest driver on SpringBoard before importing the receipt photo
 and installing the app. Fresh devices install directly without a redundant
 terminate/uninstall. A provisioning timeout discards only that isolated device
-and allows one fresh-device retry, with a five-minute deadline per attempt.
+and allows one fresh-device retry, with a twelve-minute deadline per attempt.
+The boot stage allows six minutes for hosted iOS data migration. Driver warm-up
+has a separate five-minute command limit and a four-minute Maestro startup
+allowance, with verbose logs. The attempt budget leaves room for both the
+observed multi-minute cold migration and driver startup.
 Permanent setup failures and app assertions are never retried. The setup budget
 is separate from the 15-minute Copilot deadline. The first scenario reset reuses
-the runner's fresh install only while no flow has touched the app; later resets still reinstall it.
+the runner's fresh install only while no flow has touched the app; later resets
+still reinstall it.
 Every tool reports remaining time/calls. The adapter reserves two minutes for
 final submission, stops starting UI work that could consume that reserve, and
 keeps `submit_plan` available after exploration/call limits. The prompt requests

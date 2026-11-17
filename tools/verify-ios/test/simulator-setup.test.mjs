@@ -12,7 +12,7 @@ async function harness(t, fail = () => {}) {
   let created = 0;
   const run = async (command, args, options) => {
     calls.push({ command, args, options });
-    await fail(command, args, created);
+    await fail(command, args, created, options);
     if (args[1] === 'create') return { output: `device-${++created}` };
     return { output: '', code: 0 };
   };
@@ -70,8 +70,22 @@ test('cancellation cleans up the isolated device without starting another attemp
 
 test('the provisioning deadline bounds the full attempt rather than restarting per command', async t => {
   let elapsed = 0;
-  const h = await harness(t, (command) => { if (command === 'maestro') elapsed += 290000; });
+  const h = await harness(t, (command) => { if (command === 'maestro') elapsed += 710000; });
   await provisionSimulator({ ...h.input, now: () => elapsed });
   const install = h.calls.find(c => c.args[1] === 'install');
   assert.equal(install.options.timeout, 10000);
+});
+
+test('hosted cold migration leaves enough time for full driver startup on the same device', async t => {
+  let elapsed = 0;
+  const h = await harness(t, (command, args, _created, options) => {
+    const duration = args[1] === 'bootstatus' ? 240000 : command === 'maestro' ? 180000 : 0;
+    if (duration > options.timeout) throw new Error('Synthetic cold startup timed out');
+    elapsed += duration;
+  });
+  assert.equal(await provisionSimulator({ ...h.input, now: () => elapsed }), 'device-1');
+  assert.equal(h.calls.filter(c => c.args[1] === 'create').length, 1);
+  const driver = h.calls.find(c => c.command === 'maestro');
+  assert.ok(driver.args.includes('--verbose'));
+  assert.equal(driver.options.env.MAESTRO_DRIVER_STARTUP_TIMEOUT, '240000');
 });
