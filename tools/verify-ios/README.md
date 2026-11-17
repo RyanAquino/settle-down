@@ -125,7 +125,7 @@ npm ci --prefix tools/verify-ios --ignore-scripts
 npm test --prefix tools/verify-ios
 npm run lint
 npm run type-check
-actionlint -ignore 'unknown permission scope "copilot-requests"' .github/workflows/verify-ios.yml .github/workflows/verify-ios-report.yml
+actionlint -ignore 'unknown permission scope "copilot-requests"' -ignore 'unexpected key "cache-mode" for "job" section' .github/workflows/verify-ios.yml .github/workflows/verify-ios-report.yml
 ```
 
 The fixture tests bind an ephemeral local port. MCP protocol tests use only the
@@ -257,3 +257,24 @@ regression; assertions are never removed merely to obtain PASS. Other PRs retain
 the existing exploration flow. A verifier-only change to these recipes does not
 require merging tooling into the application PR: a fresh /verify captures current
 trusted main and can reuse the exact already-built application binary.
+
+## Cache access on comment-triggered builds
+
+GitHub defaults `issue_comment` runs to read-only cache access. The authorized
+build job explicitly sets `cache-mode: write` so npm/native/compiler and validated
+binary caches can actually be saved. This is separate from `GITHUB_TOKEN`
+permissions, which remain `contents: read` for that job. Admission still requires
+a repository writer and a PR head owned by this repository; forks are rejected.
+Verification and reporting do not gain cache-write access. Do not restore these
+build caches into a job with secrets or repository-write privileges.
+
+GitHub documents this behavior under [cache access for low-trust workflow
+triggers](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#cache-access-for-low-trust-workflow-triggers).
+A successful cache action alone is insufficient proof of a save: inspect the
+save logs or repository cache inventory for a persisted key. A read-only save
+failure is only a warning and does not fail the build.
+
+Actionlint 1.7.12 also predates GitHub's documented job-level `cache-mode` key;
+the development command narrowly ignores that key's schema diagnostic while
+retaining all other workflow validation. Workflow tests assert that only the
+writer-authorized build job receives cache-write access.

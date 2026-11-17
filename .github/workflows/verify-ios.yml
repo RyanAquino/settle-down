@@ -57,6 +57,10 @@ jobs:
     timeout-minutes: 60
     outputs:
       app_artifact: ${{ steps.artifact.outputs.name }}
+    # issue_comment is read-only for caches by default. This job only runs after
+    # writer authorization on a repository-owned PR head, with no secrets or
+    # repository write token. Cache writes are deliberately limited to this job.
+    cache-mode: write
     permissions:
       contents: read
     env:
