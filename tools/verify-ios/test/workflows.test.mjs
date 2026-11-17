@@ -47,3 +47,14 @@ test('binary reuse is exact-only and validated before bypassing compilation', ()
   assert.equal(build.env.VERIFY_BUILD_KEY, '${{ steps.build-key.outputs.key }}');
   assert.equal(steps.find(s => s.name === 'Cache validated simulator binary').if, "success() && steps.app-cache.outputs.cache-hit != 'true'");
 });
+
+
+test('only the authorized repository-head build opts into cache writes', () => {
+  assert.equal(main.jobs.build['cache-mode'], 'write');
+  assert.equal(main.jobs.build.if, "needs.request.outputs.accepted == 'true'");
+  assert.deepEqual(main.jobs.build.permissions, { contents: 'read' });
+  assert.equal(main['cache-mode'], undefined);
+  assert.equal(main.jobs.request['cache-mode'], undefined);
+  assert.equal(main.jobs.verify['cache-mode'], undefined);
+  assert.equal(report['cache-mode'], undefined);
+});
