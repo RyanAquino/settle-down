@@ -55,7 +55,7 @@ retained for seven days and the intermediate app archive for one day.
   uses `http://127.0.0.1:8765`, disables the debug shortcut, and disables OTA updates.
 - A fresh macOS runner installs that binary, boots an iPhone 17 / iOS 26.5, seeds
   one synthetic receipt photo, and starts the fixture backend. The binary is built
-  with Xcode 26.6; verification uses Xcode 27.1 and CoreSimulator 1174 or newer on the standard `xcode-27` preview image. Node 22,
+  with Xcode 26.6; verification uses Xcode 27.1 and CoreSimulator 1174 or newer on the standard `xcode-27` image. Node 22,
   Java 17, Maestro 2.12.1, and Copilot CLI 1.0.112 are selected explicitly.
 - Copilot reads the diff and selected source through a restricted MCP adapter.
   Diffs, source, hierarchies, and fixture requests are paged so each tool result
@@ -200,7 +200,7 @@ pods and compile native code. Real hosted-runner savings require a CI measuremen
 ## Simulator service and runtime preparation
 
 The build job remains on `macos-26` / Xcode 26.6. Verification runs on the
-standard `xcode-27` public preview image with Xcode 27.1, using the same iPhone 17
+standard `xcode-27` image with Xcode 27.1, using the same iPhone 17
 and pinned iOS 26.5 runtime (23F73). This changes the host simulator service while
 preserving the app SDK and tested iOS version. CoreSimulator older than 1174 is
 rejected explicitly. GitHub documents slow runtime enumeration on older service
