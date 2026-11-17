@@ -199,7 +199,11 @@ pods and compile native code. Real hosted-runner savings require a CI measuremen
 ## Exploration reliability
 
 Simulator provisioning records each command stage and duration in
-`setup-commands.jsonl`, with attempt outcomes in `setup-attempts.json`. It warms
+`setup-commands.jsonl`, with attempt outcomes in `setup-attempts.json`. It stays
+headless: it does not launch the Simulator GUI or run in-device language/locale
+`defaults` writes. The pinned hosted image supplies English system UI, and flow
+assertions still require the expected text. This avoids optional service calls
+that stalled after boot in hosted evidence. It warms
 Maestro's cold XCTest driver on SpringBoard before importing the receipt photo
 and installing the app. Fresh devices install directly without a redundant
 terminate/uninstall. A provisioning timeout discards only that isolated device

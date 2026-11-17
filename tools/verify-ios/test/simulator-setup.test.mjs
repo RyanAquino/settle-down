@@ -25,6 +25,7 @@ test('a fresh device warms the driver before photo import/install without redund
   assert.equal(await provisionSimulator(h.input), 'device-1');
   assert.ok(h.calls.findIndex(c => c.command === 'maestro') < h.calls.findIndex(c => c.args[1] === 'addmedia'));
   assert.ok(!h.calls.some(c => ['uninstall', 'terminate'].includes(c.args[1])));
+  assert.ok(!h.calls.some(c => c.command === 'open' || c.args[1] === 'spawn'), 'fresh provisioning stays headless without in-device defaults writes');
   const log = await readFile(`${h.evidence}/setup-commands.jsonl`, 'utf8');
   assert.match(log, /install application/);
   assert.doesNotMatch(log, /must-not-log/);

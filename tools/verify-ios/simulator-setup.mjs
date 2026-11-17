@@ -1,4 +1,4 @@
-import { appendFile, writeFile, access } from 'node:fs/promises';
+import { appendFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { APP_ID } from './policy.mjs';
 import { fixtureControl } from './fixture-control.mjs';
@@ -7,7 +7,7 @@ import { cleanEnv } from './process.mjs';
 // Only infrastructure provisioning is retried. No app assertions or test flows
 // run here, and every failed attempt discards its own isolated device.
 export async function provisionSimulator({ run, cleanupRun = run, evidence, runtime, runId, appPath, imagePath, token,
-  signal, resetFixture = fixtureControl, now = Date.now, simulatorApp }) {
+  signal, resetFixture = fixtureControl, now = Date.now }) {
   const attempts = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
     // Hosted iOS 26 cold boots can spend over three minutes in data migration.
@@ -39,15 +39,7 @@ export async function provisionSimulator({ run, cleanupRun = run, evidence, runt
       udid = (await execute('create device', 'xcrun', ['simctl', 'create', `Verify-${runId}-${attempt}`, 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', runtime])).output.trim();
       record.udid = udid;
       await execute('boot device', 'xcrun', ['simctl', 'boot', udid]);
-      if (simulatorApp) {
-        // Xcode 26 has Simulator.app; Xcode 27's local Device Hub may not.
-        if (await access(simulatorApp).then(() => true, () => false)) {
-          await execute('open simulator window', 'open', ['-a', simulatorApp, '--args', '-CurrentDeviceUDID', udid], { allowFailure: true, timeout: 15000 });
-        }
-      }
       await execute('wait for boot', 'xcrun', ['simctl', 'bootstatus', udid, '-b'], { timeout: 360000, log: `${evidence}/setup-${attempt}-boot.log` });
-      await execute('set language', 'xcrun', ['simctl', 'spawn', udid, 'defaults', 'write', 'NSGlobalDomain', 'AppleLanguages', '-array', 'en'], { timeout: 30000 });
-      await execute('set locale', 'xcrun', ['simctl', 'spawn', udid, 'defaults', 'write', 'NSGlobalDomain', 'AppleLocale', '-string', 'en_US'], { timeout: 30000 });
       // Let XCTest and simulator services settle while still on SpringBoard,
       // before the first Photos import or application install.
       await execute('warm XCTest driver', 'maestro', ['--verbose', '--device', udid, 'hierarchy'], { timeout: 300000,

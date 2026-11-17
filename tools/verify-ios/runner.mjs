@@ -187,9 +187,7 @@ async function main() {
     await writeFile(`${evidence}/receipt.png`, receiptPng());
     fixtureServer = await startFixtures({ token: fixtureToken, logPath: `${evidence}/backend.jsonl`, imagePath: `${evidence}/receipt.png` });
     udid = await provisionSimulator({ run, cleanupRun: runCommand, evidence, runtime, runId: request.runId,
-      appPath, imagePath: `${evidence}/receipt.png`, token: fixtureToken, signal: cancellation.signal,
-      simulatorApp: process.env.GITHUB_ACTIONS === 'true' && process.env.DEVELOPER_DIR
-        ? path.join(process.env.DEVELOPER_DIR, 'Applications/Simulator.app') : undefined });
+      appPath, imagePath: `${evidence}/receipt.png`, token: fixtureToken, signal: cancellation.signal });
     video = spawn('xcrun', ['simctl', 'io', udid, 'recordVideo', '--codec=h264', `${evidence}/session.mp4`], { env: cleanEnv(), stdio: 'ignore' });
     video.once('error', error => console.error(`Recording failed: ${error.message}`));
     simulatorLog = spawn('xcrun', ['simctl', 'spawn', udid, 'log', 'stream', '--level', 'error', '--style', 'compact'], { env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
