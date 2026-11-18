@@ -214,7 +214,8 @@ For simctl's specific exit-30 asset-reclamation warning, it follows the recommen
 rescan once and rechecks for late registrations after import. The warning remains
 in evidence; other errors block. Before booting a device, the runner verifies the
 imported image is Ready and the selected runtime profile uses that exact image.
-This avoids Apple's
+If the profile is missing or stale, the runner reloads the per-user CoreSimulator
+service once and checks again. This avoids Apple's
 runtime-remounting bug ([FB25398296](https://developer.apple.com/documentation/xcode-release-notes/xcode-27_3-release-notes#Simulator),
 [upstream workaround](https://github.com/actions/runner-images/issues/14946#issuecomment-6575805667)).
 Unrelated runtimes are retained. Export bundles are temporary and excluded from evidence.

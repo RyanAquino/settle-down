@@ -9,7 +9,7 @@ async function harness(t, { installed = true, core = '1174.9.2', version = CI_RU
   failDownload = false, failCache = false, failImport = false, exportExitCode = 0, missingExport = false,
   imported = false, importReady = true, importBuild = build, staleProfile = false,
   cleanupCodes = [], cleanupMessage = 'Removed the runtime, but did not reclaim its MobileAsset',
-  asynchronousCleanup = false, withDuplicate = !imported, reregisterOnImport = false } = {}) {
+  asynchronousCleanup = false, withDuplicate = !imported, reregisterOnImport = false, profileNeedsReload = false } = {}) {
   const evidence = await mkdtemp(path.join(os.tmpdir(), 'runtime-preparation-'));
   t.after(() => rm(evidence, { recursive: true, force: true }));
   const calls = [];
@@ -20,6 +20,10 @@ async function harness(t, { installed = true, core = '1174.9.2', version = CI_RU
   const run = async (command, args, options) => {
     calls.push({ command, args, options });
     if (command === 'plutil') return { output: core };
+    if (command === 'launchctl') {
+      profileNeedsReload = false;
+      return { output: '', code: 0 };
+    }
     if (command === 'xcodebuild') {
       if (args[0] === '-downloadPlatform') {
         if (failDownload) throw new Error('Runtime download failed');
@@ -34,7 +38,7 @@ async function harness(t, { installed = true, core = '1174.9.2', version = CI_RU
       mobileAsset = reregisterOnImport;
       return { output: '', code: 0 };
     }
-    if (args[1] === 'list' && args[2] === 'runtimes') return { output: JSON.stringify({ runtimes: installed
+    if (args[1] === 'list' && args[2] === 'runtimes') return { output: JSON.stringify({ runtimes: installed && !profileNeedsReload
       ? [{ identifier: CI_RUNTIME.identifier, isAvailable: true, version, buildversion: build,
         bundlePath: imported && !staleProfile ? '/imported-mount/iOS.simruntime' : '/mobile-asset-mount/iOS.simruntime' }] : [] }) };
     if (args[1] === 'runtime' && args[2] === 'list') {
@@ -174,6 +178,17 @@ test('a failed export, mismatched build, or stale profile cannot reach simulator
     await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /export failed|does not match|does not use/);
     assert.ok(!h.calls.some(c => c.args.includes('dyld_shared_cache')));
   }
+});
+
+test('a Ready image with an absent profile reloads the per-user CoreSimulator service before cache preparation', async t => {
+  const h = await harness(t, { installed: false, profileNeedsReload: true });
+  const result = await prepareRuntime({ ...h.input, allowDownload: true });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.profileReloaded, true);
+  const reloaded = h.calls.findIndex(c => c.command === 'launchctl');
+  const cached = h.calls.findIndex(c => c.args.includes('dyld_shared_cache'));
+  assert.deepEqual(h.calls[reloaded].args, ['kill', 'SIGTERM', `user/${process.getuid()}/com.apple.CoreSimulator.CoreSimulatorService`]);
+  assert.ok(reloaded < cached);
 });
 
 test('a local invocation does not implicitly download a missing runtime', async t => {

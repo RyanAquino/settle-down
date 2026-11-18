@@ -23,12 +23,22 @@ export async function prepareRuntime({ run, evidence, runtime = CI_RUNTIME.ident
       if (typeof value.buildversion !== 'string' || !value.buildversion.trim())
         throw new Error(`Runtime ${runtime} is missing its build metadata`);
     };
-    let installed = (await list()).find(r => r.identifier === runtime && r.isAvailable);
+    const selectedRuntime = async () => (await list()).find(r => r.identifier === runtime && r.isAvailable);
+    let installed = await selectedRuntime();
     if (installed) validate(installed);
     if (allowDownload && runtime === CI_RUNTIME.identifier) {
       record.importedRuntime = await ensureImportedRuntime({ run, evidence, runtime, version: CI_RUNTIME.version });
       record.downloaded = !installed;
-      installed = (await list()).find(r => r.identifier === runtime && r.isAvailable);
+      installed = await selectedRuntime();
+      if (!installed || installed.bundlePath !== record.importedRuntime.bundlePath) {
+        // The disk image can be Ready while the per-user service still holds
+        // the profile removed during duplicate cleanup. Reload before booting.
+        console.log('Reloading CoreSimulator after the selected runtime profile changed');
+        await run('launchctl', ['kill', 'SIGTERM', `user/${process.getuid()}/com.apple.CoreSimulator.CoreSimulatorService`],
+          { timeout: 15000, log: `${evidence}/runtime-import.log` });
+        record.profileReloaded = true;
+        installed = await selectedRuntime();
+      }
     }
     if (!installed) throw new Error(`Required simulator runtime ${runtime} is unavailable`);
     validate(installed);
