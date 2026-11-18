@@ -9,10 +9,24 @@ permissions:
 
 jobs:
   smoke:
-    runs-on: xcode-27
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: no-rescan
+            runner: xcode-27
+            xcode: '27.1'
+          - mode: no-rescan
+            runner: xcode-27
+            xcode: '27.2'
+          - mode: preinstalled
+            runner: macos-26
+            xcode: '26.6'
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+      SMOKE_MODE: ${{ matrix.mode }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -26,9 +40,26 @@ jobs:
           node --input-type=module <<'JS'
           import { prepareRuntime } from './tools/verify-ios/runtime-preparation.mjs';
           import { run } from './tools/verify-ios/process.mjs';
+          import { access } from 'node:fs/promises';
+          const runtime = 'com.apple.CoreSimulator.SimRuntime.iOS-26-5';
           const evidence = `${process.env.RUNNER_TEMP}/runtime-evidence`;
           try {
-            const result = await prepareRuntime({ run, evidence, allowDownload: true });
+            const runWithoutRescan = (command, args, options) => {
+              if (command === 'xcrun' && args[2] === 'scan-and-mount') {
+                console.log('Skipping the rescan for this smoke variant');
+                return { output: '', code: 0 };
+              }
+              return run(command, args, options);
+            };
+            let result;
+            if (process.env.SMOKE_MODE === 'preinstalled') {
+              const listed = await run('xcrun', ['simctl', 'list', 'runtimes', '-j'], { timeout: 180000, log: `${evidence}/runtime-list.log` });
+              result = JSON.parse(listed.output).runtimes.find(item => item.identifier === runtime && item.isAvailable);
+              if (!result) throw new Error('Pinned 26.5 runtime is not preinstalled');
+              result = { identifier: result.identifier, version: result.version, build: result.buildversion };
+            } else {
+              result = await prepareRuntime({ run: runWithoutRescan, evidence, allowDownload: true });
+            }
             console.log(JSON.stringify(result, null, 2));
             const created = await run('xcrun', ['simctl', 'create', 'Runtime cleanup smoke', 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', result.identifier]);
             const udid = created.output.trim();
@@ -43,11 +74,20 @@ jobs:
           } catch (error) {
             console.error(error);
             process.exitCode = 1;
+            const listed = await run('xcrun', ['simctl', 'runtime', 'list', '-j'], { log: `${evidence}/diagnostic-images.log` });
+            for (const image of Object.values(JSON.parse(listed.output)).filter(image => image.runtimeIdentifier === runtime)) {
+              console.log(JSON.stringify(image));
+              for (const directory of [image.path, image.parentMountPath, image.mountPath, image.runtimeBundlePath]) {
+                if (!directory) continue;
+                await access(directory).then(() => console.log('Accessible', directory), error => console.log(error.message));
+              }
+            }
+            await run('log', ['show', '--last', '3m', '--predicate', '(process == "simdiskimaged" OR process == "CoreSimulatorService") AND (eventMessage CONTAINS[c] "26.5" OR eventMessage CONTAINS[c] "23F")'], { log: `${evidence}/runtime-system.log`, timeout: 45000, allowFailure: true });
           }
           JS
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: runtime-evidence
+          name: runtime-evidence-${{ matrix.mode }}-${{ matrix.xcode }}
           path: ${{ runner.temp }}/runtime-evidence/
           retention-days: 2
