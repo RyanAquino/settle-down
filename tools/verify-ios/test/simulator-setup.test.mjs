@@ -106,6 +106,7 @@ test('fixture readiness precedes device creation and has a bounded cold-start al
   await provisionSimulator({ ...h.input, resetFixture, now: () => elapsed });
   const launch = h.calls.find(c => c.args[1] === 'launch');
   assert.equal(launch.options.timeout, 180000);
+  assert.equal(h.calls.find(c => c.args[1] === 'addmedia').options.timeout, 180000);
 });
 
 test('CI setup failures capture bounded process-name and resource diagnostics', async t => {

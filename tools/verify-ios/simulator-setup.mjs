@@ -50,7 +50,7 @@ export async function provisionSimulator({ run, cleanupRun = run, evidence, runt
       await execute('warm XCTest driver', 'maestro', ['--verbose', '--device', udid, 'hierarchy'], { timeout: 300000,
         env: { ...cleanEnv(), MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000', XDG_STATE_HOME: `${evidence}/setup-${attempt}-state` },
         log: `${evidence}/setup-${attempt}-driver.log` });
-      await execute('seed receipt photo', 'xcrun', ['simctl', 'addmedia', udid, imagePath], { timeout: 60000 });
+      await execute('seed receipt photo', 'xcrun', ['simctl', 'addmedia', udid, imagePath], { timeout: 180000 });
       await execute('initial screenshot', 'xcrun', ['simctl', 'io', udid, 'screenshot', `${evidence}/initial.png`], { timeout: 30000 });
       await writeFile(`${evidence}/simulator.json`, JSON.stringify({ udid, runtime, model: 'iPhone 17', setupAttempt: attempt }));
       record.status = 'success';

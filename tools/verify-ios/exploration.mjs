@@ -25,6 +25,10 @@ export class ExplorationBudget {
       throw new Error('Exploration is closed to reserve time for finalization. Submit the best complete plan now; list unfinished coverage as blocking limitations. Do not start another scenario.');
     }
   }
+  uiTimeout(maximum) {
+    this.check('inspect_screen');
+    return Math.max(1, Math.min(maximum, this.deadline - this.now() - FINALIZE_MS));
+  }
 }
 
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'

@@ -32,6 +32,17 @@ test('call exhaustion still permits submitting a blocked plan', () => {
   assert.equal(budget.snapshot().callsRemaining, 0);
 });
 
+test('slow driver calls can use startup time without consuming the finalization reserve', () => {
+  let now = 0;
+  const budget = new ExplorationBudget({ deadline: EXPLORATION_MS, now: () => now });
+  assert.equal(budget.uiTimeout(300000), 300000);
+  now = EXPLORATION_MS - FINALIZE_MS - 150000;
+  assert.equal(budget.uiTimeout(300000), 150000);
+  now += 150000;
+  assert.throws(() => budget.uiTimeout(180000), /reserve time/);
+  assert.doesNotThrow(() => budget.enter('submit_plan'));
+});
+
 test('only the first complete successful flow after a successful reset earns evidence', () => {
   const evidence = new ScenarioEvidence();
   assert.equal(evidence.completed(evidence.beginFlow(), yaml, true), undefined);
