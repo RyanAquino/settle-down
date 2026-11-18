@@ -31,7 +31,7 @@ jobs:
           ref: ${{ github.sha }}
           path: ci
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
       - run: npm ci --prefix ci/tools/verify-ios --ignore-scripts --omit=dev
@@ -79,7 +79,7 @@ jobs:
           ref: ${{ needs.request.outputs.head_sha }}
           path: pr-source
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
           cache: npm
@@ -182,7 +182,7 @@ jobs:
           path: pr-source
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
