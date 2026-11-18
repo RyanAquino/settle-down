@@ -41,7 +41,7 @@ jobs:
           script: |
             const { admit } = await import(`${process.env.GITHUB_WORKSPACE}/ci/tools/verify-ios/github.mjs`);
             await admit({ github, context, core, outputDir: `${process.env.RUNNER_TEMP}/verify-request` });
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: verify-request-${{ github.run_attempt }}
@@ -139,7 +139,7 @@ jobs:
           key: ${{ steps.build-key.outputs.key }}
       - id: artifact
         run: echo "name=ios-app-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: success()
         with:
           name: ${{ steps.artifact.outputs.name }}
@@ -147,7 +147,7 @@ jobs:
           compression-level: 0
           retention-days: 1
           if-no-files-found: error
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: ios-build-${{ github.run_attempt }}
@@ -209,7 +209,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node ci/tools/verify-ios/runner.mjs pr-source "$RUNNER_TEMP/verify-request" "$RUNNER_TEMP/verify-app/app.tar.gz" "$RUNNER_TEMP/ios-evidence"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: ios-evidence-${{ github.run_attempt }}

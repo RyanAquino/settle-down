@@ -71,7 +71,7 @@ jobs:
           apps=("$RUNNER_TEMP"/ios-binary/*.app)
           test "${#apps[@]}" -eq 1
           bash tools/ci/smoke-ios.sh "${apps[0]}" test-results/ios
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: native-ios-evidence
@@ -121,7 +121,7 @@ jobs:
             mkdir -p test-results/android
             adb install android/app/build/outputs/apk/release/app-release.apk
             maestro test --format junit --output test-results/android/junit.xml --test-output-dir test-results/android .maestro/launch.yaml
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: native-android-evidence
