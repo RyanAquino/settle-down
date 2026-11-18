@@ -68,3 +68,23 @@ test('only the first regression can reuse the explicitly untouched initial insta
   assert.equal(resets.length, 1);
   assert.equal(resets[0].phase, cameraRegressions[1].id);
 });
+
+test('hosted startup overhead leaves time for the full flow, while real timeouts remain blocked', async t => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'camera-hosted-startup-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const records = await runCameraRegressions({
+    udid: 'synthetic-device', appPath: '/synthetic/app', evidence: directory, token: 'synthetic',
+    resetScenario: async () => {},
+    run: async (_command, args, options) => {
+      // Observed CI: 109 seconds of startup, then over 72 seconds of UI work.
+      assert.ok(options.timeout >= 210000, 'allow the complete unchanged regression after cold startup');
+      const output = args[args.indexOf('--output') + 1];
+      await writeFile(output, '<passed/>');
+      return { code: 0, timedOut: output.includes('settings-recovery') };
+    },
+    checkJUnit: xml => xml === '<passed/>',
+  });
+  assert.equal(records[0].status, 'PASS');
+  assert.equal(records[1].status, 'BLOCKED', 'even a zero exit and successful JUnit cannot hide a timeout');
+  assert.match(records[1].error, /budget/);
+});

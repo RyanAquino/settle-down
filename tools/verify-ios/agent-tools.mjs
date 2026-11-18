@@ -50,13 +50,18 @@ function maestroPayload(result, key) {
 }
 
 async function maestroCall(name, args) {
+  const firstConnection = !maestroClient;
   if (!maestroClient) {
     maestroClient = new Client({ name: 'verify-ios', version: '1.0.0' });
-    const transport = new StdioClientTransport({ command: maestro, args: ['mcp'], env: cleanEnv(), stderr: 'pipe' });
+    const transport = new StdioClientTransport({ command: maestro, args: ['mcp', '--no-viewer'],
+      env: { ...cleanEnv(), MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000' }, stderr: 'pipe' });
     transport.stderr?.on('data', data => process.stderr.write(data));
-    await maestroClient.connect(transport);
+    await maestroClient.connect(transport, { timeout: budget.uiTimeout(120000) });
   }
-  return maestroClient.callTool({ name, arguments: { device_id: udid, ...args } }, undefined, { timeout: 90000 });
+  // The MCP server installs its own driver on the first UI call. Keep startup
+  // inside the exploration deadline while preserving the finalization reserve.
+  return maestroClient.callTool({ name, arguments: { device_id: udid, ...args } }, undefined,
+    { timeout: budget.uiTimeout(firstConnection ? 300000 : 180000) });
 }
 
 function tool(name, description, inputSchema, action) {

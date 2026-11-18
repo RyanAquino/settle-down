@@ -119,7 +119,9 @@ export async function runCameraRegressions({ udid, appPath, evidence, token, run
     await writeFile(`${directory}/flow.yaml`, scenario.yaml);
     const record = { scenario, status: 'BLOCKED', evidencePath: `regressions/${scenario.id}/` };
     console.log(`Starting required camera regression: ${scenario.id}`);
-    const deadline = Date.now() + 180000;
+    // Hosted XCTest startup consumed almost two minutes before the first
+    // assertion. Bound startup and the complete unchanged flow together.
+    const deadline = Date.now() + 360000;
     try {
       const resetSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(180000)]) : AbortSignal.timeout(180000);
       if (initialResetReady && records.length === 0) {
@@ -131,6 +133,7 @@ export async function runCameraRegressions({ udid, appPath, evidence, token, run
         '--debug-output', directory, '--test-output-dir', directory, `${directory}/flow.yaml`],
       { timeout: Math.max(1, deadline - Date.now()), allowFailure: true, log: `${directory}/maestro.log` });
       record.exitCode = execution.code;
+      if (execution.timedOut) record.error = 'Required regression exceeded its six-minute startup and execution budget';
       const junit = await readFile(`${directory}/junit.xml`, 'utf8').catch(() => '');
       record.junitVerified = !!junit && checkJUnit(junit);
       record.status = execution.timedOut || !junit ? 'BLOCKED' : execution.code === 0 && record.junitVerified ? 'PASS' : 'FAIL';

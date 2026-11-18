@@ -232,6 +232,8 @@ Fixture control initializes before device creation, with a 30-second startup
 limit, so its first request does not compete with cold simulator services.
 Fresh devices install directly without a redundant terminate/uninstall. First
 app launch allows three minutes within the existing per-attempt deadline.
+Receipt import also allows three minutes for cold Photos services, within that
+same deadline, rather than discarding a ready device after one minute.
 CI setup failures also save bounded host process-name, memory, swap, and disk
 snapshots under `setup-<attempt>-host-*.log`; local runs do not collect them. A provisioning timeout discards only that isolated device
 and allows one fresh-device retry, with a twelve-minute deadline per attempt.
@@ -245,7 +247,10 @@ the runner's fresh install only while no flow has touched the app; later resets
 still reinstall it.
 Every tool reports remaining time/calls. The adapter reserves two minutes for
 final submission, stops starting UI work that could consume that reserve, and
-keeps `submit_plan` available after exploration/call limits. The prompt requests
+keeps `submit_plan` available after exploration/call limits. Maestro MCP runs
+without its optional viewer. Its first UI request allows five minutes for its own
+XCTest startup; later requests allow three minutes. Both are capped by the shared
+exploration deadline minus the finalization reserve. The prompt requests
 a blocked checkpoint after the first complete scenario. Timeouts remain BLOCKED;
 no partial exploration is promoted to PASS. Failure reports name recent tools
 instead of suggesting that every timeout is an authentication/quota problem.
@@ -282,8 +287,10 @@ deterministic regressions before Copilot exploration: both zoom bounds (includin
 twenty zoom-in steps and the disabled upper-bound control), Reset and foreground
 lifecycle; and native Settings permission recovery with checked-state assertions
 and an element-anchored switch tap. The first flow reuses the untouched initial installation; the second runs after a fresh reinstall through
-Maestro CLI and requires successful JUnit evidence. Each has a three-minute bound
-including reset. The flows contain no scripts or optional assertions.
+Maestro CLI and requires successful JUnit evidence. Each has a six-minute bound
+including reset, driver startup, and the complete flow. Hosted startup alone has
+consumed almost two minutes before the first assertion. The flows contain no
+scripts or optional assertions, and a timeout remains BLOCKED even with JUnit.
 
 Results and logs are stored in `regressions.json` and `regressions/<id>/`. The
 agent reads summaries in get_context and exact scenarios with get_regression,
