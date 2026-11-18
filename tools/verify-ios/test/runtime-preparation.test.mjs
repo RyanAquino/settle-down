@@ -140,9 +140,20 @@ test('an already imported runtime with a duplicate just needs cleanup', async t 
   assert.ok(!h.calls.some(c => c.command === 'xcodebuild'));
 });
 
-test('a duplicate that returns after import prevents cache preparation', async t => {
-  const h = await harness(t, { installed: false, reregisterOnImport: true });
-  await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /still registered after import/);
+test('a delayed rescan registration is cleared after import without a second rescan', async t => {
+  const h = await harness(t, { installed: false, cleanupCodes: [30, 0, 0], reregisterOnImport: true });
+  const result = await prepareRuntime({ ...h.input, allowDownload: true });
+  assert.equal(result.status, 'ready');
+  assert.equal(h.calls.filter(c => c.args[2] === 'scan-and-mount').length, 1);
+  const imported = h.calls.findIndex(c => c.args[0] === '-importPlatform');
+  const deleted = h.calls.findLastIndex(c => c.args[2] === 'delete');
+  const cached = h.calls.findIndex(c => c.args.includes('dyld_shared_cache'));
+  assert.ok(imported < deleted && deleted < cached);
+});
+
+test('failure to remove a duplicate after import prevents cache preparation', async t => {
+  const h = await harness(t, { installed: false, reregisterOnImport: true, cleanupCodes: [0, 1] });
+  await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /cleanup failed/);
   assert.ok(!h.calls.some(c => c.args.includes('dyld_shared_cache')));
 });
 

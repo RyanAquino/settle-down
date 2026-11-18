@@ -92,6 +92,9 @@ export async function ensureImportedRuntime({ run, evidence, runtime, version })
     await cleanUpMobileAsset();
   }
 
+  // The rescan can register a fallback image after its command has exited.
+  // Remove that late registration without rescanning after import.
+  if (!alreadyImported) await removeDuplicates();
   const final = await images();
   const image = ready(final);
   if (!image) throw new Error('Imported runtime is not Ready in CoreSimulator secure storage');
