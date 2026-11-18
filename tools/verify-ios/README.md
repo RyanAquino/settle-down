@@ -206,16 +206,27 @@ preserving the app SDK and tested iOS version. CoreSimulator older than 1174 is
 rejected explicitly. GitHub documents slow runtime enumeration on older service
 versions in [runner-images #15247](https://github.com/actions/runner-images/issues/15247).
 
-When the pinned runtime is missing in CI, the runner downloads and installs its
-arm64 variant from Apple, then revalidates the runtime identifier and OS version
-and prepares only that runtime's shared cache. Apple may reissue a build under the same OS version;
+CI requires the pinned runtime to live in CoreSimulator's imported secure storage.
+If it does not, the runner exports its arm64 bundle from Apple and installs it with
+`xcodebuild -importPlatform`. Before booting any device, it removes only the pinned
+target's superseded MobileAsset registrations, then verifies the imported image is
+Ready and the selected runtime profile uses that exact image. This avoids Apple's
+runtime-remounting bug ([FB25398296](https://developer.apple.com/documentation/xcode-release-notes/xcode-27_3-release-notes#Simulator),
+[upstream workaround](https://github.com/actions/runner-images/issues/14946#issuecomment-6575805667)).
+Unrelated runtimes are retained. Export bundles are temporary and excluded from evidence.
+Xcode export exit 70 is accepted only if a complete bundle passes import and all
+subsequent runtime checks; other failures remain BLOCKED.
+
+The runner revalidates the runtime identifier and OS version and prepares only
+that runtime's shared cache. Apple may reissue a build under the same OS version;
 the actual build revision is required and recorded in the evidence rather than
-compared with a hard-coded revision. Downloads are limited to 15 minutes and cache
+compared with a hard-coded revision. Downloads are limited to 15 minutes, imports
+to 10 minutes, and cache
 preparation to 10 minutes; the job has 60 minutes to accommodate those stages
 alongside the existing verification budgets. Local runs require an already
 installed runtime and never download one implicitly. A preparation failure stays
-BLOCKED. `runtime-preparation.json`, `runtime-download.log`, `runtime-list.log`,
-and `runtime-cache.log` record what happened.
+BLOCKED. `runtime-preparation.json`, `runtime-download.log`, `runtime-import.log`,
+`runtime-images.log`, `runtime-list.log`, and `runtime-cache.log` record what happened.
 
 ## Exploration reliability
 
