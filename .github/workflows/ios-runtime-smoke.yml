@@ -1,0 +1,53 @@
+name: iOS runtime cleanup smoke
+
+on:
+  push:
+    branches: [test/ios-mobileasset-cleanup]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Prepare and boot the pinned runtime
+        run: |
+          mkdir -p "$RUNNER_TEMP/runtime-evidence"
+          node --input-type=module <<'JS'
+          import { prepareRuntime } from './tools/verify-ios/runtime-preparation.mjs';
+          import { run } from './tools/verify-ios/process.mjs';
+          const evidence = `${process.env.RUNNER_TEMP}/runtime-evidence`;
+          try {
+            const result = await prepareRuntime({ run, evidence, allowDownload: true });
+            console.log(JSON.stringify(result, null, 2));
+            const created = await run('xcrun', ['simctl', 'create', 'Runtime cleanup smoke', 'com.apple.CoreSimulator.SimDeviceType.iPhone-17', result.identifier]);
+            const udid = created.output.trim();
+            try {
+              await run('xcrun', ['simctl', 'boot', udid]);
+              await run('xcrun', ['simctl', 'bootstatus', udid, '-b'], { timeout: 360000, log: `${evidence}/boot.log` });
+              const started = await run('xcrun', ['simctl', 'spawn', udid, 'launchctl', 'print', 'system']);
+              console.log(`Simulator ${udid} booted and returned ${started.output.length} bytes from launchctl.`);
+            } finally {
+              for (const action of ['shutdown', 'delete']) await run('xcrun', ['simctl', action, udid], { allowFailure: true, timeout: 10000 });
+            }
+          } catch (error) {
+            console.error(error);
+            process.exitCode = 1;
+          }
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-evidence
+          path: ${{ runner.temp }}/runtime-evidence/
+          retention-days: 2
