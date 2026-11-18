@@ -59,10 +59,10 @@ test('only the authorized repository-head build opts into cache writes', () => {
   assert.equal(report['cache-mode'], undefined);
 });
 
-test('verification uses modern CoreSimulator while the Release binary keeps its pinned build environment', () => {
+test('build and verification use the hosted image with the pinned iOS runtime', () => {
   assert.equal(main.jobs.build['runs-on'], 'macos-26');
   assert.equal(main.jobs.build.env.DEVELOPER_DIR, '/Applications/Xcode_26.6.app/Contents/Developer');
-  assert.equal(main.jobs.verify['runs-on'], 'xcode-27');
-  assert.equal(main.jobs.verify.env.DEVELOPER_DIR, '/Applications/Xcode_27.1.app/Contents/Developer');
+  assert.equal(main.jobs.verify['runs-on'], 'macos-26');
+  assert.equal(main.jobs.verify.env.DEVELOPER_DIR, '/Applications/Xcode_26.6.app/Contents/Developer');
   assert.equal(main.jobs.verify['timeout-minutes'], 60);
 });

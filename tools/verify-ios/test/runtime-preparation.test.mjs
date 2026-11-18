@@ -1,242 +1,60 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { CI_RUNTIME, prepareRuntime } from '../runtime-preparation.mjs';
 
-async function harness(t, { installed = true, core = '1174.9.2', version = CI_RUNTIME.version, build = '23F73',
-  failDownload = false, failCache = false, failImport = false, exportExitCode = 0, missingExport = false,
-  imported = false, importReady = true, importBuild = build, staleProfile = false,
-  cleanupCodes = [], cleanupMessage = 'Removed the runtime, but did not reclaim its MobileAsset',
-  asynchronousCleanup = false, withDuplicate = !imported, reregisterOnImport = false, profileNeedsReload = false } = {}) {
+const pinned = { identifier: CI_RUNTIME.identifier, version: CI_RUNTIME.version, buildversion: '23F77', isAvailable: true };
+const other = { identifier: 'com.apple.CoreSimulator.SimRuntime.iOS-27-0', version: '27.0', buildversion: '24A434', isAvailable: true };
+
+async function harness(t, runtimes, coreSimulator = '1051.55') {
   const evidence = await mkdtemp(path.join(os.tmpdir(), 'runtime-preparation-'));
   t.after(() => rm(evidence, { recursive: true, force: true }));
-  const calls = [];
-  let mobileAsset = installed && withDuplicate;
-  let deletingPolls = 0;
-  let mobileAssetId = 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA';
-  const importedId = 'BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB';
-  const run = async (command, args, options) => {
-    calls.push({ command, args, options });
-    if (command === 'plutil') return { output: core };
-    if (command === 'launchctl') {
-      profileNeedsReload = false;
-      return { output: '', code: 0 };
-    }
-    if (command === 'xcodebuild') {
-      if (args[0] === '-downloadPlatform') {
-        if (failDownload) throw new Error('Runtime download failed');
-        if (!missingExport) await mkdir(path.join(args[args.indexOf('-exportPath') + 1], 'iOS.exportedBundle'));
-        mobileAsset = true;
-        return { output: '', code: exportExitCode };
-      }
-      if (failImport) throw new Error('Runtime import failed');
-      assert.equal(mobileAsset, false, 'Duplicate registration must be gone before import');
-      installed = true;
-      imported = true;
-      mobileAsset = reregisterOnImport;
-      return { output: '', code: 0 };
-    }
-    if (args[1] === 'list' && args[2] === 'runtimes') return { output: JSON.stringify({ runtimes: installed && !profileNeedsReload
-      ? [{ identifier: CI_RUNTIME.identifier, isAvailable: true, version, buildversion: build,
-        bundlePath: imported && !staleProfile ? '/imported-mount/iOS.simruntime' : '/mobile-asset-mount/iOS.simruntime' }] : [] }) };
-    if (args[1] === 'runtime' && args[2] === 'list') {
-      if (deletingPolls && --deletingPolls === 0) mobileAsset = false;
-      return { output: JSON.stringify({
-        ...(mobileAsset ? { [mobileAssetId]: { identifier: mobileAssetId, runtimeIdentifier: CI_RUNTIME.identifier, version, build,
-          state: deletingPolls ? 'Deleting' : 'Ready', path: '/System/Library/AssetsV2/com_apple_MobileAsset_iOSSimulatorRuntime/example.asset/AssetData', deletable: true } } : {}),
-        ...(imported ? { [importedId]: { identifier: importedId, runtimeIdentifier: CI_RUNTIME.identifier, version, build: importBuild,
-          runtimeBundlePath: '/imported-mount/iOS.simruntime',
-          state: importReady ? 'Ready' : 'Unusable', path: '/Library/Developer/CoreSimulator/Cryptex/Images/bundle/imported/Restore/runtime.dmg' } } : {}),
-        unrelated: { identifier: 'CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC', runtimeIdentifier: 'unrelated-runtime',
-          path: '/System/Library/AssetsV2/com_apple_MobileAsset_iOSSimulatorRuntime/unrelated.asset/AssetData', deletable: true },
-      }) };
-    }
-    if (args[1] === 'runtime' && args[2] === 'scan-and-mount') {
-      mobileAsset = true;
-      mobileAssetId = 'DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD';
-      return { output: '', code: 0 };
-    }
-    if (args[1] === 'runtime' && args[2] === 'delete') {
-      assert.equal(args[3], mobileAssetId);
-      const code = cleanupCodes.shift() ?? 0;
-      if (!code && asynchronousCleanup) deletingPolls = 2;
-      else mobileAsset = false;
-      return { output: code ? cleanupMessage : '', code };
-    }
-    if (failCache) throw new Error('Runtime cache preparation timed out');
-    return { output: '' };
+  const run = async (command, args) => {
+    if (command === 'plutil') return { output: coreSimulator };
+    assert.equal(command, 'xcrun');
+    assert.deepEqual(args, ['simctl', 'list', 'runtimes', '-j']);
+    return { output: JSON.stringify({ runtimes }) };
   };
-  return { calls, evidence, input: { run, evidence }, record: async () => JSON.parse(await readFile(`${evidence}/runtime-preparation.json`, 'utf8')) };
+  return { input: { run, evidence }, record: async () => JSON.parse(await readFile(`${evidence}/runtime-preparation.json`, 'utf8')) };
 }
 
-test('an installed pinned runtime prepares only its own cache and records the actual CoreSimulator', async t => {
-  const h = await harness(t);
+test('verification selects the preinstalled pinned runtime and records a reissued Apple build', async t => {
+  const h = await harness(t, [other, pinned]);
   const result = await prepareRuntime(h.input);
-  assert.equal(result.status, 'ready');
-  assert.equal(result.coreSimulator, '1174.9.2');
-  assert.equal(result.downloaded, false);
-  assert.equal(result.cachePrepared, true);
-  assert.ok(!h.calls.some(c => c.command === 'xcodebuild'));
-  const cache = h.calls.find(c => c.args.includes('dyld_shared_cache'));
-  assert.deepEqual(cache.args, ['simctl', 'runtime', 'dyld_shared_cache', 'update', CI_RUNTIME.identifier]);
+  assert.deepEqual(result, { identifier: CI_RUNTIME.identifier, status: 'ready', coreSimulator: '1051.55', version: '26.5', build: '23F77' });
+  assert.deepEqual(await h.record(), result);
 });
 
-test('CI exports the exact OS, removes its superseded MobileAsset registration, then imports before cache preparation', async t => {
-  const h = await harness(t, { installed: false });
-  await prepareRuntime({ ...h.input, allowDownload: true });
-  const download = h.calls.find(c => c.command === 'xcodebuild');
-  assert.deepEqual(download.args.slice(0, 7), ['-downloadPlatform', 'iOS', '-buildVersion', '26.5', '-architectureVariant', 'arm64', '-exportPath']);
-  assert.equal(download.options.timeout, 900000);
-  assert.equal(download.options.allowFailure, true);
-  const imported = h.calls.find(c => c.args[0] === '-importPlatform');
-  assert.ok(imported.args[1].endsWith('/iOS.exportedBundle'));
-  const removed = h.calls.filter(c => c.args[2] === 'delete');
-  assert.equal(removed.length, 1);
-  assert.equal(removed[0].args[3], 'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA');
-  assert.ok(h.calls.indexOf(removed[0]) < h.calls.indexOf(imported));
-  assert.ok(h.calls.indexOf(removed[0]) < h.calls.findIndex(c => c.args.includes('dyld_shared_cache')));
-  assert.equal(h.calls.filter(c => c.args[1] === 'list' && c.args[2] === 'runtimes').length, 2);
-  assert.equal((await h.record()).downloaded, true);
-  await assert.rejects(readFile(imported.args[1]), /ENOENT/);
-});
-
-test('known MobileAsset exit 30 triggers one rescan and rechecks deletion before import', async t => {
-  for (const codes of [[30, 0], [30, 30]]) {
-    const h = await harness(t, { installed: false, cleanupCodes: [...codes] });
-    const result = await prepareRuntime({ ...h.input, allowDownload: true });
-    assert.equal(result.status, 'ready');
-    assert.equal(h.calls.filter(c => c.args[2] === 'scan-and-mount').length, 1);
-    assert.deepEqual(h.calls.filter(c => c.args[2] === 'delete').map(c => c.args[3]), [
-      'AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA', 'DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD',
-    ]);
-    assert.equal(result.importedRuntime.warnings.length, codes.filter(code => code === 30).length);
+test('a missing or unavailable pinned runtime blocks verification', async t => {
+  for (const runtimes of [[other], [other, { ...pinned, isAvailable: false }]]) {
+    const h = await harness(t, runtimes);
+    await assert.rejects(prepareRuntime(h.input), /is unavailable on this runner/);
+    assert.equal((await h.record()).status, 'blocked');
   }
 });
 
-test('asynchronous deletion settles before import', async t => {
-  const h = await harness(t, { installed: false, asynchronousCleanup: true });
-  assert.equal((await prepareRuntime({ ...h.input, allowDownload: true })).status, 'ready');
-});
-
-test('a different cleanup error prevents import and cache preparation', async t => {
-  for (const options of [{ cleanupCodes: [1] }, { cleanupCodes: [30], cleanupMessage: 'Different failure' }]) {
-    const h = await harness(t, { installed: false, ...options });
-    await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /cleanup failed/);
-    assert.ok(!h.calls.some(c => c.args[0] === '-importPlatform' || c.args.includes('dyld_shared_cache')));
+test('the pinned runtime must report the requested OS and its build metadata', async t => {
+  for (const [runtime, error] of [
+    [{ ...pinned, version: '26.6' }, /Expected iOS 26.5; found 26.6/],
+    [{ ...pinned, buildversion: '' }, /missing its build metadata/],
+  ]) {
+    const h = await harness(t, [runtime]);
+    await assert.rejects(prepareRuntime(h.input), error);
+    assert.equal((await h.record()).status, 'blocked');
   }
 });
 
-test('an already imported CI runtime is reused without exporting or importing again', async t => {
-  const h = await harness(t, { imported: true });
-  const result = await prepareRuntime({ ...h.input, allowDownload: true });
-  assert.equal(result.status, 'ready');
-  assert.ok(!h.calls.some(c => c.command === 'xcodebuild'));
-  assert.match(result.importedRuntime.path, /CoreSimulator\/Cryptex\/Images/);
+test('local verification can select an explicitly requested installed runtime', async t => {
+  const h = await harness(t, [pinned, other]);
+  const result = await prepareRuntime({ ...h.input, runtime: other.identifier });
+  assert.equal(result.identifier, other.identifier);
+  assert.equal(result.version, other.version);
 });
 
-test('an already imported runtime with a duplicate just needs cleanup', async t => {
-  const h = await harness(t, { imported: true, withDuplicate: true });
-  const result = await prepareRuntime({ ...h.input, allowDownload: true });
-  assert.equal(result.status, 'ready');
-  assert.equal(h.calls.filter(c => c.args[2] === 'delete').length, 1);
-  assert.ok(!h.calls.some(c => c.command === 'xcodebuild'));
-});
-
-test('a delayed rescan registration is cleared after import without a second rescan', async t => {
-  const h = await harness(t, { installed: false, cleanupCodes: [30, 0, 0], reregisterOnImport: true });
-  const result = await prepareRuntime({ ...h.input, allowDownload: true });
-  assert.equal(result.status, 'ready');
-  assert.equal(h.calls.filter(c => c.args[2] === 'scan-and-mount').length, 1);
-  const imported = h.calls.findIndex(c => c.args[0] === '-importPlatform');
-  const deleted = h.calls.findLastIndex(c => c.args[2] === 'delete');
-  const cached = h.calls.findIndex(c => c.args.includes('dyld_shared_cache'));
-  assert.ok(imported < deleted && deleted < cached);
-});
-
-test('failure to remove a duplicate after import prevents cache preparation', async t => {
-  const h = await harness(t, { installed: false, reregisterOnImport: true, cleanupCodes: [0, 1] });
-  await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /cleanup failed/);
-  assert.ok(!h.calls.some(c => c.args.includes('dyld_shared_cache')));
-});
-
-test('Xcode export exit 70 is usable only when import accepts a complete exported bundle', async t => {
-  const h = await harness(t, { installed: false, exportExitCode: 70 });
-  assert.equal((await prepareRuntime({ ...h.input, allowDownload: true })).status, 'ready');
-  for (const options of [{ missingExport: true }, { failImport: true }, { importReady: false }]) {
-    const bad = await harness(t, { installed: false, exportExitCode: 70, ...options });
-    await assert.rejects(prepareRuntime({ ...bad.input, allowDownload: true }), /exported bundle|import failed|not Ready/);
-    assert.ok(!bad.calls.some(c => c.args.includes('dyld_shared_cache')));
-    assert.equal((await bad.record()).status, 'blocked');
-  }
-});
-
-test('a failed export, mismatched build, or stale profile cannot reach simulator boot', async t => {
-  for (const options of [{ exportExitCode: 1 }, { importBuild: 'wrong-build' }, { staleProfile: true }]) {
-    const h = await harness(t, { installed: false, ...options });
-    await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /export failed|does not match|does not use/);
-    assert.ok(!h.calls.some(c => c.args.includes('dyld_shared_cache')));
-  }
-});
-
-test('a Ready image with an absent profile reloads the per-user CoreSimulator service before cache preparation', async t => {
-  const h = await harness(t, { installed: false, profileNeedsReload: true });
-  const result = await prepareRuntime({ ...h.input, allowDownload: true });
-  assert.equal(result.status, 'ready');
-  assert.equal(result.profileReloaded, true);
-  const reloaded = h.calls.findIndex(c => c.command === 'launchctl');
-  const cached = h.calls.findIndex(c => c.args.includes('dyld_shared_cache'));
-  assert.deepEqual(h.calls[reloaded].args, ['kill', 'SIGTERM', `user/${process.getuid()}/com.apple.CoreSimulator.CoreSimulatorService`]);
-  assert.ok(reloaded < cached);
-});
-
-test('a local invocation does not implicitly download a missing runtime', async t => {
-  const h = await harness(t, { installed: false });
-  await assert.rejects(prepareRuntime(h.input), /runtime .* is unavailable/);
-  assert.ok(!h.calls.some(c => c.command === 'xcodebuild'));
+test('a missing CoreSimulator version is recorded as a setup error', async t => {
+  const h = await harness(t, [pinned], '');
+  await assert.rejects(prepareRuntime(h.input), /Could not determine the CoreSimulator version/);
   assert.equal((await h.record()).status, 'blocked');
-});
-
-test('a reissued Apple build is accepted and recorded after CI installs the pinned OS', async t => {
-  const h = await harness(t, { installed: false, build: '23F77' });
-  const result = await prepareRuntime({ ...h.input, allowDownload: true });
-  assert.equal(result.downloaded, true);
-  assert.equal(result.status, 'ready');
-  assert.equal(result.version, '26.5');
-  assert.equal(result.build, '23F77');
-  assert.equal((await h.record()).build, '23F77');
-});
-
-test('a different OS version remains blocked before cache preparation', async t => {
-  const h = await harness(t, { version: '26.6', build: '23G1' });
-  await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /Expected iOS 26.5; found 26.6/);
-  assert.ok(!h.calls.some(c => c.command === 'xcodebuild' || c.args.includes('dyld_shared_cache')));
-  assert.equal((await h.record()).cachePrepared, false);
-});
-
-test('missing build provenance is blocked', async t => {
-  const h = await harness(t, { build: '' });
-  await assert.rejects(prepareRuntime(h.input), /missing its build metadata/);
-  assert.equal((await h.record()).status, 'blocked');
-});
-
-test('the older simulator service is rejected before runtime provisioning', async t => {
-  const h = await harness(t, { core: '1051.55' });
-  await assert.rejects(prepareRuntime(h.input), /CoreSimulator 1174 or newer is required; found 1051.55/);
-  assert.equal(h.calls.length, 1);
-});
-
-test('download failures are preserved and never reach cache preparation', async t => {
-  const h = await harness(t, { installed: false, failDownload: true });
-  await assert.rejects(prepareRuntime({ ...h.input, allowDownload: true }), /Runtime download failed/);
-  assert.equal((await h.record()).error, 'Runtime download failed');
-  assert.ok(!h.calls.some(c => c.args.includes('dyld_shared_cache')));
-});
-
-test('a cache preparation timeout remains blocked', async t => {
-  const h = await harness(t, { failCache: true });
-  await assert.rejects(prepareRuntime(h.input), /cache preparation timed out/);
-  assert.equal((await h.record()).status, 'blocked');
-  assert.equal((await h.record()).cachePrepared, false);
 });
