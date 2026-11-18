@@ -174,7 +174,7 @@ async function main() {
     await writeFile(`${evidence}/versions.json`, JSON.stringify(versions, null, 2));
     if (process.env.GITHUB_ACTIONS === 'true' && process.env.VERIFY_LOCAL_IOS_RUNTIME) throw new Error('Simulator runtime overrides are local-only');
     const runtime = process.env.VERIFY_LOCAL_IOS_RUNTIME || CI_RUNTIME.identifier;
-    const runtimeDetails = await prepareRuntime({ run, evidence, runtime, allowDownload: process.env.GITHUB_ACTIONS === 'true' });
+    const runtimeDetails = await prepareRuntime({ run, evidence, runtime });
     versions.coreSimulator = runtimeDetails.coreSimulator;
     await writeFile(`${evidence}/versions.json`, JSON.stringify(versions, null, 2));
     const entries = (await run('tar', ['-tzf', path.resolve(archiveArg)])).output.trim().split('\n');

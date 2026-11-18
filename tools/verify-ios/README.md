@@ -55,8 +55,8 @@ retained for seven days and the intermediate app archive for one day.
   uses `http://127.0.0.1:8765`, disables the debug shortcut, and disables OTA updates.
 - A fresh macOS runner installs that binary, boots an iPhone 17 / iOS 26.5, seeds
   one synthetic receipt photo, and starts the fixture backend. The binary is built
-  with Xcode 26.6; verification uses Xcode 27.1 and CoreSimulator 1174 or newer on the standard `xcode-27` image. Node 22,
-  Java 17, Maestro 2.12.1, and Copilot CLI 1.0.112 are selected explicitly.
+  with Xcode 26.6. Both jobs use `macos-26` with Xcode 26.6. Node 22, Java 17,
+  Maestro 2.12.1, and Copilot CLI 1.0.112 are selected explicitly.
 - Copilot reads the diff and selected source through a restricted MCP adapter.
   Diffs, source, hierarchies, and fixture requests are paged so each tool result
   stays under 16,000 bytes. Copilot CLI writes larger results (over 20,480 bytes)
@@ -199,34 +199,19 @@ pods and compile native code. Real hosted-runner savings require a CI measuremen
 
 ## Simulator service and runtime preparation
 
-The build job remains on `macos-26` / Xcode 26.6. Verification runs on the
-standard `xcode-27` image with Xcode 27.1, using the same iPhone 17
-and pinned iOS 26.5 runtime. This changes the host simulator service while
-preserving the app SDK and tested iOS version. CoreSimulator older than 1174 is
-rejected explicitly. GitHub documents slow runtime enumeration on older service
-versions in [runner-images #15247](https://github.com/actions/runner-images/issues/15247).
+The verification job uses the iOS 26.5 runtime preinstalled on `macos-26`.
+On `xcode-27`, exporting and importing iOS 26.5 registered duplicate runtime
+images, and CoreSimulator could lose the selected profile during cleanup. The
+preinstalled runtime lets verification skip those runtime changes and retain
+the iPhone 17 / iOS 26.5 target.
 
-CI requires the pinned runtime to live in CoreSimulator's imported secure storage.
-If it does not, the runner exports its arm64 bundle from Apple and installs it with
-`xcodebuild -importPlatform`. Before booting any device, it removes only the pinned
-target's superseded MobileAsset registrations, then verifies the imported image is
-Ready and the selected runtime profile uses that exact image. This avoids Apple's
-runtime-remounting bug ([FB25398296](https://developer.apple.com/documentation/xcode-release-notes/xcode-27_3-release-notes#Simulator),
-[upstream workaround](https://github.com/actions/runner-images/issues/14946#issuecomment-6575805667)).
-Unrelated runtimes are retained. Export bundles are temporary and excluded from evidence.
-Xcode export exit 70 is accepted only if a complete bundle passes import and all
-subsequent runtime checks; other failures remain BLOCKED.
-
-The runner revalidates the runtime identifier and OS version and prepares only
-that runtime's shared cache. Apple may reissue a build under the same OS version;
-the actual build revision is required and recorded in the evidence rather than
-compared with a hard-coded revision. Downloads are limited to 15 minutes, imports
-to 10 minutes, and cache
-preparation to 10 minutes; the job has 60 minutes to accommodate those stages
-alongside the existing verification budgets. Local runs require an already
-installed runtime and never download one implicitly. A preparation failure stays
-BLOCKED. `runtime-preparation.json`, `runtime-download.log`, `runtime-import.log`,
-`runtime-images.log`, `runtime-list.log`, and `runtime-cache.log` record what happened.
+The runner requires an available runtime with the pinned identifier and OS
+version. Apple can reissue a build for the same OS version, so the runner
+records the actual build and CoreSimulator version. An unavailable runtime or
+missing build metadata produces BLOCKED and records the error in
+`runtime-preparation.json`. `runtime-list.log` captures the available runtimes.
+Local verification can select another installed iOS runtime through the
+existing `VERIFY_LOCAL_IOS_RUNTIME` override.
 
 ## Exploration reliability
 
