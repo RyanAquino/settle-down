@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      expo-runtime:
+        patterns:
+          - 'expo*'
+          - '@expo/*'
+          - 'react'
+          - 'react-dom'
+          - 'react-native*'
+          - '@react-native/*'
+          - '@react-native-community/*'
+          - '@types/react'
+          - 'jest-expo'
+  - package-ecosystem: npm
+    directory: /tools/verify-ios
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

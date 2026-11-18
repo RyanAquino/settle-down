@@ -2,12 +2,16 @@
   "name": "settle-down-ios-verification",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test test/*.test.mjs" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "fast-xml-parser": "5.12.1",
     "yaml": "2.9.1",
     "zod": "4.6.7"
   },
-  "devDependencies": { "@github/copilot": "1.0.112" }
+  "devDependencies": {
+    "@github/copilot": "1.0.112"
+  }
 }

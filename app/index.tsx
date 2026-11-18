@@ -11,7 +11,9 @@ export default function Index() {
   useFocusEffect(
     useCallback(() => {
       setIsFocused(true);
-      return () => { setIsFocused(false); };
+      return () => {
+        setIsFocused(false);
+      };
     }, []),
   );
 

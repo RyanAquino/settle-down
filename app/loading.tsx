@@ -29,8 +29,18 @@ export default function LoadingScreen() {
     if (isOffline) return;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(beam, { toValue: 1, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(beam, { toValue: 0, duration: 1600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(beam, {
+          toValue: 1,
+          duration: 1600,
+          easing: Easing.inOut((t) => Easing.ease(t)),
+          useNativeDriver: true,
+        }),
+        Animated.timing(beam, {
+          toValue: 0,
+          duration: 1600,
+          easing: Easing.inOut((t) => Easing.ease(t)),
+          useNativeDriver: true,
+        }),
       ]),
     );
     loop.start();
@@ -43,7 +53,9 @@ export default function LoadingScreen() {
     if (isOffline) return;
     tickRef.current = setTimeout(() => {
       setSteps((s) =>
-        s.map((st, i) => (i === 1 ? { ...st, state: 'done' } : i === 2 ? { ...st, state: 'active' } : st)),
+        s.map((st, i) =>
+          i === 1 ? { ...st, state: 'done' } : i === 2 ? { ...st, state: 'active' } : st,
+        ),
       );
     }, 1400);
     return () => {
@@ -56,7 +68,7 @@ export default function LoadingScreen() {
       try {
         if (!fromLibrary) {
           const { status } = await MediaLibrary.requestPermissionsAsync();
-          if (status === 'granted') {
+          if (status === MediaLibrary.PermissionStatus.GRANTED) {
             await MediaLibrary.saveToLibraryAsync(photoUri);
             await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             router.replace({
@@ -70,7 +82,10 @@ export default function LoadingScreen() {
         router.replace({ pathname: '/', params: { error: 'Upload failed. Please try again.' } });
       } catch {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        router.replace({ pathname: '/', params: { error: 'Upload failed. Unable to save photo.' } });
+        router.replace({
+          pathname: '/',
+          params: { error: 'Upload failed. Unable to save photo.' },
+        });
       }
     },
     [fromLibrary],
@@ -86,7 +101,9 @@ export default function LoadingScreen() {
         // so EXPO_PUBLIC_API_BASE_URL can be undefined. Fail loudly instead of silently
         // fetching `undefined/api/...` and burying it in the retry/fallback path.
         if (!apiBaseUrl) {
-          throw new Error('EXPO_PUBLIC_API_BASE_URL is undefined in this build (env not inlined at bundle time).');
+          throw new Error(
+            'EXPO_PUBLIC_API_BASE_URL is undefined in this build (env not inlined at bundle time).',
+          );
         }
 
         const formData = new FormData();
@@ -94,7 +111,7 @@ export default function LoadingScreen() {
         // only accepts string | Blob | { bytes() } parts — the React Native
         // `{ uri, type, name }` convention now throws `Unsupported FormDataPart`.
         // expo-file-system's `File` implements `bytes()`, so it encodes correctly.
-        formData.append('file', new File(photoUri) as any);
+        formData.append('file', new File(photoUri));
 
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
         // Do NOT set 'Content-Type' for multipart/form-data — fetch must set it itself so
@@ -110,7 +127,9 @@ export default function LoadingScreen() {
           setStatusDetail('Network took a pause. Hang tight.');
         }
 
-        console.log(`[upload] attempt ${attempt}/${maxAttempts} → ${uploadUrl} (auth=${!!authToken})`);
+        console.log(
+          `[upload] attempt ${attempt}/${maxAttempts} → ${uploadUrl} (auth=${!!authToken})`,
+        );
         response = await fetch(uploadUrl, {
           method: 'POST',
           body: formData,
@@ -119,7 +138,7 @@ export default function LoadingScreen() {
         console.log(`[upload] response status=${response.status} ok=${response.ok}`);
 
         if (response.ok) {
-          const data = await response.json();
+          const data: unknown = await response.json();
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           router.replace({ pathname: '/receipt-details', params: { data: JSON.stringify(data) } });
           return;
@@ -146,7 +165,10 @@ export default function LoadingScreen() {
     [savePhotoAsFallback],
   );
 
-  const uploadPhoto = useCallback(async (uri: string) => uploadPhotoWithRetry(uri), [uploadPhotoWithRetry]);
+  const uploadPhoto = useCallback(
+    async (uri: string) => uploadPhotoWithRetry(uri),
+    [uploadPhotoWithRetry],
+  );
 
   const handleLibraryPhotoOffline = useCallback(async () => {
     try {
@@ -166,11 +188,15 @@ export default function LoadingScreen() {
   const saveCameraPhotoToLibrary = useCallback(async (photoUri: string) => {
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') throw new Error('Media library permission denied');
+      if (status !== MediaLibrary.PermissionStatus.GRANTED)
+        throw new Error('Media library permission denied');
       await MediaLibrary.saveToLibraryAsync(photoUri);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTimeout(() => {
-        router.replace({ pathname: '/', params: { message: 'Photo saved to your photo library.' } });
+        router.replace({
+          pathname: '/',
+          params: { message: 'Photo saved to your photo library.' },
+        });
       }, 1800);
     } catch {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -223,7 +249,7 @@ export default function LoadingScreen() {
     // Kicks off the async upload pipeline on mount; every setState inside
     // happens after `await NetInfo.fetch()`, so none are synchronous here.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (photoUri) checkConnectivityAndProcess(photoUri);
+    if (photoUri) void checkConnectivityAndProcess(photoUri);
   }, [photoUri, checkConnectivityAndProcess]);
 
   // beam translateY: 0 → photoHeight, within the card
@@ -300,8 +326,18 @@ function StepItem({ label, state, isLast }: { label: string; state: StepState; i
     }
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.45, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, {
+          toValue: 1.45,
+          duration: 700,
+          easing: Easing.inOut((t) => Easing.ease(t)),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut((t) => Easing.ease(t)),
+          useNativeDriver: true,
+        }),
       ]),
     );
     loop.start();

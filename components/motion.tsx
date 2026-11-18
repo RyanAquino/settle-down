@@ -33,7 +33,7 @@ export function Entrance({
       toValue: 1,
       duration,
       delay,
-      easing: Easing.out(Easing.cubic),
+      easing: Easing.out((t) => Easing.cubic(t)),
       useNativeDriver: true,
     });
     anim.start();
@@ -59,19 +59,19 @@ function fireHaptic(kind: HapticKind) {
     case 'none':
       return;
     case 'selection':
-      Haptics.selectionAsync();
+      void Haptics.selectionAsync().catch(() => {}); // Haptics are best effort.
       return;
     case 'success':
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {}); // Haptics are best effort.
       return;
     case 'light':
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {}); // Haptics are best effort.
       return;
     case 'medium':
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {}); // Haptics are best effort.
       return;
     case 'heavy':
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {}); // Haptics are best effort.
       return;
   }
 }

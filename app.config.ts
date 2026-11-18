@@ -19,7 +19,7 @@ export default ({ config }: ConfigContext) => {
   const owner = process.env.EAS_PROJECT_OWNER || 'ryan.aquino';
   if (!isOwner(owner)) {
     throw new Error(
-      `Unknown EAS_PROJECT_OWNER "${owner}". Expected one of: ${Object.keys(EAS_PROJECT_IDS).join(', ')}`
+      `Unknown EAS_PROJECT_OWNER "${owner}". Expected one of: ${Object.keys(EAS_PROJECT_IDS).join(', ')}`,
     );
   }
   const projectId = EAS_PROJECT_IDS[owner];
@@ -30,17 +30,21 @@ export default ({ config }: ConfigContext) => {
     owner,
     extra: { ...config.extra, eas: { projectId } },
     updates: { url: `https://u.expo.dev/${projectId}`, ...(isE2E ? { enabled: false } : {}) },
-    ...(isE2E ? {
-      ios: {
-        ...config.ios,
-        infoPlist: {
-          ...config.ios?.infoPlist,
-          NSAppTransportSecurity: {
-            ...config.ios?.infoPlist?.NSAppTransportSecurity,
-            NSAllowsLocalNetworking: true,
+    ...(isE2E
+      ? {
+          ios: {
+            ...config.ios,
+            infoPlist: {
+              ...config.ios?.infoPlist,
+              // Expo types arbitrary Info.plist entries as any; preserve the existing dictionary.
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+              NSAppTransportSecurity: {
+                ...config.ios?.infoPlist?.NSAppTransportSecurity,
+                NSAllowsLocalNetworking: true,
+              },
+            },
           },
-        },
-      },
-    } : {}),
+        }
+      : {}),
   };
 };

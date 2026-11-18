@@ -137,11 +137,12 @@ Example shape (labels are illustrative; derive actual selectors from the app):
 appId: ${APP_ID}
 name: PR-specific behavior
 ---
+
 - launchApp:
-    permissions:
-      all: allow
+  permissions:
+  all: allow
 - tapOn:
-    id: actual-control-id
+  id: actual-control-id
 - assertVisible: Actual expected text
 - takeScreenshot: changed-state
 

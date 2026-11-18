@@ -84,22 +84,12 @@ export const type = {
   numeral: { fontVariant: ['tabular-nums'] as ['tabular-nums'] },
 } as const;
 
-// deterministic color per user id — same person → same color across the app.
-// Uses FNV-1a hash for much better distribution than the old naive hash.
-export function colorForUser(userId: string): string {
-  let hash = 2166136261 >>> 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash ^= userId.charCodeAt(i);
-    hash = Math.imul(hash, 16777619) >>> 0;
-  }
-  return theme.personColors[hash % theme.personColors.length];
-}
-
 // When rendering a fixed group of users on one screen, index-based assignment
 // guarantees every user gets a different color (up to palette size).
-// Prefer this over `colorForUser` inside a known member list.
-export function colorForUserIndex(index: number): string {
-  return theme.personColors[((index % theme.personColors.length) + theme.personColors.length) % theme.personColors.length];
+function colorForUserIndex(index: number): string {
+  return theme.personColors[
+    ((index % theme.personColors.length) + theme.personColors.length) % theme.personColors.length
+  ];
 }
 
 // Build a stable id → color map for a list of users, with no duplicates

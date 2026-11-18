@@ -53,12 +53,12 @@ utils/
 
 The app needs a backend. It reads the backend's base URL from `EXPO_PUBLIC_API_BASE_URL` and calls these endpoints:
 
-| Method | Endpoint | Purpose |
-| ------ | -------- | ------- |
-| `POST` | `/api/v1/receipts/receipt-items/` | Upload a receipt image (multipart `file`) and get back the parsed receipt |
-| `GET`  | `/api/v1/settle-up/groups/` | List Settle Up groups |
-| `GET`  | `/api/v1/settle-up/users/?group_id=…` | List the members of a group |
-| `POST` | `/api/v1/settle-up/transactions/` | Create the split transaction |
+| Method | Endpoint                              | Purpose                                                                   |
+| ------ | ------------------------------------- | ------------------------------------------------------------------------- |
+| `POST` | `/api/v1/receipts/receipt-items/`     | Upload a receipt image (multipart `file`) and get back the parsed receipt |
+| `GET`  | `/api/v1/settle-up/groups/`           | List Settle Up groups                                                     |
+| `GET`  | `/api/v1/settle-up/users/?group_id=…` | List the members of a group                                               |
+| `POST` | `/api/v1/settle-up/transactions/`     | Create the split transaction                                              |
 
 If `EXPO_PUBLIC_AUTH_TOKEN` is set, every request includes it as `Authorization: Bearer <token>`. Every request also sends `ngrok-skip-browser-warning`, so the backend can be exposed through an ngrok tunnel.
 
@@ -80,10 +80,10 @@ cp .env.sample .env
 
 Then edit `.env`:
 
-| Variable | Description |
-| -------- | ----------- |
-| `EXPO_PUBLIC_API_BASE_URL` | The backend's base URL, e.g. `http://192.168.0.242:8000` or an ngrok URL |
-| `EXPO_PUBLIC_AUTH_TOKEN` | Optional bearer token for the backend |
+| Variable                             | Description                                                                                                                            |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `EXPO_PUBLIC_API_BASE_URL`           | The backend's base URL, e.g. `http://192.168.0.242:8000` or an ngrok URL                                                               |
+| `EXPO_PUBLIC_AUTH_TOKEN`             | Optional bearer token for the backend                                                                                                  |
 | `EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON` | `true` shows a "Skip to Receipt" button that opens the details screen with mock data, so you can work on that screen without a backend |
 
 > `EXPO_PUBLIC_*` values are inlined when the app is bundled. `.env` is gitignored, so EAS builds run in the cloud don't see it. Set these variables as EAS environment variables for the `preview` and `production` environments.
@@ -100,10 +100,14 @@ Your phone must be able to reach `EXPO_PUBLIC_API_BASE_URL`. A LAN IP works only
 
 ### Checks
 
-```bash
-npm run lint
-npm run type-check
+```sh
+npm ci --prefix tools/verify-ios --ignore-scripts --omit=dev
+npm run check       # formatting, typed lint, types, tests, unused code
+npm run format      # apply formatting locally
 ```
+
+PRs automatically run the quality gate and applicable native build/smoke checks.
+See [CI checks, local commands, coverage, and activation](docs/ci.md).
 
 ## PR verification
 
@@ -118,11 +122,11 @@ Only PR changes are covered. See [setup, limits, and troubleshooting](tools/veri
 
 EAS profiles are defined in `eas.json`:
 
-| Profile | Distribution | Channel |
-| ------- | ------------ | ------- |
-| `development` | internal (dev client) | `development` |
-| `preview` | internal | `preview` |
-| `production` | store (auto-incremented build number) | `production` |
+| Profile       | Distribution                          | Channel       |
+| ------------- | ------------------------------------- | ------------- |
+| `development` | internal (dev client)                 | `development` |
+| `preview`     | internal                              | `preview`     |
+| `production`  | store (auto-incremented build number) | `production`  |
 
 ```bash
 npm run build:preview        # Internal build you can install on test devices

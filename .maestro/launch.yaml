@@ -1,0 +1,12 @@
+appId: com.ryan.aquino.settledown
+name: Camera screen launches in a release build
+---
+- launchApp:
+    clearState: true
+    permissions:
+      all: allow
+- assertVisible: 'Point at a receipt'
+- assertVisible:
+    id: pick-receipt
+- assertVisible: 'Capture receipt'
+- takeScreenshot: launch

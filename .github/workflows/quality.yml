@@ -1,0 +1,146 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: '1'
+  EXPO_NO_DOTENV: '1'
+  EXPO_PUBLIC_API_BASE_URL: https://ci.invalid
+  EXPO_PUBLIC_AUTH_TOKEN: ''
+  EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON: 'false'
+
+jobs:
+  static:
+    name: Static checks and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tools/verify-ios/package-lock.json
+      - run: npm ci
+      - run: npm ci --prefix tools/verify-ios --ignore-scripts --omit=dev
+      - run: npm run check
+      - name: Validate workflows
+        run: |
+          bash tools/ci/install-tool.sh actionlint "$RUNNER_TEMP/quality-bin"
+          "$RUNNER_TEMP/quality-bin/actionlint" \
+            -ignore 'unknown permission scope "copilot-requests"' \
+            -ignore 'unexpected key "cache-mode" for "job" section'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            coverage/
+            test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+  expo:
+    name: Expo health
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check:dependencies
+      - run: npm run check:expo
+
+  bundle:
+    name: Bundle (${{ matrix.platform }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ios, android]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run bundle:${{ matrix.platform }}
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: |
+          bash tools/ci/install-tool.sh gitleaks "$RUNNER_TEMP/quality-bin"
+          "$RUNNER_TEMP/quality-bin/gitleaks" git --redact --no-banner
+
+  dependencies:
+    name: Dependency review
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          base-ref: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          head-ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+
+  gate:
+    name: Quality gate
+    if: always()
+    needs: [static, expo, bundle, secrets, dependencies]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every check to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node <<'NODE'
+          const results = JSON.parse(process.env.RESULTS);
+          for (const [name, job] of Object.entries(results)) {
+            const optional = name === 'dependencies'
+              && !['pull_request', 'merge_group'].includes(process.env.GITHUB_EVENT_NAME)
+              && job.result === 'skipped';
+            if (job.result !== 'success' && !optional) {
+              console.error(name + ': ' + job.result);
+              process.exitCode = 1;
+            }
+          }
+          NODE
