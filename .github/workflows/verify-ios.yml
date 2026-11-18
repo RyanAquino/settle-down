@@ -103,7 +103,7 @@ jobs:
         run: node ci/tools/verify-ios/build.mjs pr-source "$RUNNER_TEMP/verify-build" --validate-only
       - name: Cache native downloads
         if: steps.cached-app.outcome != 'success'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/Library/Caches/CocoaPods
@@ -113,7 +113,7 @@ jobs:
           restore-keys: ios-downloads-macos26-xcode26.6-arm64-v1-
       - name: Cache native compiler results
         if: steps.cached-app.outcome != 'success'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ github.workspace }}/.ccache
           key: ios-ccache-macos26-xcode26.6-arm64-v1-${{ hashFiles('pr-source/package-lock.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
