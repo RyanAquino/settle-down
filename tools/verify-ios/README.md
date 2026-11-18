@@ -208,9 +208,12 @@ versions in [runner-images #15247](https://github.com/actions/runner-images/issu
 
 CI requires the pinned runtime to live in CoreSimulator's imported secure storage.
 If it does not, the runner exports its arm64 bundle from Apple and installs it with
-`xcodebuild -importPlatform`. Before booting any device, it removes only the pinned
-target's superseded MobileAsset registrations, then verifies the imported image is
-Ready and the selected runtime profile uses that exact image. This avoids Apple's
+`xcodebuild -importPlatform`. Between export and import, it removes only the pinned
+target's superseded MobileAsset registrations and waits for asynchronous deletion.
+For simctl's specific exit-30 asset-reclamation warning, it follows the recommended
+rescan once and rechecks the registration state. The warning remains in evidence;
+other errors block. Before booting a device, the runner verifies the imported
+image is Ready and the selected runtime profile uses that exact image. This avoids Apple's
 runtime-remounting bug ([FB25398296](https://developer.apple.com/documentation/xcode-release-notes/xcode-27_3-release-notes#Simulator),
 [upstream workaround](https://github.com/actions/runner-images/issues/14946#issuecomment-6575805667)).
 Unrelated runtimes are retained. Export bundles are temporary and excluded from evidence.
