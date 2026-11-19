@@ -11,6 +11,7 @@ export const PRESETS = [
   'groups-error',
   'no-groups',
   'users-error',
+  'out-of-order-members',
   'sync-error',
 ];
 // Explicit harness exclusions, not a general escape hatch for missing coverage.
