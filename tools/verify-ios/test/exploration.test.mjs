@@ -26,7 +26,7 @@ test('tools share the runner deadline and reserve time/calls for final submissio
   let now = 0;
   const budget = new ExplorationBudget({ deadline: EXPLORATION_MS, now: () => now });
   budget.enter('get_context');
-  assert.equal(budget.snapshot().secondsRemaining, 900);
+  assert.equal(budget.snapshot().secondsRemaining, 1500);
   now = EXPLORATION_MS - FINALIZE_MS - 89_000;
   assert.throws(() => budget.enter('reset_scenario'), /reserve time/);
   assert.equal(budget.snapshot().phase, 'finalize');
@@ -111,7 +111,7 @@ test('the untouched initial install can be reused once, but not after a flow', (
 
 test('timeout diagnostics distinguish simulator tool failures from unsupported auth speculation', () => {
   const message = agentFailureMessage({ timedOut: true }, [reset, { ...passed, ok: false }]);
-  assert.match(message, /15-minute exploration deadline/);
+  assert.match(message, /25-minute exploration deadline/);
   assert.match(message, /Failed tool calls: 1 \(execute_flow\)/);
   assert.doesNotMatch(message, /authentication|quota/);
 });

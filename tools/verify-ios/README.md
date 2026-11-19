@@ -74,7 +74,7 @@ retained for seven days and the intermediate app archive for one day.
   commands, edit source, follow URLs, or load the PR's agent configuration.
 - The agent saves up to three scenarios tied to the PR. CI reinstalls the app and
   resets the chosen backend preset before each independent replay. Exploration is
-  bounded to 15 minutes / 100 tool calls; replay has a 10-minute shared budget.
+  bounded to 25 minutes / 100 tool calls; replay has a 10-minute shared budget.
 - A separate completion workflow reads data artifacts, derives the verdict, and
   updates the check and posts a final verdict comment even when building/testing
   was cancelled. The progress comment links to that final verdict.
@@ -229,23 +229,23 @@ headless: it does not launch the Simulator GUI or run in-device language/locale
 assertions still require the expected text. This avoids optional service calls
 that stalled after boot in hosted evidence. It installs and launches the app
 before warming Maestro's cold XCTest driver, so hierarchy reads target the app
-instead of SpringBoard. Receipt photo import follows warm-up. Driver state and
+instead of SpringBoard. Before app installation it launches Photos and imports the fixture into the fresh library. Driver state and
 internal debug logs are isolated under `setup-<attempt>-state/` in the evidence.
 Fixture control initializes before device creation, with a 30-second startup
 limit, so its first request does not compete with cold simulator services.
 Fresh devices install directly without a redundant terminate/uninstall. First
 app launch allows three minutes within the existing per-attempt deadline.
-Receipt import also allows three minutes for cold Photos services, within that
+Receipt import allows five minutes for cold Photos services, within that
 same deadline, rather than discarding a ready device after one minute.
 CI setup failures also save bounded host process-name, memory, swap, and disk
 snapshots under `setup-<attempt>-host-*.log`; local runs do not collect them. A provisioning timeout discards only that isolated device
-and allows one fresh-device retry, with a twelve-minute deadline per attempt.
+and allows one fresh-device retry, with a fifteen-minute deadline per attempt.
 The boot stage allows six minutes for hosted iOS data migration. Driver warm-up
 has a separate five-minute command limit and a four-minute Maestro startup
 allowance, with verbose logs. The attempt budget leaves room for both the
 observed multi-minute cold migration and driver startup.
 Permanent setup failures and app assertions are never retried. The setup budget
-is separate from the 15-minute Copilot deadline. The first scenario reset reuses
+is separate from the 25-minute Copilot deadline. The first scenario reset reuses
 the runner's fresh install only while no flow has touched the app; later resets
 still reinstall it.
 Every tool reports remaining time/calls. The adapter reserves two minutes for

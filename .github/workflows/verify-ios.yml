@@ -163,7 +163,7 @@ jobs:
     name: Agentic iOS verification
     needs: [request, build]
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: read
       copilot-requests: write
@@ -213,6 +213,8 @@ jobs:
         if: always()
         with:
           name: ios-evidence-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/ios-evidence/
+          path: |
+            ${{ runner.temp }}/ios-evidence/
+            !${{ runner.temp }}/ios-evidence/session.mp4.sb-*
           retention-days: 7
           if-no-files-found: warn

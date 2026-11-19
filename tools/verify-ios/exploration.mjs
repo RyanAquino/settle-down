@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { validateFlow } from './policy.mjs';
 
-export const EXPLORATION_MS = 15 * 60_000;
+export const EXPLORATION_MS = 25 * 60_000;
 export const FINALIZE_MS = 2 * 60_000;
 const uiTools = new Set(['reset_scenario', 'execute_flow', 'inspect_screen', 'screenshot']);
 
@@ -149,7 +149,7 @@ export function agentFailureMessage(agent, journal) {
   const failed = journal.filter((call) => !call.ok);
   const last = journal.at(-1);
   const reason = agent.timedOut
-    ? 'reached its 15-minute exploration deadline before completing verification'
+    ? 'reached its 25-minute exploration deadline before completing verification'
     : `exited ${agent.code}`;
   return `Copilot ${reason}. Last completed tool: ${last?.tool || 'none'}. Failed tool calls: ${failed.length}${failed.length ? ` (${[...new Set(failed.map((call) => call.tool))].join(', ')})` : ''}. See agent.jsonl and tool-calls.jsonl for details.`;
 }

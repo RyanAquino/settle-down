@@ -31,17 +31,25 @@ async function harness(t, fail = () => {}) {
   return { input, calls, evidence };
 }
 
-test('a fresh device warms the driver on the app before photo import without redundant uninstall', async (t) => {
+test('a fresh device imports into Photos before warming the driver on the app without redundant uninstall', async (t) => {
   const h = await harness(t);
   assert.equal(await provisionSimulator(h.input), 'device-1');
-  assert.ok(
-    h.calls.findIndex((c) => c.args[1] === 'launch') <
-      h.calls.findIndex((c) => c.command === 'maestro'),
-  );
-  assert.ok(
-    h.calls.findIndex((c) => c.command === 'maestro') <
-      h.calls.findIndex((c) => c.args[1] === 'addmedia'),
-  );
+  const stages = h.calls
+    .slice(1)
+    .map(({ command, args }) =>
+      command === 'maestro' ? 'hierarchy' : args[1] === 'launch' ? args[3] : args[1],
+    );
+  assert.deepEqual(stages, [
+    'create',
+    'boot',
+    'bootstatus',
+    'com.apple.mobileslideshow',
+    'addmedia',
+    'install',
+    'com.ryan.aquino.settledown',
+    'hierarchy',
+    'io',
+  ]);
   assert.equal(
     h.calls.find((c) => c.command === 'maestro').options.env.XDG_STATE_HOME,
     `${h.evidence}/setup-1-state`,
@@ -105,8 +113,8 @@ test('cancellation cleans up the isolated device without starting another attemp
 
 test('the provisioning deadline bounds the full attempt rather than restarting per command', async (t) => {
   let elapsed = 0;
-  const h = await harness(t, (command) => {
-    if (command === 'maestro') elapsed += 710000;
+  const h = await harness(t, (_command, args) => {
+    if (args.includes('com.apple.mobileslideshow')) elapsed = 890000;
   });
   await provisionSimulator({ ...h.input, now: () => elapsed });
   const photoImport = h.calls.find((c) => c.args[1] === 'addmedia');
@@ -136,9 +144,11 @@ test('fixture readiness precedes device creation and has a bounded cold-start al
     elapsed += 6000;
   };
   await provisionSimulator({ ...h.input, resetFixture, now: () => elapsed });
-  const launch = h.calls.find((c) => c.args[1] === 'launch');
+  const launch = h.calls.find(
+    (c) => c.args[1] === 'launch' && !c.args.includes('com.apple.mobileslideshow'),
+  );
   assert.equal(launch.options.timeout, 180000);
-  assert.equal(h.calls.find((c) => c.args[1] === 'addmedia').options.timeout, 180000);
+  assert.equal(h.calls.find((c) => c.args[1] === 'addmedia').options.timeout, 300000);
 });
 
 test('CI setup failures capture bounded process-name and resource diagnostics', async (t) => {

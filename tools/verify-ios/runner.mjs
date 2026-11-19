@@ -4,7 +4,7 @@ import { cameraRegressionsApply, runCameraRegressions } from './camera-regressio
 import { EXPLORATION_MS, requireScenarioEvidence, agentFailureMessage } from './exploration.mjs';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { appendFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, open, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -261,15 +261,21 @@ async function main() {
       { env: cleanEnv(), stdio: 'ignore' },
     );
     video.once('error', (error) => console.error(`Recording failed: ${error.message}`));
-    simulatorLog = spawn(
-      'xcrun',
-      ['simctl', 'spawn', udid, 'log', 'stream', '--level', 'error', '--style', 'compact'],
-      { env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-    const { createWriteStream } = await import('node:fs');
-    const logStream = createWriteStream(`${evidence}/simulator.log`);
-    simulatorLog.stdout.pipe(logStream);
-    simulatorLog.stderr.pipe(logStream, { end: false });
+    // Both pipes can close independently during simctl shutdown. Give the child
+    // the same file descriptor for both so late stderr reaches the log safely.
+    const logFile = await open(`${evidence}/simulator.log`, 'w');
+    try {
+      simulatorLog = spawn(
+        'xcrun',
+        ['simctl', 'spawn', udid, 'log', 'stream', '--level', 'error', '--style', 'compact'],
+        { env: cleanEnv(), stdio: ['ignore', logFile.fd, logFile.fd] },
+      );
+      simulatorLog.once('error', (error) =>
+        console.error(`Simulator logging failed: ${error.message}`),
+      );
+    } finally {
+      await logFile.close();
+    }
 
     const regressions = cameraRegressionsApply(changedFiles)
       ? await runCameraRegressions({

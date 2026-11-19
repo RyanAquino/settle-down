@@ -24,7 +24,7 @@ export async function provisionSimulator({
   for (let attempt = 1; attempt <= 2; attempt++) {
     // Hosted iOS 26 cold boots can spend over three minutes in data migration.
     // Preserve room for the full driver startup allowance after that migration.
-    const deadline = now() + 12 * 60_000;
+    const deadline = now() + 15 * 60_000;
     let udid;
     const record = { attempt, status: 'running' };
     attempts.push(record);
@@ -86,6 +86,17 @@ export async function provisionSimulator({
         timeout: 360000,
         log: `${evidence}/setup-${attempt}-boot.log`,
       });
+      // Initialize Photos on the fresh device before importing the only fixture.
+      // Import before XCTest startup so a stalled import does not waste a driver warm-up.
+      await execute('launch Photos', 'xcrun', [
+        'simctl',
+        'launch',
+        udid,
+        'com.apple.mobileslideshow',
+      ]);
+      await execute('seed receipt photo', 'xcrun', ['simctl', 'addmedia', udid, imagePath], {
+        timeout: 300000,
+      });
       // A new device has no previous installation to terminate or uninstall.
       await execute('install application', 'xcrun', ['simctl', 'install', udid, appPath], {
         timeout: 120000,
@@ -103,9 +114,6 @@ export async function provisionSimulator({
           XDG_STATE_HOME: `${evidence}/setup-${attempt}-state`,
         },
         log: `${evidence}/setup-${attempt}-driver.log`,
-      });
-      await execute('seed receipt photo', 'xcrun', ['simctl', 'addmedia', udid, imagePath], {
-        timeout: 180000,
       });
       await execute(
         'initial screenshot',
