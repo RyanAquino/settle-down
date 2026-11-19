@@ -74,7 +74,7 @@ retained for seven days and the intermediate app archive for one day.
   commands, edit source, follow URLs, or load the PR's agent configuration.
 - The agent saves up to three scenarios tied to the PR. CI reinstalls the app and
   resets the chosen backend preset before each independent replay. Exploration is
-  bounded to 25 minutes / 100 tool calls; replay has a 10-minute shared budget.
+  bounded to 25 minutes / 100 tool calls; each of up to three replays has ten minutes for reset, execution and JUnit output.
 - A separate completion workflow reads data artifacts, derives the verdict, and
   updates the check and posts a final verdict comment even when building/testing
   was cancelled. The progress comment links to that final verdict.
