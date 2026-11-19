@@ -385,8 +385,9 @@ async function main() {
     result.limitations = plan.limitations;
     result.deviceOnly = plan.deviceOnly;
     result.manualChecks = plan.manualChecks;
-    const replayDeadline = Date.now() + 10 * 60_000;
     for (const scenario of plan.scenarios) {
+      const replayBudget = 10 * 60_000;
+      const replayDeadline = Date.now() + replayBudget;
       const record = {
         id: scenario.id,
         name: scenario.name,
@@ -396,8 +397,7 @@ async function main() {
       };
       result.scenarios.push(record);
       try {
-        if (cancelled || Date.now() >= replayDeadline)
-          throw new Error('Replay budget exhausted or cancelled');
+        cancellation.signal.throwIfAborted();
         validateFlow(scenario.yaml, { replay: true });
         const directory = `${evidence}/replay/${scenario.id}`;
         await mkdir(directory, { recursive: true });
@@ -408,7 +408,7 @@ async function main() {
           fixture: scenario.fixture,
           phase: scenario.id,
           token: fixtureToken,
-          signal: cancellation.signal,
+          signal: AbortSignal.any([cancellation.signal, AbortSignal.timeout(replayBudget)]),
         });
         const execution = await run(
           'maestro',
@@ -442,13 +442,9 @@ async function main() {
           /* absent report is blocked */
         }
         record.junitVerified = !!junit && checkJUnit(junit);
-        // Tool/driver failures with no JUnit evidence are blocked, not app failures.
-        record.status =
-          execution.timedOut || !junit
-            ? 'BLOCKED'
-            : execution.code === 0 && record.junitVerified
-              ? 'PASS'
-              : 'FAIL';
+        if (execution.timedOut) throw new Error('Scenario exceeded its ten-minute replay budget');
+        if (!junit) throw new Error('Maestro finished without a JUnit report');
+        record.status = execution.code === 0 && record.junitVerified ? 'PASS' : 'FAIL';
       } catch (error) {
         record.error = error.message;
         result.limitations.push(`${scenario.name}: ${error.message}`);
