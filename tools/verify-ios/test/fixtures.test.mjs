@@ -79,3 +79,48 @@ test('fixture image is a deterministic PNG', () => {
   assert.equal(image.readUInt32BE(16), 480);
   assert.deepEqual(image, receiptPng());
 });
+
+test('out-of-order members holds Taiwan until Hong Kong replies and clears pending requests on reset', async (t) => {
+  const token = 'test-control-token';
+  const server = await startFixtures({ port: 0, token });
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const reset = (preset) =>
+    fetch(`${base}/__reset`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ preset, phase: 'group-test' }),
+    });
+  const users = (group) => fetch(`${base}/api/v1/settle-up/users/?group_id=ci-${group}`);
+  const startTaiwan = async () => {
+    const pending = users('twd');
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const requests = await (await fetch(`${base}/__requests`, { headers })).json();
+      if (requests.some((r) => r.query === '?group_id=ci-twd')) return { pending };
+    }
+    throw new Error('Taiwan request did not arrive');
+  };
+  assert.equal((await reset('out-of-order-members')).status, 200);
+  assert.equal((await (await users('jpy')).json()).count, 3);
+  assert.equal((await users('hkd')).status, 409);
+  const { pending } = await startTaiwan();
+  assert.deepEqual(
+    (await (await users('hkd')).json()).items.map((m) => m.id),
+    ['ci-alex'],
+  );
+  assert.deepEqual(
+    (await (await pending).json()).items.map((m) => m.id),
+    ['ci-sam'],
+  );
+  assert.equal((await users('hkd')).status, 409);
+  await reset('out-of-order-members');
+  const next = await startTaiwan();
+  await reset('success');
+  assert.equal((await next.pending).status, 409);
+  assert.equal((await (await users('twd')).json()).count, 2);
+});

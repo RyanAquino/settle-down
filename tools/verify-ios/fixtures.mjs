@@ -41,12 +41,22 @@ export const members = [
   { id: 'ci-sam', name: 'Sam Test' },
 ];
 
+const raceMembers = {
+  'ci-jpy': [...members, { id: 'ci-lee', name: 'Lee Test' }],
+  'ci-twd': [members[1]],
+  'ci-hkd': [members[0]],
+};
+
 export async function startFixtures({ port = 8765, token, logPath, imagePath }) {
   if (!token) throw new Error('Fixture control token is required');
   let preset = 'success';
   let phase = 'exploration';
   let validUploads = 0;
   const records = [];
+  const pendingTaiwan = new Set();
+  const releaseTaiwan = (status) => {
+    for (const respond of pendingTaiwan) respond(status);
+  };
   const server = http.createServer(async (req, res) => {
     const send = (status, data) => {
       res.writeHead(status, { 'content-type': 'application/json' });
@@ -69,6 +79,7 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
           const input = JSON.parse(body);
           if (!PRESETS.includes(input.preset) || !/^[a-zA-Z0-9_-]{1,80}$/.test(input.phase))
             return send(400, { error: 'Invalid preset/phase' });
+          releaseTaiwan(409);
           preset = input.preset;
           phase = input.phase;
           validUploads = 0;
@@ -114,17 +125,47 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
         return send(200, { items, count: items.length });
       }
       if (url.pathname === '/api/v1/settle-up/users/' && req.method === 'GET') {
-        if (!groups.some((g) => g.id === url.searchParams.get('group_id')))
-          return send(400, { error: 'Unknown group' });
+        const groupId = url.searchParams.get('group_id');
+        if (!groups.some((g) => g.id === groupId)) return send(400, { error: 'Unknown group' });
         if (preset === 'users-error') return send(503, { error: 'Synthetic members failure' });
-        return send(200, { items: members, count: members.length });
+        const items = preset === 'out-of-order-members' ? raceMembers[groupId] : members;
+        if (preset === 'out-of-order-members') {
+          // Hold Taiwan until Hong Kong's newer response has been flushed.
+          // Each group has a different payer so a stale overwrite is visible.
+          if (groupId === 'ci-twd') {
+            const respond = (status) => {
+              cleanup();
+              send(
+                status,
+                status === 200
+                  ? { items, count: items.length }
+                  : { error: 'No overlapping Hong Kong request' },
+              );
+            };
+            const timer = setTimeout(() => respond(408), 90_000);
+            const cleanup = () => {
+              clearTimeout(timer);
+              pendingTaiwan.delete(respond);
+            };
+            res.once('close', cleanup);
+            pendingTaiwan.add(respond);
+            return;
+          }
+          if (groupId === 'ci-hkd') {
+            if (!pendingTaiwan.size) return send(409, { error: 'Select Taiwan before Hong Kong' });
+            res.once('finish', () => releaseTaiwan(200));
+          }
+        }
+        return send(200, { items, count: items.length });
       }
       if (url.pathname === '/api/v1/settle-up/transactions/' && req.method === 'POST') {
         const p = record.body;
         if (
           !p ||
           !groups.some((g) => g.id === p.group_id) ||
-          !members.some((m) => m.id === p.paying_member_id) ||
+          !(preset === 'out-of-order-members' ? raceMembers[p.group_id] : members).some(
+            (m) => m.id === p.paying_member_id,
+          ) ||
           !Number.isFinite(p.total_amount) ||
           !Array.isArray(p.user_receipt_items) ||
           !Array.isArray(p.split_receipt_items)

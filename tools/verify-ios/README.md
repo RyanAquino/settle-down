@@ -106,7 +106,11 @@ Real OCR and real Settle Up integration are never exercised.
 The fixture service implements the app's existing receipt, groups, members, and
 transaction endpoints. It supplies a fixed-date receipt with line totals (including
 one quantity-two item), JPY/TWD/HKD groups, and synthetic Alex/Sam members. Presets:
-`success`, `upload-error`, `groups-error`, `no-groups`, `users-error`, `sync-error`.
+`success`, `upload-error`, `groups-error`, `no-groups`, `users-error`, `sync-error`, `out-of-order-members`.
+
+The out-of-order member preset gives Japan three members for uneven splits
+and holds Taiwan’s member response until Hong Kong
+returns Alex. Taiwan then returns Sam, making a stale overwrite visible in the payer list.
 There is no upstream proxy. Transaction submissions are recorded locally only.
 
 The agent's `submit_plan` tool accepts a disposition (`ready`, `skipped`, `blocked`),
