@@ -5,6 +5,7 @@ on:
     paths:
       - 'app/**'
       - 'components/**'
+      - 'plugins/**'
       - 'utils/**'
       - 'package*.json'
       - 'app.config.*'
@@ -101,7 +102,18 @@ jobs:
       - run: npx --no-install expo prebuild --platform android --no-install
       - name: Build and lint Android release
         working-directory: android
-        run: ./gradlew :app:assembleRelease :app:lintRelease --no-daemon
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/android-gradle.log"
+          if ./gradlew :app:assembleRelease :app:lintRelease --no-daemon 2>&1 | tee "$log"; then
+            exit 0
+          fi
+          if ! grep -q 'Could not resolve all artifacts' "$log"; then
+            exit 1
+          fi
+          echo "::warning::Gradle failed to resolve dependencies. Retrying once."
+          sleep 30
+          ./gradlew :app:assembleRelease :app:lintRelease --no-daemon --refresh-dependencies
       - name: Install Maestro
         run: |
           bash tools/ci/install-maestro.sh "$RUNNER_TEMP/maestro"

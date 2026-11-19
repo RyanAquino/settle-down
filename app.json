@@ -66,6 +66,7 @@
         }
       ],
       "@react-native-community/datetimepicker",
+      "./plugins/with-android-resources.js",
       [
         "expo-splash-screen",
         {
