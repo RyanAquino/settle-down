@@ -100,9 +100,9 @@ Dependency review blocks newly introduced high/critical advisories in PRs and
 merge queues. It is not a clean bill of health for pre-existing dependencies.
 CodeQL runs separately on PRs, main, and weekly, with results in GitHub code
 scanning. Review code-scanning alerts; successful analysis execution does not mean
-there are no findings. Dependabot checks both npm lockfiles and Action pins weekly.
-Expo/runtime dependencies are grouped, and upgrades must pass Expo compatibility
-checks before merging.
+there are no findings. Dependabot alerts track vulnerable dependencies. Review and
+update npm dependencies and GitHub Actions manually. Expo/runtime upgrades must
+pass Expo compatibility checks before merging.
 
 The initial cleanup removed unused native packages and the vulnerable unused
 ngrok beta. Moderate/low transitive audit findings remain; do not use a forced
@@ -120,8 +120,8 @@ Push the changes and inspect the first hosted runs. After `Quality gate` has
 reported successfully, add it to the main branch's required checks/ruleset.
 The dependency graph and Dependabot alerts must be enabled for dependency review.
 Repository settings are not modified by these files. Enable/review GitHub code
-scanning alerts as appropriate. Weekly workflows and Dependabot activate after
-merging their configuration onto the default branch.
+scanning alerts as appropriate. Weekly workflows activate after merging their
+configuration onto the default branch.
 
 This change aligns SDK 58 native patch dependencies and removes unused native
 packages. Create fresh native builds for testing/distribution. Before publishing
