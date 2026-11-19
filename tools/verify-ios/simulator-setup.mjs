@@ -88,12 +88,20 @@ export async function provisionSimulator({
       });
       // Initialize Photos on the fresh device before importing the only fixture.
       // Import before XCTest startup so a stalled import does not waste a driver warm-up.
-      await execute('launch Photos', 'xcrun', [
-        'simctl',
-        'launch',
-        udid,
-        'com.apple.mobileslideshow',
-      ]);
+      // addmedia can start the library service itself. Keep the import as the
+      // readiness check when the optional foreground launch stalls on a cold host.
+      try {
+        await execute('launch Photos', 'xcrun', [
+          'simctl',
+          'launch',
+          udid,
+          'com.apple.mobileslideshow',
+        ]);
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        record.photosWarmupError = error.message;
+        console.log('Photos warm-up failed; continuing with the required receipt import.');
+      }
       await execute('seed receipt photo', 'xcrun', ['simctl', 'addmedia', udid, imagePath], {
         timeout: 300000,
       });
