@@ -6,6 +6,8 @@ export const APP_ID = 'com.ryan.aquino.settledown';
 export const PRESETS = [
   'success',
   'upload-error',
+  'scan-mismatch-once',
+  'scan-mismatch',
   'groups-error',
   'no-groups',
   'users-error',
