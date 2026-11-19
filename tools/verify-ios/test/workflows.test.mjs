@@ -13,6 +13,29 @@ const report = parse(
   ),
 );
 
+test('the applicability workflow reads PR metadata with a trusted base checkout', async () => {
+  const scope = parse(
+    await readFile(
+      new URL('../../../.github/workflows/verify-ios-applicability.yml', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.deepEqual(scope.on, {
+    pull_request_target: {
+      branches: ['main'],
+      types: ['opened', 'synchronize', 'reopened', 'edited'],
+    },
+  });
+  assert.deepEqual(scope.permissions, {});
+  const job = scope.jobs.applicability;
+  assert.deepEqual(job.permissions, { contents: 'read', 'pull-requests': 'read', checks: 'write' });
+  assert.equal(job['runs-on'], 'ubuntu-latest');
+  assert.deepEqual(
+    job.steps.filter((step) => step.uses?.startsWith('actions/checkout@')).map((step) => step.with),
+    [{ ref: '${{ github.sha }}', 'persist-credentials': false }],
+  );
+});
+
 test('comment admission and completion reporting use separate privilege boundaries', () => {
   assert.deepEqual(main.on, { issue_comment: { types: ['created'] } });
   assert.deepEqual(report.on.workflow_run.types, ['completed']);

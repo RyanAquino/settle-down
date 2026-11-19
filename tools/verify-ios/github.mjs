@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { verdict, checkConclusion, resultSchema } from './policy.mjs';
+import { CHECK_NAME, needsVerification } from './applicability.mjs';
 
-export const CHECK_NAME = 'iOS PR Verification';
+export { CHECK_NAME };
 export const isCommand = (event) =>
   event.action === 'created' &&
   !!event.issue?.pull_request &&
@@ -75,6 +76,11 @@ export async function admit({ github, context, core, outputDir }) {
       issue_number: pr.number,
       body: '`/verify` supports open PRs from branches in this repository.',
     });
+    return;
+  }
+  const required = await needsVerification(github, repo, pr);
+  if (required !== true) {
+    if (required === false) core.notice('This PR does not require iOS verification.');
     return;
   }
   const checks = await github.paginate(github.rest.checks.listForRef, {
