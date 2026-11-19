@@ -233,7 +233,7 @@ headless: it does not launch the Simulator GUI or run in-device language/locale
 assertions still require the expected text. This avoids optional service calls
 that stalled after boot in hosted evidence. It installs and launches the app
 before warming Maestro's cold XCTest driver, so hierarchy reads target the app
-instead of SpringBoard. Before app installation it launches Photos and imports the fixture into the fresh library. Driver state and
+instead of SpringBoard. Before app installation it tries to warm Photos and imports the fixture into the fresh library. The import remains required if the warm-up fails. Driver state and
 internal debug logs are isolated under `setup-<attempt>-state/` in the evidence.
 Fixture control initializes before device creation, with a 30-second startup
 limit, so its first request does not compete with cold simulator services.

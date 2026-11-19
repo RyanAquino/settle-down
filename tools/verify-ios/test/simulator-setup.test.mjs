@@ -167,3 +167,14 @@ test('CI setup failures capture bounded process-name and resource diagnostics', 
     'pid,ppid,stat,pcpu,pmem,rss,comm',
   ]);
 });
+
+test('a stalled Photos warm-up still tries the required import on the same device', async (t) => {
+  const h = await harness(t, (_command, args) => {
+    if (args.includes('com.apple.mobileslideshow')) throw new Error('simctl launch timed out');
+  });
+  assert.equal(await provisionSimulator(h.input), 'device-1');
+  assert.equal(h.calls.filter((c) => c.args[1] === 'addmedia').length, 1);
+  const attempts = JSON.parse(await readFile(`${h.evidence}/setup-attempts.json`, 'utf8'));
+  assert.equal(attempts.length, 1);
+  assert.match(attempts[0].photosWarmupError, /launch timed out/);
+});
