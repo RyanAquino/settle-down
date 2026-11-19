@@ -830,6 +830,7 @@ export default function ReceiptDetailsScreen() {
       >
         <TouchableOpacity
           style={styles.modalOverlay}
+          accessible={false}
           activeOpacity={1}
           onPress={() => setIsDropdownOpen(false)}
         >
