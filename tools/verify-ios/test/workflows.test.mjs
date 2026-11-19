@@ -110,5 +110,5 @@ test('build and verification use the hosted image with the pinned iOS runtime', 
     main.jobs.verify.env.DEVELOPER_DIR,
     '/Applications/Xcode_26.6.app/Contents/Developer',
   );
-  assert.equal(main.jobs.verify['timeout-minutes'], 60);
+  assert.equal(main.jobs.verify['timeout-minutes'], 90);
 });
