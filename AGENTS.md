@@ -2,6 +2,10 @@
 
 This repository contains the Expo Router mobile client for iOS and Android. A separate backend reads receipt photos and handles Settle Up API requests. The client lets users correct the receipt, assign items to group members, and submit the split.
 
+## Starting a feature or fix
+
+Start every feature and bug fix by creating a dedicated Git worktree for it with `git worktree add`. Make changes, run checks, and commit from that worktree.
+
 ## Local development
 
 Use the Node version in `.nvmrc`. Install both npm packages from the repository root to run the full set of local checks.
