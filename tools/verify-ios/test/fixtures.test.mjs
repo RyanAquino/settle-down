@@ -51,6 +51,20 @@ test('synthetic API covers app contracts, errors, request evidence and reset', a
   assert.equal((await submit()).status, 503);
   await reset('upload-error');
   assert.equal((await upload()).status, 503);
+  assert.equal((await reset('scan-mismatch-once')).status, 200);
+  const mismatch = { ...receipt, total_amount: 410 };
+  const readScan = async () => {
+    const response = await upload();
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  assert.deepEqual(await readScan(), mismatch);
+  assert.deepEqual(await readScan(), receipt);
+  assert.equal((await reset('scan-mismatch-once')).status, 200);
+  assert.deepEqual(await readScan(), mismatch);
+  assert.equal((await reset('scan-mismatch')).status, 200);
+  assert.deepEqual(await readScan(), mismatch);
+  assert.deepEqual(await readScan(), mismatch);
   await reset('groups-error');
   assert.equal((await fetch(`${base}/api/v1/settle-up/groups/`)).status, 503);
   await reset('users-error');

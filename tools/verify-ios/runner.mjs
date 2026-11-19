@@ -190,8 +190,11 @@ async function main() {
             receipt,
             groups,
             members,
-            notes:
+            notes: [
               'The app calls 127.0.0.1:8765. Reset selects one preset. No real OCR or transactions. One receipt photo is preseeded.',
+              'scan-mismatch-once returns HTTP 200 with the wrong total (410) on the first valid upload after a reset. Subsequent uploads return the reconciled receipt (330).',
+              'scan-mismatch returns the same HTTP 200 receipt with the wrong total (410) on every valid upload.',
+            ].join(' '),
           },
         },
         null,

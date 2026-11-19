@@ -29,6 +29,8 @@ export const receipt = {
   receipt_date: '2026-01-15T12:00:00.000Z',
   receipt_image_url: `${FIXTURE_ORIGIN}/receipt.png`,
 };
+const mismatchedReceipt = { ...receipt, total_amount: 410 };
+
 export const groups = [
   { id: 'ci-jpy', name: 'CI Japan', currency: 'JPY' },
   { id: 'ci-twd', name: 'CI Taiwan', currency: 'TWD' },
@@ -43,6 +45,7 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
   if (!token) throw new Error('Fixture control token is required');
   let preset = 'success';
   let phase = 'exploration';
+  let validUploads = 0;
   const records = [];
   const server = http.createServer(async (req, res) => {
     const send = (status, data) => {
@@ -68,6 +71,7 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
             return send(400, { error: 'Invalid preset/phase' });
           preset = input.preset;
           phase = input.phase;
+          validUploads = 0;
           records.length = 0;
           return send(200, { preset, phase });
         }
@@ -98,10 +102,11 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
         ) {
           return send(400, { error: 'Expected multipart file' });
         }
-        return send(
-          preset === 'upload-error' ? 503 : 200,
-          preset === 'upload-error' ? { error: 'Synthetic upload failure' } : receipt,
-        );
+        if (preset === 'upload-error') return send(503, { error: 'Synthetic upload failure' });
+        validUploads++;
+        const mismatch =
+          preset === 'scan-mismatch' || (preset === 'scan-mismatch-once' && validUploads === 1);
+        return send(200, mismatch ? mismatchedReceipt : receipt);
       }
       if (url.pathname === '/api/v1/settle-up/groups/' && req.method === 'GET') {
         if (preset === 'groups-error') return send(503, { error: 'Synthetic groups failure' });
