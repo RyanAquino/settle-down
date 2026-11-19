@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
+import { skipIfExempt } from '../applicability.mjs';
 import path from 'node:path';
 import {
   isCommand,
@@ -47,19 +48,21 @@ test('only exact newly created human PR commands are admitted', () => {
 function harness() {
   const writes = [],
     outputs = {},
-    comments = [];
+    comments = [],
+    files = [{ filename: 'app/index.tsx' }];
   const repo = { owner: 'owner', repo: 'app' };
   const pr = {
     number: 12,
     state: 'open',
     head: { sha, repo: { full_name: 'owner/app' } },
-    base: { sha: base },
+    base: { sha: base, ref: 'main' },
+    changed_files: files.length,
     title: 'PR',
     body: 'Change',
   };
   const rest = {
     repos: { getCollaboratorPermissionLevel: async () => ({ data: { permission: 'write' } }) },
-    pulls: { get: async () => ({ data: pr }) },
+    pulls: { get: async () => ({ data: pr }), listFiles: 'files' },
     checks: {
       listForRef: 'checks',
       create: async (x) => {
@@ -97,7 +100,10 @@ function harness() {
   };
   const github = {
     rest,
-    paginate: async (method) => (['comments', 'all-comments'].includes(method) ? comments : []),
+    paginate: async (method) => {
+      if (method === 'files') return files;
+      return ['comments', 'all-comments'].includes(method) ? comments : [];
+    },
   };
   const context = {
     repo,
@@ -119,8 +125,86 @@ function harness() {
       async write() {},
     },
   };
-  return { github, context, core, writes, outputs, pr, comments };
+  function setFiles(...changes) {
+    files.splice(
+      0,
+      files.length,
+      ...changes.map((file) => (typeof file === 'string' ? { filename: file } : file)),
+    );
+    pr.changed_files = files.length;
+  }
+  return { github, context, core, writes, outputs, pr, comments, setFiles };
 }
+test('docs, workflows, and verifier-only changes skip the required check on the PR head', async () => {
+  const h = harness();
+  h.context.payload = { pull_request: h.pr };
+  h.setFiles(
+    'README.md',
+    'docs/ci.md',
+    'components/README.md',
+    '.github/workflows/verify-ios.yml',
+    'tools/verify-ios/github.mjs',
+  );
+
+  await skipIfExempt(h);
+
+  assert.equal(h.writes.length, 1);
+  assert.equal(h.writes[0].name, 'iOS PR Verification');
+  assert.equal(h.writes[0].head_sha, sha);
+  assert.equal(h.writes[0].status, 'completed');
+  assert.equal(h.writes[0].conclusion, 'skipped');
+});
+
+test('any app, asset, native, or build change retains verification', async () => {
+  for (const file of [
+    'app/index.tsx',
+    'components/camera-session.tsx',
+    'utils/receipt.ts',
+    'assets/images/icon.png',
+    'ios/Podfile',
+    'package-lock.json',
+    'app.config.ts',
+    'metro.config.cjs',
+    { filename: 'docs/old-screen.md', previous_filename: 'app/old-screen.tsx' },
+  ]) {
+    const h = harness();
+    h.context.payload = { pull_request: h.pr };
+    h.setFiles('docs/ci.md', '.github/workflows/native.yml', file);
+    await skipIfExempt(h);
+    assert.deepEqual(h.writes, [], JSON.stringify(file));
+  }
+});
+
+test('an incomplete file list or a changed PR head cannot receive a skipped check', async () => {
+  for (const changedCount of [2, 3001]) {
+    const h = harness();
+    h.setFiles('README.md');
+    h.pr.changed_files = changedCount;
+    h.context.payload = { pull_request: h.pr };
+    await skipIfExempt(h);
+    assert.deepEqual(h.writes, []);
+  }
+
+  const h = harness();
+  h.context.payload = { pull_request: h.pr };
+  h.github.paginate = async () => {
+    h.github.rest.pulls.get = async () => ({
+      data: { ...h.pr, head: { sha: 'c'.repeat(40) } },
+    });
+    return [{ filename: 'README.md' }];
+  };
+  await skipIfExempt(h);
+  assert.deepEqual(h.writes, []);
+});
+
+test('a /verify comment on an exempt PR does not start a simulator build', async () => {
+  const h = harness();
+  h.setFiles('.github/workflows/verify-ios.yml');
+  await admit({ ...h, outputDir: '/not-used' });
+  assert.deepEqual(h.writes, []);
+  assert.equal(h.outputs.accepted, undefined);
+});
+
 test('admission captures PR head rather than the workflow SHA', async (t) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'verify-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -142,9 +226,17 @@ test('unauthorized and duplicate requests never start work or cancel runs', asyn
   assert.equal(unauthorized.writes.length, 0);
   assert.equal(unauthorized.outputs.accepted, undefined);
   const duplicate = harness();
-  duplicate.github.paginate = async () => [
-    { status: 'in_progress', external_id: 'verify-ios:90:1:4', app: { slug: 'github-actions' } },
-  ];
+  const paginate = duplicate.github.paginate;
+  duplicate.github.paginate = async (method) =>
+    method === 'checks'
+      ? [
+          {
+            status: 'in_progress',
+            external_id: 'verify-ios:90:1:4',
+            app: { slug: 'github-actions' },
+          },
+        ]
+      : paginate(method);
   await admit({ ...duplicate, outputDir: '/not-used' });
   assert.equal(duplicate.outputs.accepted, undefined);
   assert.match(duplicate.writes[0].body, /already running/);

@@ -1,5 +1,11 @@
 # Comment-triggered iOS verification
 
+For PRs targeting `main`, the `iOS PR Verification` check is automatically marked
+skipped when the diff contains no app code, app assets, native iOS files, or app
+build and dependency settings. Docs-only, GitHub-workflow-only, and test or
+verification-tooling changes skip the simulator. A mixed PR with app changes
+still uses `/verify`. The required check name in the `main` ruleset stays the same.
+
 Post a new PR conversation comment containing exactly `/verify` (surrounding
 whitespace is fine). Repository writers, maintainers, and admins can request runs
 on open PRs whose head branch belongs to this repository. Fork PRs, edited comments,
@@ -27,9 +33,10 @@ current evidence is never replaced with an older recording or test log.
 
 ## Activation
 
-1. Merge the workflow files and tooling onto `main`. Both `issue_comment` and
-   `workflow_run` require the workflows on the default branch. This local change
-   does not activate CI until it is on `main`.
+1. Merge the workflow files and tooling onto `main`. Comment requests and
+   completion reports use default-branch workflows. The applicability workflow
+   runs from the base branch when a PR is opened, updated, reopened, or retargeted
+   to `main`.
 2. Enable GitHub Actions and Copilot Free for the repository owner. Copilot CLI
    uses `GITHUB_TOKEN` with `copilot-requests: write`; no PAT, Expo token, Apple
    signing account, backend secret, or OpenAI API key is required.
