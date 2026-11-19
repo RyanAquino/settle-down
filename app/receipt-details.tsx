@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
+  Image,
   Modal,
   FlatList,
   Alert,
@@ -22,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import { theme, shadow, type, buildUserColorMap, initialFor } from '@/utils/theme';
 import { Entrance, PressableScale } from '@/components/motion';
 import ItemSplitEditor from '@/components/item-split-editor';
+import ReceiptSharePreview from '@/components/receipt-share-preview';
 
 import {
   currencySymbol,
@@ -38,6 +40,7 @@ import {
   type GroupUser,
 } from '@/utils/receipt';
 import { retryApiCall } from '@/utils/retry';
+import { previewReceipt, reconcileReceipt } from '@/utils/receipt-preview';
 
 export default function ReceiptDetailsScreen() {
   const params = useLocalSearchParams();
@@ -64,6 +67,8 @@ export default function ReceiptDetailsScreen() {
   const groupRequest = useRef(0);
   const [paidByUserId, setPaidByUserId] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showShares, setShowShares] = useState(false);
+  const [showPhoto, setShowPhoto] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [costInputs, setCostInputs] = useState<{ [itemOrder: number]: string }>({});
   const [taxPercentageInput, setTaxPercentageInput] = useState<string | null>(null);
@@ -77,7 +82,7 @@ export default function ReceiptDetailsScreen() {
         english_name: 'Cranberry juice',
         japanese_name: 'クランベリー',
         item_order: 1,
-        cost: 169,
+        cost: 172,
         quantity: 1,
         discount: 0,
       },
@@ -109,7 +114,7 @@ export default function ReceiptDetailsScreen() {
     en_shop_name: 'My Basket',
     jp_shop_name: 'ラドーム',
     tax_percentage: 8,
-    total_amount: 753,
+    total_amount: 756,
     receipt_date: new Date(),
     receipt_image_url: 'https://example.com/mock-receipt-image.jpg',
   };
@@ -311,6 +316,11 @@ export default function ReceiptDetailsScreen() {
       return Alert.alert('Assign every item', 'Tap a person on each item, or mark it shared.');
 
     if (editableItems.length === 0) return Alert.alert('Nothing to split');
+    if (!balance)
+      return Alert.alert(
+        'Check the receipt amounts',
+        'The items and tax must add up to the scanned total.',
+      );
 
     setIsSyncing(true);
     try {
@@ -357,6 +367,10 @@ export default function ReceiptDetailsScreen() {
   // -------- derived --------
   const { subtotal, taxAmount } = receiptTotals(editableItems, editableTaxPercentage);
   const total = getTotal();
+  const balance = reconcileReceipt(editableItems, editableTaxPercentage, total);
+  const taxIncluded = balance?.taxAmount === 0 && editableTaxPercentage > 0;
+  const receiptPhoto =
+    (typeof params.photoUri === 'string' ? params.photoUri : '') || shopInfo.receipt_image_url;
   // Null until a group is selected (still loading, or the fetch failed).
   const currency = groups.find((g) => g.id === selectedGroupId)?.currency ?? null;
   const priceSymbol = currencySymbol(currency);
@@ -364,7 +378,8 @@ export default function ReceiptDetailsScreen() {
   const splitAssignment = splitItem ? userSelections[splitItem.item_order] : undefined;
   const assignedCount = Object.keys(userSelections).length;
   const allAssigned = editableItems.length > 0 && assignedCount === editableItems.length;
-  const readyToSync = allAssigned && !!selectedGroupId && !!paidByUserId;
+  const canPreview = allAssigned && !!balance && !!selectedGroupId && groupUsers.length > 0;
+  const readyToSync = canPreview && !!paidByUserId;
 
   // -------- render --------
   return (
@@ -657,10 +672,12 @@ export default function ReceiptDetailsScreen() {
         <Entrance delay={320} style={styles.summaryCard}>
           <View style={styles.summaryLine}>
             <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryValue}>{formatMoney(subtotal, currency)}</Text>
+            <Text style={styles.summaryValue}>
+              {formatMoney(balance?.subtotal ?? subtotal, currency)}
+            </Text>
           </View>
           <View style={styles.summaryLine}>
-            <Text style={styles.summaryLabel}>Tax</Text>
+            <Text style={styles.summaryLabel}>{taxIncluded ? 'Tax included' : 'Tax'}</Text>
             <View style={styles.taxRight}>
               <View style={styles.taxInputWrap}>
                 <TextInput
@@ -679,7 +696,9 @@ export default function ReceiptDetailsScreen() {
                 />
                 <Text style={styles.taxInputSuffix}>%</Text>
               </View>
-              <Text style={styles.taxAmount}>{formatMoney(taxAmount, currency)}</Text>
+              <Text style={styles.taxAmount}>
+                {formatMoney(balance?.taxAmount ?? taxAmount, currency)}
+              </Text>
             </View>
           </View>
           <View style={[styles.summaryLine, styles.summaryTotalLine]}>
@@ -687,6 +706,26 @@ export default function ReceiptDetailsScreen() {
             <Text testID="receipt-total" style={styles.summaryTotal}>
               {formatMoney(total, currency)}
             </Text>
+          </View>
+          {editableItems.length > 0 && !balance && (
+            <Text style={styles.balanceWarning}>
+              The items and tax must match the scanned total.
+            </Text>
+          )}
+          <View style={styles.summaryActions}>
+            {receiptPhoto ? (
+              <PressableScale style={styles.summaryAction} onPress={() => setShowPhoto(true)}>
+                <Text style={styles.summaryActionText}>View receipt</Text>
+              </PressableScale>
+            ) : null}
+            <PressableScale
+              style={[styles.summaryAction, !canPreview && styles.previewDisabled]}
+              disabled={!canPreview}
+              onPress={() => setShowShares(true)}
+              testID="show-my-share"
+            >
+              <Text style={styles.summaryActionText}>Show me my share</Text>
+            </PressableScale>
           </View>
         </Entrance>
       </ScrollView>
@@ -700,11 +739,13 @@ export default function ReceiptDetailsScreen() {
         <Text style={styles.footerHint}>
           {readyToSync
             ? 'Ready to sync.'
-            : !selectedGroupId
-              ? 'Pick a group to continue.'
-              : !paidByUserId
-                ? 'Select who paid.'
-                : `${editableItems.length - assignedCount} item${editableItems.length - assignedCount === 1 ? '' : 's'} left to assign.`}
+            : !balance && editableItems.length > 0
+              ? 'Check the receipt amounts.'
+              : !selectedGroupId
+                ? 'Pick a group to continue.'
+                : !paidByUserId
+                  ? 'Select who paid.'
+                  : `${editableItems.length - assignedCount} item${editableItems.length - assignedCount === 1 ? '' : 's'} left to assign.`}
         </Text>
         <PressableScale
           scaleTo={0.98}
@@ -742,6 +783,42 @@ export default function ReceiptDetailsScreen() {
             setSplitItemOrder(null);
           }}
         />
+      )}
+
+      {showShares && canPreview && balance && (
+        <ReceiptSharePreview
+          shares={previewReceipt(editableItems, userSelections, groupUsers, currency, balance)}
+          total={total}
+          currency={currency}
+          title={shopInfo.en_shop_name || shopInfo.jp_shop_name || 'Receipt'}
+          taxIncluded={taxIncluded}
+          onClose={() => setShowShares(false)}
+        />
+      )}
+
+      {showPhoto && (
+        <Modal transparent animationType="fade" onRequestClose={() => setShowPhoto(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, styles.photoCard]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Receipt photo</Text>
+                <PressableScale
+                  style={styles.modalClose}
+                  onPress={() => setShowPhoto(false)}
+                  accessibilityLabel="Close receipt photo"
+                >
+                  <Text style={styles.modalCloseText}>✕</Text>
+                </PressableScale>
+              </View>
+              <Image
+                accessibilityLabel="Original receipt photo"
+                source={{ uri: receiptPhoto }}
+                style={styles.receiptPhoto}
+                resizeMode="contain"
+              />
+            </View>
+          </View>
+        </Modal>
       )}
 
       {/* Group picker modal */}
@@ -1164,6 +1241,19 @@ const styles = StyleSheet.create({
     minWidth: 56,
     textAlign: 'right',
   },
+  balanceWarning: { ...type.label, color: theme.warn, marginTop: 8 },
+  summaryActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  summaryAction: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderRadius: theme.radiusSm,
+    backgroundColor: theme.accentBg,
+  },
+  summaryActionText: { ...type.label, color: theme.accentInk },
+  previewDisabled: { opacity: 0.4 },
+  photoCard: { height: '78%', maxHeight: '82%' },
+  receiptPhoto: { flex: 1, width: '100%', backgroundColor: theme.surfaceAlt },
   summaryTotalLine: {
     borderTopWidth: 1,
     borderTopColor: theme.border,
