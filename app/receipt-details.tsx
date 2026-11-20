@@ -15,12 +15,13 @@ import {
   Easing,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import { theme, shadow, type, buildUserColorMap, initialFor } from '@/utils/theme';
 import { Entrance, PressableScale } from '@/components/motion';
+import ItemSplitEditor from '@/components/item-split-editor';
 
 import {
   currencySymbol,
@@ -30,6 +31,7 @@ import {
   parseReceipt,
   receiptTotals,
   splitReceipt,
+  type ItemAssignment,
   type ReceiptData,
   type ReceiptItem,
   type SettleUpGroup,
@@ -57,7 +59,9 @@ export default function ReceiptDetailsScreen() {
   const [groupUsers, setGroupUsers] = useState<GroupUser[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [groupsFetchAttempts, setGroupsFetchAttempts] = useState(0);
-  const [userSelections, setUserSelections] = useState<{ [itemOrder: number]: string }>({});
+  const [userSelections, setUserSelections] = useState<Record<number, ItemAssignment>>({});
+  const [splitItemOrder, setSplitItemOrder] = useState<number | null>(null);
+  const groupRequest = useRef(0);
   const [paidByUserId, setPaidByUserId] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -119,6 +123,11 @@ export default function ReceiptDetailsScreen() {
   // -------- data fetching --------
   const fetchGroupUsers = useCallback(async (groupId: string) => {
     if (!groupId) return;
+    const request = ++groupRequest.current;
+    setGroupUsers([]);
+    setUserSelections({});
+    setPaidByUserId('');
+    setSplitItemOrder(null);
     const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
     setIsLoadingUsers(true);
     try {
@@ -130,14 +139,12 @@ export default function ReceiptDetailsScreen() {
       );
       if (response.ok) {
         const data = usersSchema.parse(await response.json());
-        setGroupUsers(data.items || []);
-        setUserSelections({});
-        setPaidByUserId('');
+        if (request === groupRequest.current) setGroupUsers(data.items);
       } else throw new Error(`HTTP error! status: ${response.status}`);
     } catch {
-      setGroupUsers([]);
+      if (request === groupRequest.current) setGroupUsers([]);
     } finally {
-      setIsLoadingUsers(false);
+      if (request === groupRequest.current) setIsLoadingUsers(false);
     }
   }, []);
 
@@ -281,8 +288,8 @@ export default function ReceiptDetailsScreen() {
   const formatTime = (d: Date) =>
     d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
-  const handleUserSelection = (itemOrder: number, userId: string) => {
-    setUserSelections((p) => ({ ...p, [itemOrder]: userId }));
+  const assignItem = (itemOrder: number, assignment: ItemAssignment) => {
+    setUserSelections((p) => ({ ...p, [itemOrder]: assignment }));
   };
   const getSelectedGroupName = () =>
     groups.find((g) => g.id === selectedGroupId)?.name || 'Select group';
@@ -293,7 +300,7 @@ export default function ReceiptDetailsScreen() {
   const handleGroupSelection = (g: SettleUpGroup) => {
     setSelectedGroupId(g.id);
     setIsDropdownOpen(false);
-    void fetchGroupUsers(g.id);
+    if (g.id !== selectedGroupId) void fetchGroupUsers(g.id);
   };
 
   const syncTransaction = async () => {
@@ -303,12 +310,7 @@ export default function ReceiptDetailsScreen() {
     if (unassigned.length > 0)
       return Alert.alert('Assign every item', 'Tap a person on each item, or mark it shared.');
 
-    const assignedUserIds = Object.values(userSelections).filter((id) => id !== 'shared');
-    const uniqueUserIds = [...new Set(assignedUserIds)];
-    const hasUserAssignments = uniqueUserIds.length > 0;
-    const hasSharedItems = Object.values(userSelections).some((id) => id === 'shared');
-    if (!hasUserAssignments && !hasSharedItems)
-      return Alert.alert('Nothing to split', 'Assign items to people or mark them shared.');
+    if (editableItems.length === 0) return Alert.alert('Nothing to split');
 
     setIsSyncing(true);
     try {
@@ -317,7 +319,7 @@ export default function ReceiptDetailsScreen() {
         paying_member_id: paidByUserId,
         tax_percentage: editableTaxPercentage,
         total_amount: getTotal(),
-        ...splitReceipt(editableItems, userSelections),
+        ...splitReceipt(editableItems, userSelections, currency),
         group_id: selectedGroupId,
         receipt_date: shopInfo.receipt_date,
         receipt_image_url: shopInfo.receipt_image_url,
@@ -358,6 +360,8 @@ export default function ReceiptDetailsScreen() {
   // Null until a group is selected (still loading, or the fetch failed).
   const currency = groups.find((g) => g.id === selectedGroupId)?.currency ?? null;
   const priceSymbol = currencySymbol(currency);
+  const splitItem = editableItems.find((item) => item.item_order === splitItemOrder);
+  const splitAssignment = splitItem ? userSelections[splitItem.item_order] : undefined;
   const assignedCount = Object.keys(userSelections).length;
   const allAssigned = editableItems.length > 0 && assignedCount === editableItems.length;
   const readyToSync = allAssigned && !!selectedGroupId && !!paidByUserId;
@@ -510,6 +514,13 @@ export default function ReceiptDetailsScreen() {
         <Entrance delay={250} style={styles.itemsCard}>
           {editableItems.map((item, index) => {
             const assigned = userSelections[item.item_order];
+            const split = typeof assigned === 'object' ? assigned : undefined;
+            const splitSummary = split?.portions
+              .map(({ memberId, units }) => {
+                const name = groupUsers.find((user) => user.id === memberId)?.name;
+                return split.mode === 'quantity' ? `${name ?? ''} ×${units}` : name;
+              })
+              .join(' · ');
             return (
               <View
                 key={item.item_order}
@@ -567,7 +578,7 @@ export default function ReceiptDetailsScreen() {
                             styles.assignChip,
                             selected && { backgroundColor: c, borderColor: c },
                           ]}
-                          onPress={() => handleUserSelection(item.item_order, u.id)}
+                          onPress={() => assignItem(item.item_order, u.id)}
                           accessibilityLabel={`Assign to ${u.name}`}
                           testID={`item-${item.item_order}-assign-${u.id}`}
                         >
@@ -596,7 +607,7 @@ export default function ReceiptDetailsScreen() {
                         styles.sharedChip,
                         assigned === 'shared' && styles.sharedChipSelected,
                       ]}
-                      onPress={() => handleUserSelection(item.item_order, 'shared')}
+                      onPress={() => assignItem(item.item_order, 'shared')}
                       accessibilityLabel="Mark item as shared"
                       testID={`item-${item.item_order}-shared`}
                     >
@@ -620,8 +631,23 @@ export default function ReceiptDetailsScreen() {
                         Shared
                       </Text>
                     </PressableScale>
+                    {groupUsers.length > 1 && (
+                      <PressableScale
+                        style={[styles.assignChip, split && styles.sharedChipSelected]}
+                        onPress={() => setSplitItemOrder(item.item_order)}
+                        testID={`item-${item.item_order}-split`}
+                        accessibilityLabel={`Split ${item.english_name || item.japanese_name}`}
+                      >
+                        <Text
+                          style={[styles.assignChipText, split && styles.sharedChipTextSelected]}
+                        >
+                          Split…
+                        </Text>
+                      </PressableScale>
+                    )}
                   </View>
                 )}
+                {splitSummary && <Text style={styles.splitSummary}>{splitSummary}</Text>}
               </View>
             );
           })}
@@ -703,6 +729,21 @@ export default function ReceiptDetailsScreen() {
         </PressableScale>
       </Entrance>
 
+      {splitItem && (
+        <ItemSplitEditor
+          key={splitItem.item_order}
+          item={splitItem}
+          users={groupUsers}
+          currency={currency}
+          initial={typeof splitAssignment === 'object' ? splitAssignment : undefined}
+          onCancel={() => setSplitItemOrder(null)}
+          onSave={(split) => {
+            assignItem(splitItem.item_order, split);
+            setSplitItemOrder(null);
+          }}
+        />
+      )}
+
       {/* Group picker modal */}
       <Modal
         visible={isDropdownOpen}
@@ -712,6 +753,7 @@ export default function ReceiptDetailsScreen() {
       >
         <TouchableOpacity
           style={styles.modalOverlay}
+          accessible={false}
           activeOpacity={1}
           onPress={() => setIsDropdownOpen(false)}
         >
@@ -1061,6 +1103,7 @@ const styles = StyleSheet.create({
   assignChipText: { fontSize: 12, color: theme.ink, fontWeight: '500' },
   assignChipTextSelected: { color: '#fff', fontWeight: '600' },
 
+  splitSummary: { ...type.label, color: theme.inkMuted, marginTop: 8 },
   sharedChip: { backgroundColor: theme.surfaceAlt, borderStyle: 'dashed' },
   sharedChipSelected: { backgroundColor: theme.ink, borderColor: theme.ink, borderStyle: 'solid' },
   sharedChipTextSelected: { color: '#fff', fontWeight: '600' },

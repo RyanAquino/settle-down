@@ -48,14 +48,66 @@ export function receiptTotals(items: ReceiptItem[], taxPercentage: number) {
   return { subtotal, taxAmount: (subtotal * taxPercentage) / 100 };
 }
 
-export function splitReceipt(items: ReceiptItem[], selections: Record<number, string>) {
+export type ItemSplit = {
+  mode: 'equal' | 'quantity';
+  portions: { memberId: string; units: number }[];
+};
+
+export type ItemAssignment = string | ItemSplit;
+
+function moneyDigits(currency: string | null) {
+  if (!currency) return 2;
+  return (
+    new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+    }).resolvedOptions().maximumFractionDigits ?? 2
+  );
+}
+
+function allocateMoney(amount: number, weights: number[], currency: string | null) {
+  const scale = 10 ** moneyDigits(currency);
+  const magnitude = Math.round(Math.abs(amount) * scale);
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+  const shares = weights.map((weight, index) => {
+    const portion = (magnitude * weight) / weightTotal;
+    const units = Math.floor(portion);
+    return { index, units, remainder: portion - units };
+  });
+  const leftover = magnitude - shares.reduce((sum, share) => sum + share.units, 0);
+  // The input order breaks ties, which is the Settle Up roster order for a line.
+  const ranked = [...shares].sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+  ranked.slice(0, leftover).forEach((share) => share.units++);
+  return shares.map(({ units }) => (Math.sign(amount) * units) / scale);
+}
+
+function allocatedItemPortions(item: ReceiptItem, split: ItemSplit, currency: string | null) {
+  const weights = split.portions.map(({ units }) => units);
+  const costs = allocateMoney(item.cost, weights, currency);
+  return split.portions.map(({ memberId }, index) => ({ memberId, cost: costs[index] }));
+}
+
+export function splitReceipt(
+  items: ReceiptItem[],
+  selections: Record<number, ItemAssignment>,
+  currency: string | null = null,
+) {
   const userTotals = new Map<string, number>();
   const splitReceiptItems: number[] = [];
   for (const item of items) {
-    const member = selections[item.item_order];
-    if (!member) throw new Error('Every item must be assigned');
-    if (member === 'shared') splitReceiptItems.push(item.cost);
-    else userTotals.set(member, (userTotals.get(member) ?? 0) + item.cost);
+    const assignment = selections[item.item_order];
+    if (!assignment) throw new Error('Every item must be assigned');
+    if (assignment === 'shared') {
+      splitReceiptItems.push(item.cost);
+      continue;
+    }
+    const portions =
+      typeof assignment === 'string'
+        ? [{ memberId: assignment, cost: item.cost }]
+        : allocatedItemPortions(item, assignment, currency);
+    for (const { memberId, cost } of portions) {
+      userTotals.set(memberId, (userTotals.get(memberId) ?? 0) + cost);
+    }
   }
   return {
     user_receipt_items: [...userTotals]
@@ -73,7 +125,7 @@ export const formatMoney = (n: number, currency: string | null) => {
   const base: Intl.NumberFormatOptions = currency
     ? { style: 'currency', currency }
     : { maximumFractionDigits: 2 };
-  const digits = new Intl.NumberFormat('en-US', base).resolvedOptions().maximumFractionDigits ?? 2;
+  const digits = moneyDigits(currency);
   // Round first so float noise (0.1 + 0.2 + 0.7) still counts as whole.
   const rounded = Number(n.toFixed(digits));
   return new Intl.NumberFormat('en-US', {

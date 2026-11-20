@@ -100,3 +100,53 @@ test.each([
 ])('rejects invalid receipt data %s', (value) => {
   expect(parseReceipt(value)).toBeNull();
 });
+
+test('a selected equal split uses group order to break ties and leaves legacy shared lines intact', () => {
+  expect(
+    splitReceipt(
+      items,
+      {
+        8: 'alex',
+        2: {
+          mode: 'equal',
+          portions: [
+            { memberId: 'ren', units: 1 },
+            { memberId: 'aya', units: 1 },
+            { memberId: 'alex', units: 1 },
+          ],
+        },
+        20: 'shared',
+      },
+      'JPY',
+    ),
+  ).toEqual({
+    user_receipt_items: [
+      { member_id: 'alex', cost: 273 },
+      { member_id: 'ren', cost: 34 },
+      { member_id: 'aya', cost: 33 },
+    ],
+    split_receipt_items: [60],
+  });
+});
+
+test('a quantity split allocates an edited line cost by units, including discounted prices', () => {
+  const item = { ...items[0], cost: 10, discount: 2, quantity: 3 };
+  expect(
+    splitReceipt(
+      [item],
+      {
+        8: {
+          mode: 'quantity',
+          portions: [
+            { memberId: 'aya', units: 1 },
+            { memberId: 'ren', units: 2 },
+          ],
+        },
+      },
+      'USD',
+    ).user_receipt_items,
+  ).toEqual([
+    { member_id: 'aya', cost: 3.33 },
+    { member_id: 'ren', cost: 6.67 },
+  ]);
+});
