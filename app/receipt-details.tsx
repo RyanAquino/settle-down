@@ -108,7 +108,7 @@ export default function ReceiptDetailsScreen() {
         item_order: 4,
         cost: 240,
         quantity: 2,
-        discount: 0,
+        discount: 30,
       },
     ],
     en_shop_name: 'My Basket',
@@ -578,6 +578,12 @@ export default function ReceiptDetailsScreen() {
                     />
                   </View>
                 </View>
+                {item.discount > 0 && (
+                  <Text style={styles.itemSavings}>
+                    {formatMoney(item.cost, currency)} paid · {formatMoney(item.discount, currency)}{' '}
+                    saved
+                  </Text>
+                )}
 
                 {/* Assignment chips */}
                 {groupUsers.length > 0 && (
@@ -1126,7 +1132,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
   },
   qtyTag: {
     paddingHorizontal: 10,
@@ -1164,7 +1169,15 @@ const styles = StyleSheet.create({
     padding: 0,
   },
 
-  assignRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  itemSavings: {
+    ...type.label,
+    ...type.numeral,
+    color: theme.inkMuted,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+
+  assignRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
   assignChip: {
     flexDirection: 'row',
     alignItems: 'center',

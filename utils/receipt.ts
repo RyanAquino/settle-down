@@ -6,7 +6,7 @@ const receiptItemSchema = z.object({
   item_order: z.number().int(),
   cost: z.number().finite(),
   quantity: z.number().finite(),
-  discount: z.number().finite(),
+  discount: z.number().finite().default(0),
 });
 const receiptSchema = z.object({
   receipt_items: z.array(receiptItemSchema),
