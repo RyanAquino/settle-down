@@ -12,3 +12,7 @@ AGENTS.md
 .cursor
 .idea
 .vscode
+
+# Preserve the upstream contents pinned in skills-lock.json.
+.agents/skills/grill-me/
+.agents/skills/grilling/
