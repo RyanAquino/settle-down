@@ -1,3 +1,5 @@
+import { useAccount } from '@/components/account';
+import { randomUUID } from 'expo-crypto';
 import { View, Text, StyleSheet, Image, Animated, Easing } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState, useCallback } from 'react';
@@ -10,6 +12,8 @@ import { Entrance, PressableScale } from '@/components/motion';
 import { scanReconciledReceipt } from '@/utils/receipt-preview';
 import { retryApiCall } from '@/utils/retry';
 
+class ScanLimitError extends Error {}
+
 const scanSteps = [
   { label: 'Capture', state: 'done' },
   { label: 'Read', state: 'active' },
@@ -19,6 +23,8 @@ const scanSteps = [
 type StepState = (typeof scanSteps)[number]['state'];
 
 export default function LoadingScreen() {
+  const { request } = useAccount();
+  const [scanId] = useState(randomUUID);
   const params = useLocalSearchParams();
   const photoUri = params.photoUri as string;
   const fromLibrary = params.fromLibrary === 'true';
@@ -81,36 +87,36 @@ export default function LoadingScreen() {
 
   const uploadPhoto = useCallback(
     async (uri: string, signal: AbortSignal) => {
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
       try {
-        if (!apiBaseUrl) throw new Error('EXPO_PUBLIC_API_BASE_URL is missing from this build.');
-
-        const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
-        const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
-        if (authToken) headers.Authorization = `Bearer ${authToken}`;
-
+        const headers = { 'Idempotency-Key': scanId };
         const readPhoto = () => {
           let attempt = 0;
-          return retryApiCall(async () => {
-            if (signal.aborted) throw new Error('Receipt scan cancelled.');
-            attempt++;
-            if (attempt > 1) {
-              setStatusMessage(`Retrying connection · ${attempt} of 3`);
-              setStatusDetail('Uploading the same receipt photo.');
-            }
-            const body = new FormData();
-            // Expo's multipart encoder reads bytes from File and sets the boundary.
-            body.append('file', new File(uri));
-            const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
-              method: 'POST',
-              body,
-              headers,
-              signal,
-            });
-            if (!response.ok) throw new Error(`Receipt upload failed (HTTP ${response.status})`);
-            const data: unknown = await response.json();
-            return data;
-          });
+          return retryApiCall(
+            async () => {
+              if (signal.aborted) throw new Error('Receipt scan cancelled.');
+              attempt++;
+              if (attempt > 1) {
+                setStatusMessage(`Retrying connection · ${attempt} of 3`);
+                setStatusDetail('Uploading the same receipt photo.');
+              }
+              const body = new FormData();
+              // Expo's multipart encoder reads bytes from File and sets the boundary.
+              body.append('file', new File(uri));
+              const response = await request('receipts/receipt-items/', {
+                method: 'POST',
+                body,
+                headers,
+                signal,
+              });
+              if (response.status === 429) throw new ScanLimitError();
+              if (!response.ok) throw new Error(`Receipt upload failed (HTTP ${response.status})`);
+              const data: unknown = await response.json();
+              return data;
+            },
+            3,
+            1000,
+            (error) => !(error instanceof ScanLimitError) && !signal.aborted,
+          );
         };
 
         const receipt = await scanReconciledReceipt(readPhoto, () => {
@@ -131,11 +137,15 @@ export default function LoadingScreen() {
         });
       } catch (error) {
         if (signal.aborted) return;
+        if (error instanceof ScanLimitError) {
+          router.replace({ pathname: '/', params: { error: 'Next scan at midnight JST.' } });
+          return;
+        }
         console.warn('[upload] Could not scan receipt', error);
         await savePhotoAsFallback(uri);
       }
     },
-    [savePhotoAsFallback],
+    [savePhotoAsFallback, request, scanId],
   );
 
   const handleLibraryPhotoOffline = useCallback(async () => {

@@ -166,3 +166,5 @@ simulator-verifiable changes outside the explicit harness exclusions cannot be v
 disposition blocked, making the overall result BLOCKED. Physical-device-only gaps
 go in deviceOnly, not limitations.
 Save failing scenarios too, so CI can reproduce them. Never declare PASS yourself.
+
+Sign in to the synthetic fixture using `tester@example.test` and `fixture-only` when the sign-in screen appears. The camera header shows the account email.

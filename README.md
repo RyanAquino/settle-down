@@ -60,7 +60,7 @@ The app needs a backend. It reads the backend's base URL from `EXPO_PUBLIC_API_B
 | `GET`  | `/api/v1/settle-up/users/?group_id=…` | List the members of a group                                               |
 | `POST` | `/api/v1/settle-up/transactions/`     | Create the split transaction                                              |
 
-If `EXPO_PUBLIC_AUTH_TOKEN` is set, every request includes it as `Authorization: Bearer <token>`. Every request also sends `ngrok-skip-browser-warning`, so the backend can be exposed through an ngrok tunnel.
+Sign in with a Settle Up email and password. The app keeps its device session in secure storage and opens the camera on return visits. Tap the email in the camera header to see the scan allowance or sign out. API requests use the current account’s bearer token. Every request also sends `ngrok-skip-browser-warning`, so the backend can be exposed through an ngrok tunnel.
 
 ## Getting started
 
@@ -80,11 +80,10 @@ cp .env.sample .env
 
 Then edit `.env`:
 
-| Variable                             | Description                                                                                                                            |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `EXPO_PUBLIC_API_BASE_URL`           | The backend's base URL, e.g. `http://192.168.0.242:8000` or an ngrok URL                                                               |
-| `EXPO_PUBLIC_AUTH_TOKEN`             | Optional bearer token for the backend                                                                                                  |
-| `EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON` | `true` shows a "Skip to Receipt" button that opens the details screen with mock data, so you can work on that screen without a backend |
+| Variable                             | Description                                                                                            |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `EXPO_PUBLIC_API_BASE_URL`           | The backend's base URL, use HTTPS on devices or loopback HTTP on a simulator                           |
+| `EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON` | `true` shows a "Skip to Receipt" button that opens the details screen with mock data, after signing in |
 
 > `EXPO_PUBLIC_*` values are inlined when the app is bundled. `.env` is gitignored, so EAS builds run in the cloud don't see it. Set these variables as EAS environment variables for the `preview` and `production` environments.
 
@@ -96,7 +95,7 @@ npm run ios        # Build and run on the iOS Simulator
 npm run android    # Build and run on an Android emulator or device
 ```
 
-Your phone must be able to reach `EXPO_PUBLIC_API_BASE_URL`. A LAN IP works only on the same Wi-Fi network; otherwise use a tunnel such as ngrok.
+Your phone must be able to reach `EXPO_PUBLIC_API_BASE_URL`. Use an HTTPS endpoint or HTTPS tunnel such as ngrok on a phone. Loopback HTTP is supported for local simulator testing.
 
 ### Checks
 
