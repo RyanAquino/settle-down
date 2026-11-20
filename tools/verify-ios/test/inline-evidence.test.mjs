@@ -110,11 +110,15 @@ test('native uploads render a player and image, preserve previous uploads on ret
     full,
   );
   assert.equal(calls.length, 2);
+  const foreignUrl = 'https://github.com.example.org' + new URL(url).pathname;
   const invalid = await inlineEvidence({
     ...input,
-    fetchImpl: async () => ({ ok: true, json: async () => ({ url: 'https://example.org/other' }) }),
+    fetchImpl: async () => ({ ok: true, json: async () => ({ url: foreignUrl }) }),
   });
-  assert.ok(!invalid.includes('example.org'));
+  assert.equal(
+    invalid,
+    'Some inline previews could not be published. See the evidence archive below.',
+  );
   assert.ok(warnings.some((w) => w.includes('HTTP 403')));
   const disabled = await inlineEvidence({ ...input, token: '', fetchImpl: upload });
   assert.ok(disabled.includes('evidence archive'));
