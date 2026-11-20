@@ -2,6 +2,29 @@ import { fixtureControl } from './fixture-control.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { APP_ID, validateFlow } from './policy.mjs';
 
+// An iOS keychain entry can survive reinstall between verification scenarios.
+const signIn = `- runFlow:
+    when:
+      visible:
+        id: camera-account
+    commands:
+      - tapOn:
+          id: camera-account
+      - tapOn: Sign out
+- tapOn:
+    id: account-email
+- inputText: tester@example.test
+- tapOn:
+    id: account-password
+- inputText: fixture-only
+- tapOn:
+    id: account-submit
+- runFlow:
+    when:
+      visible: Not Now
+    commands:
+      - tapOn: Not Now`;
+
 export const cameraRegressions = [
   {
     id: 'camera-zoom-bounds',
@@ -15,7 +38,8 @@ name: Camera zoom bounds and lifecycle
 - launchApp:
     permissions:
       all: allow
-- assertVisible: Point at a receipt
+${signIn}
+- assertVisible: tester@example.test
 - assertVisible:
     text: Zoom out
     enabled: false
@@ -41,7 +65,7 @@ ${'- tapOn: Zoom in\n'.repeat(20)}- assertVisible:
     stopApp: false
     permissions:
       camera: allow
-- assertVisible: Point at a receipt
+- assertVisible: tester@example.test
 - assertVisible:
     text: Zoom out
     enabled: false
@@ -64,6 +88,7 @@ name: Native camera permission recovery
     permissions:
       all: allow
       camera: deny
+${signIn}
 - assertVisible: Camera access
 - assertVisible: Open settings
 - tapOn: Open settings
@@ -103,7 +128,7 @@ name: Native camera permission recovery
     stopApp: false
     permissions:
       camera: allow
-- assertVisible: Point at a receipt
+- assertVisible: tester@example.test
 - assertVisible:
     text: Zoom in
     enabled: true

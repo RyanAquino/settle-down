@@ -27,7 +27,6 @@ For production bundle verification, supply an explicit synthetic environment:
 ```sh
 export CI=1 EXPO_NO_DOTENV=1
 export EXPO_PUBLIC_API_BASE_URL=https://ci.invalid
-export EXPO_PUBLIC_AUTH_TOKEN=''
 export EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON=false
 npm run bundle:ios
 npm run bundle:android
@@ -75,7 +74,7 @@ and Node test entry points are explicitly included. New unused dependencies fail
 
 `Native smoke` builds iOS and Android Release binaries and runs the committed
 `.maestro/launch.yaml` flow on a simulator/emulator. It checks that the real native
-app launches and exposes the camera screen controls, with permissions granted.
+app launches and exposes the first-launch sign-in form, with permissions granted.
 Android also runs `lintRelease`. No signing account, real backend, or production
 credential is used; OTA loading is disabled with `CI_E2E=1`.
 
@@ -129,7 +128,10 @@ an OTA update, change the app version/runtime consistently with the native
 binary: the current `appVersion` policy does not automatically detect native
 incompatibility. Do not publish these changes to an older binary's runtime.
 
-Public Expo environment values are embedded in the application. The existing
-`EXPO_PUBLIC_AUTH_TOKEN` must not contain a private service credential; CI uses
-an empty value. Authentication design and production observability are separate
-follow-up work, not claims made by these checks.
+The client uses the backend session issued at sign-in. CI fixtures use synthetic account data.
+
+### Local account and receipt E2E on iOS
+
+Start a dedicated test Redis. In the backend checkout, run `TEST_REDIS_URL=redis://127.0.0.1:6379/15 uv run python -m backend_api.tests.serve_mobile`. This runs Django on localhost with a two-scan allowance and synthetic Firebase, Settle Up, image storage and OCR responses.
+
+Build the iOS app with `CI_E2E=1 EXPO_PUBLIC_API_BASE_URL=http://127.0.0.1:18765 npx expo run:ios --configuration Release`. Import an image with `xcrun simctl addmedia booted assets/images/icon.png`. Run `maestro test -e TEST_EMAIL=run-1@example.test .maestro/ios-account.yaml`, choosing a fresh synthetic email on each run. The flow signs in, reopens the camera, uploads two receipts, submits the first, discards the second, checks the allowance, and signs out.

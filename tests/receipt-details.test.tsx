@@ -2,6 +2,9 @@ import { fireEvent, render, screen, userEvent } from '@testing-library/react-nat
 import { Share } from 'react-native';
 import ReceiptDetailsScreen from '../app/receipt-details';
 
+jest.mock('@/components/account', () => ({
+  useAccount: () => ({ request: globalThis.fetch }),
+}));
 jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ useMockData: 'true' }),
   router: { back: jest.fn() },

@@ -3,6 +3,9 @@ import { router } from 'expo-router';
 import { File } from 'expo-file-system';
 import LoadingScreen from '../app/loading';
 
+jest.mock('@/components/account', () => ({
+  useAccount: () => ({ request: globalThis.fetch }),
+}));
 jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ photoUri: 'file:///receipt.jpg' }),
   router: { back: jest.fn(), canGoBack: () => true, replace: jest.fn() },
@@ -10,6 +13,7 @@ jest.mock('expo-router', () => ({
 jest.mock('@react-native-community/netinfo', () => ({
   fetch: jest.fn().mockResolvedValue({ isConnected: true, type: 'wifi' }),
 }));
+jest.mock('expo-crypto', () => ({ randomUUID: () => 'test-scan-id' }));
 jest.mock('expo-file-system', () => ({ File: jest.fn() }));
 jest.mock('expo-media-library/legacy', () => ({}));
 
@@ -59,6 +63,9 @@ test('an inconsistent scan retries the same photo and opens the reconciled recei
   await render(<LoadingScreen />);
   await waitFor(() => expect(router.replace).toHaveBeenCalled());
   expect(scan).toHaveBeenCalledTimes(2);
+  for (const [, options] of scan.mock.calls) {
+    expect(options?.headers).toEqual({ 'Idempotency-Key': 'test-scan-id' });
+  }
   expect(jest.mocked(File).mock.calls).toEqual([['file:///receipt.jpg'], ['file:///receipt.jpg']]);
   expect(router.replace).toHaveBeenCalledWith({
     pathname: '/receipt-details',

@@ -1,3 +1,4 @@
+import { CameraAccount } from '@/components/camera-account';
 import { useCameraPermissions } from 'expo-camera';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, View, Alert, AppState, Linking } from 'react-native';
@@ -39,6 +40,7 @@ export default function CameraScreen() {
   if (!permission.granted) {
     return (
       <View style={[styles.container, styles.permissionWrap]}>
+        <CameraAccount />
         <Entrance distance={16}>
           <Text style={styles.permissionTitle}>Camera access</Text>
         </Entrance>
@@ -109,7 +111,12 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
-      {isFocused && appState === 'active' && <CameraSession onPickFromLibrary={pickFromLibrary} />}
+      {isFocused && appState === 'active' && (
+        <>
+          <CameraSession onPickFromLibrary={pickFromLibrary} />
+          <CameraAccount />
+        </>
+      )}
     </View>
   );
 }

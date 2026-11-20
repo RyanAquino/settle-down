@@ -89,6 +89,19 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
         if (url.pathname === '/__requests' && req.method === 'GET') return send(200, records);
         return send(404, { error: 'Unknown control route' });
       }
+      // Never record credential bodies in verifier evidence.
+      if (url.pathname.startsWith('/api/v1/auth/')) {
+        const profile = {
+          email: 'tester@example.test',
+          remaining: 5,
+          resets_at: new Date(Date.now() + 86400000).toISOString(),
+        };
+        if (url.pathname.endsWith('/sign-in/'))
+          return send(200, { ...profile, token: 'synthetic-session' });
+        if (url.pathname.endsWith('/sign-out/')) return send(204, null);
+        if (url.pathname.endsWith('/me/')) return send(200, profile);
+        return send(404, { error: 'Unknown account route' });
+      }
       const record = {
         phase,
         preset,

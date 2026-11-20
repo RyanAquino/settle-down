@@ -1,3 +1,4 @@
+import { useAccount } from '@/components/account';
 import {
   View,
   Text,
@@ -43,6 +44,7 @@ import { retryApiCall } from '@/utils/retry';
 import { previewReceipt, reconcileReceipt } from '@/utils/receipt-preview';
 
 export default function ReceiptDetailsScreen() {
+  const { request: accountRequest } = useAccount();
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const [editableItems, setEditableItems] = useState<ReceiptItem[]>([]);
@@ -126,47 +128,40 @@ export default function ReceiptDetailsScreen() {
   }, [params.useMockData, params.data]);
 
   // -------- data fetching --------
-  const fetchGroupUsers = useCallback(async (groupId: string) => {
-    if (!groupId) return;
-    const request = ++groupRequest.current;
-    setGroupUsers([]);
-    setUserSelections({});
-    setPaidByUserId('');
-    setSplitItemOrder(null);
-    const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
-    setIsLoadingUsers(true);
-    try {
-      const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
-      const headers: { [key: string]: string } = { 'ngrok-skip-browser-warning': 'true' };
-      if (authToken) headers.Authorization = `Bearer ${authToken}`;
-      const response = await retryApiCall(async () =>
-        fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`, { headers }),
-      );
-      if (response.ok) {
-        const data = usersSchema.parse(await response.json());
-        if (request === groupRequest.current) setGroupUsers(data.items);
-      } else throw new Error(`HTTP error! status: ${response.status}`);
-    } catch {
-      if (request === groupRequest.current) setGroupUsers([]);
-    } finally {
-      if (request === groupRequest.current) setIsLoadingUsers(false);
-    }
-  }, []);
+  const fetchGroupUsers = useCallback(
+    async (groupId: string) => {
+      if (!groupId) return;
+      const request = ++groupRequest.current;
+      setGroupUsers([]);
+      setUserSelections({});
+      setPaidByUserId('');
+      setSplitItemOrder(null);
+      setIsLoadingUsers(true);
+      try {
+        const response = await retryApiCall(async () =>
+          accountRequest(`settle-up/users/?group_id=${encodeURIComponent(groupId)}`),
+        );
+        if (response.ok) {
+          const data = usersSchema.parse(await response.json());
+          if (request === groupRequest.current) setGroupUsers(data.items);
+        } else throw new Error(`HTTP error! status: ${response.status}`);
+      } catch {
+        if (request === groupRequest.current) setGroupUsers([]);
+      } finally {
+        if (request === groupRequest.current) setIsLoadingUsers(false);
+      }
+    },
+    [accountRequest],
+  );
 
   const fetchSettleUpGroups = useCallback(
     async (isAutoRetry = false) => {
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
       setIsLoadingGroups(true);
       setGroupsError(null);
       if (isAutoRetry) setGroupsFetchAttempts((p) => p + 1);
       else setGroupsFetchAttempts(1);
       try {
-        const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
-        const headers: { [key: string]: string } = { 'ngrok-skip-browser-warning': 'true' };
-        if (authToken) headers.Authorization = `Bearer ${authToken}`;
-        const response = await retryApiCall(async () =>
-          fetch(`${apiBaseUrl}/api/v1/settle-up/groups/`, { headers }),
-        );
+        const response = await retryApiCall(async () => accountRequest('settle-up/groups/'));
         if (response.ok) {
           const data = groupsSchema.parse(await response.json());
           setGroups(data.items || []);
@@ -184,7 +179,7 @@ export default function ReceiptDetailsScreen() {
         setIsLoadingGroups(false);
       }
     },
-    [fetchGroupUsers],
+    [fetchGroupUsers, accountRequest],
   );
 
   // -------- init --------
@@ -335,16 +330,13 @@ export default function ReceiptDetailsScreen() {
         receipt_image_url: shopInfo.receipt_image_url,
       };
 
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
-      const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
       const headers: { [key: string]: string } = {
         'ngrok-skip-browser-warning': 'true',
         'Content-Type': 'application/json',
       };
-      if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
       const response = await retryApiCall(async () =>
-        fetch(`${apiBaseUrl}/api/v1/settle-up/transactions/`, {
+        accountRequest('settle-up/transactions/', {
           method: 'POST',
           headers,
           body: JSON.stringify(payload),

@@ -1,0 +1,75 @@
+appId: com.ryan.aquino.settledown
+name: Personal account, two scans and expense submission
+---
+- launchApp:
+    permissions:
+      all: allow
+- runFlow:
+    when:
+      visible:
+        id: camera-account
+    commands:
+      - tapOn:
+          id: camera-account
+      - tapOn: Sign out
+- tapOn:
+    id: account-email
+- inputText: ${TEST_EMAIL}
+- tapOn:
+    id: account-password
+- inputText: fixture-only
+- tapOn:
+    id: account-submit
+- tapOn:
+    text: Not Now
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: camera-account
+    timeout: 30000
+- tapOn:
+    id: camera-account
+- assertVisible: 2 scans left today
+- tapOn: Done
+- stopApp
+- launchApp
+- assertVisible:
+    id: camera-account
+- tapOn:
+    id: pick-receipt
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+    timeout: 30000
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: paid-by-member
+    timeout: 60000
+- tapOn:
+    id: paid-by-member
+- tapOn:
+    id: item-1-assign-member
+- tapOn:
+    id: sync-transaction
+- assertVisible: Synced
+- tapOn: OK
+- assertVisible: '.*1 scan left today.*'
+- tapOn:
+    id: pick-receipt
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: paid-by-member
+    timeout: 60000
+- tapOn: Back
+- assertVisible: '.*Next scan at midnight JST.*'
+- tapOn:
+    id: camera-account
+- assertVisible: 0 scans left today
+- tapOn: Sign out
+- assertVisible: Sign in with Settle Up

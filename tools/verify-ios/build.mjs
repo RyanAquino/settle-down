@@ -17,7 +17,6 @@ const env = {
   EXPO_NO_DOTENV: '1',
   USE_CCACHE: '1',
   EXPO_PUBLIC_API_BASE_URL: FIXTURE_ORIGIN,
-  EXPO_PUBLIC_AUTH_TOKEN: '',
   EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON: 'false',
 };
 const timings = [];

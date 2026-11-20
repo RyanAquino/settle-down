@@ -148,9 +148,6 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
             setCameraError(true);
           }}
         />
-        <View pointerEvents="none" style={[styles.topHint, { top: insets.top + 12 }]}>
-          <Text style={styles.topHintText}>Point at a receipt</Text>
-        </View>
         {cameraError && (
           <View style={styles.errorPanel}>
             <Text style={styles.errorText}>Unable to start the camera</Text>
@@ -238,15 +235,6 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   preview: { flex: 1, overflow: 'hidden', ...Platform.select({ web: { touchAction: 'none' } }) },
-  topHint: {
-    position: 'absolute',
-    alignSelf: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  topHintText: { color: '#fff', fontSize: 13, fontWeight: '500' },
   bottomBar: {
     paddingTop: 16,
     paddingHorizontal: 32,

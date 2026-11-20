@@ -1,12 +1,14 @@
 appId: com.ryan.aquino.settledown
-name: Camera screen launches in a release build
+name: First launch asks for a Settle Up account
 ---
 - launchApp:
     clearState: true
+    clearKeychain: true
     permissions:
       all: allow
-- assertVisible: 'Point at a receipt'
+- assertVisible: 'Sign in with Settle Up'
 - assertVisible:
-    id: pick-receipt
-- assertVisible: 'Capture receipt'
+    id: account-email
+- assertVisible:
+    id: account-password
 - takeScreenshot: launch
