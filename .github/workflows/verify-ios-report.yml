@@ -36,14 +36,28 @@ jobs:
           path: ${{ runner.temp }}/verify-report/request
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+      - id: evidence
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         continue-on-error: true
         with:
           name: ios-evidence-${{ github.event.workflow_run.run_attempt }}
           path: ${{ runner.temp }}/verify-report/evidence
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
+      - name: Prepare inline replay previews
+        if: steps.evidence.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            if ! (sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg); then
+              echo "::warning::FFmpeg unavailable. Preparing screenshots only."
+            fi
+          fi
+          node tools/verify-ios/prepare-previews.mjs "$RUNNER_TEMP/verify-report/evidence" "$RUNNER_TEMP/verify-report/previews"
       - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          IOS_EVIDENCE_UPLOAD_TOKEN: ${{ secrets.IOS_EVIDENCE_UPLOAD_TOKEN }}
         with:
           script: |
             const { publish } = await import(`${process.env.GITHUB_WORKSPACE}/tools/verify-ios/github.mjs`);

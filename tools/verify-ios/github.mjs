@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { verdict, checkConclusion, resultSchema } from './policy.mjs';
+import { inlineEvidence } from './inline-evidence.mjs';
 import { CHECK_NAME, needsVerification } from './applicability.mjs';
 
 export { CHECK_NAME };
@@ -156,6 +157,7 @@ export function renderReport(
   runUrl,
   artifacts,
   attempt = request.attempt,
+  previews = '',
 ) {
   const lines = [
     marker(request),
@@ -213,7 +215,9 @@ export function renderReport(
     );
   if (!result)
     lines.push('Verification did not produce a result. See the build and workflow logs.');
-  lines.push('', '### Evidence', '', `[Workflow and logs](${runUrl})`, '');
+  lines.push('', '### Evidence', '');
+  if (previews) lines.push(previews, '');
+  lines.push(`[Workflow and logs](${runUrl})`, '');
   if (!artifacts.some((a) => a.name.startsWith('ios-evidence-') && !a.expired)) {
     lines.push(
       'No downloadable test evidence is available for this attempt. Check the workflow and build logs.',
@@ -322,15 +326,6 @@ export async function publish({ github, context, core, directory }) {
     }),
   );
   const runUrl = `${context.serverUrl}/${fullName}/actions/runs/${run.id}/attempts/${run.run_attempt}`;
-  const body = renderReport(request, result, status, stale, runUrl, artifacts, run.run_attempt);
-  await github.rest.checks.update({
-    ...repo,
-    check_run_id: request.checkId,
-    status: 'completed',
-    conclusion: checkConclusion[status],
-    details_url: runUrl,
-    output: { title: `${status}${stale ? ' (stale commit)' : ''}`, summary: body },
-  });
   comments ??= await github.paginate(github.rest.issues.listComments, {
     ...repo,
     issue_number: request.pr,
@@ -340,6 +335,35 @@ export async function publish({ github, context, core, directory }) {
     (c) => c.user?.login === 'github-actions[bot]' && c.body?.includes(marker(request)),
   );
   const existing = ownComments.find((c) => c.body.includes(finalMarker(request, run.run_attempt)));
+  const previews = await inlineEvidence({
+    directory: `${directory}/previews`,
+    scenarios: result?.scenarios ?? [],
+    previous: existing?.body,
+    token: process.env.IOS_EVIDENCE_UPLOAD_TOKEN,
+    repoId: context.payload.repository?.id,
+    warn: (message) => core.warning(message),
+  }).catch(() => {
+    core.warning('Inline previews unavailable. Publishing the verification result and artifacts.');
+    return '';
+  });
+  const body = renderReport(
+    request,
+    result,
+    status,
+    stale,
+    runUrl,
+    artifacts,
+    run.run_attempt,
+    previews,
+  );
+  await github.rest.checks.update({
+    ...repo,
+    check_run_id: request.checkId,
+    status: 'completed',
+    conclusion: checkConclusion[status],
+    details_url: runUrl,
+    output: { title: `${status}${stale ? ' (stale commit)' : ''}`, summary: body },
+  });
   // Post completion separately so it appears as new PR activity. Re-publishing
   // the same attempt updates its verdict; a new verification attempt gets its own.
   const { data: finalComment } = existing
