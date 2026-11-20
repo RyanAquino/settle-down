@@ -33,10 +33,15 @@ export const usersSchema = z.object({
 export type GroupUser = z.output<typeof usersSchema>['items'][number];
 export type ReceiptItem = ReceiptData['receipt_items'][number];
 
+export function readReceipt(value: unknown): ReceiptData | null {
+  const result = receiptSchema.safeParse(value);
+  return result.success ? result.data : null;
+}
+
 export function parseReceipt(value: string | string[] | undefined): ReceiptData | null {
   if (typeof value !== 'string') return null;
   try {
-    return receiptSchema.parse(JSON.parse(value));
+    return readReceipt(JSON.parse(value));
   } catch {
     return null;
   }
@@ -55,7 +60,7 @@ export type ItemSplit = {
 
 export type ItemAssignment = string | ItemSplit;
 
-function moneyDigits(currency: string | null) {
+export function moneyDigits(currency: string | null) {
   if (!currency) return 2;
   return (
     new Intl.NumberFormat('en-US', {
@@ -65,7 +70,7 @@ function moneyDigits(currency: string | null) {
   );
 }
 
-function allocateMoney(amount: number, weights: number[], currency: string | null) {
+export function allocateMoney(amount: number, weights: number[], currency: string | null) {
   const scale = 10 ** moneyDigits(currency);
   const magnitude = Math.round(Math.abs(amount) * scale);
   const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
@@ -81,10 +86,26 @@ function allocateMoney(amount: number, weights: number[], currency: string | nul
   return shares.map(({ units }) => (Math.sign(amount) * units) / scale);
 }
 
-function allocatedItemPortions(item: ReceiptItem, split: ItemSplit, currency: string | null) {
-  const weights = split.portions.map(({ units }) => units);
+type ItemPortion = { memberId: string; cost: number; units?: number };
+
+export function itemPortions(
+  item: ReceiptItem,
+  assignment: ItemAssignment,
+  currency: string | null,
+  users: GroupUser[] = [],
+): ItemPortion[] {
+  if (assignment === 'shared') {
+    return users.map(({ id }) => ({ memberId: id, cost: item.cost / users.length }));
+  }
+  if (typeof assignment === 'string') return [{ memberId: assignment, cost: item.cost }];
+
+  const weights = assignment.portions.map(({ units }) => units);
   const costs = allocateMoney(item.cost, weights, currency);
-  return split.portions.map(({ memberId }, index) => ({ memberId, cost: costs[index] }));
+  return assignment.portions.map(({ memberId, units }, index) => ({
+    memberId,
+    cost: costs[index],
+    units: assignment.mode === 'quantity' ? units : undefined,
+  }));
 }
 
 export function splitReceipt(
@@ -101,11 +122,7 @@ export function splitReceipt(
       splitReceiptItems.push(item.cost);
       continue;
     }
-    const portions =
-      typeof assignment === 'string'
-        ? [{ memberId: assignment, cost: item.cost }]
-        : allocatedItemPortions(item, assignment, currency);
-    for (const { memberId, cost } of portions) {
+    for (const { memberId, cost } of itemPortions(item, assignment, currency)) {
       userTotals.set(memberId, (userTotals.get(memberId) ?? 0) + cost);
     }
   }

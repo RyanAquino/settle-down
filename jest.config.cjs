@@ -1,3 +1,6 @@
+// Expo substitutes public environment variables when Jest compiles the app.
+process.env.EXPO_PUBLIC_API_BASE_URL = 'https://test.invalid';
+
 module.exports = {
   preset: 'jest-expo',
   testMatch: ['<rootDir>/tests/**/*.test.[jt]s?(x)'],

@@ -1,14 +1,22 @@
 import { View, Text, StyleSheet, Image, Animated, Easing } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { File } from 'expo-file-system';
 import { theme, type } from '@/utils/theme';
-import { Entrance } from '@/components/motion';
+import { Entrance, PressableScale } from '@/components/motion';
+import { scanReconciledReceipt } from '@/utils/receipt-preview';
+import { retryApiCall } from '@/utils/retry';
 
-type StepState = 'pending' | 'active' | 'done';
+const scanSteps = [
+  { label: 'Capture', state: 'done' },
+  { label: 'Read', state: 'active' },
+  { label: 'Assign', state: 'pending' },
+] as const;
+
+type StepState = (typeof scanSteps)[number]['state'];
 
 export default function LoadingScreen() {
   const params = useLocalSearchParams();
@@ -17,16 +25,12 @@ export default function LoadingScreen() {
   const [isOffline, setIsOffline] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Reading receipt');
   const [statusDetail, setStatusDetail] = useState('Extracting items and amounts');
-  const [steps, setSteps] = useState<{ label: string; state: StepState }[]>([
-    { label: 'Capture', state: 'done' },
-    { label: 'Read', state: 'active' },
-    { label: 'Assign', state: 'pending' },
-  ]);
+  const [needsRetake, setNeedsRetake] = useState(false);
 
   // scanning beam animation — sweeps top to bottom and back
   const [beam] = useState(() => new Animated.Value(0));
   useEffect(() => {
-    if (isOffline) return;
+    if (isOffline || needsRetake) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(beam, {
@@ -45,23 +49,7 @@ export default function LoadingScreen() {
     );
     loop.start();
     return () => loop.stop();
-  }, [beam, isOffline]);
-
-  // advance "Read" → "Assign" on a timer so the user sees motion
-  const tickRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (isOffline) return;
-    tickRef.current = setTimeout(() => {
-      setSteps((s) =>
-        s.map((st, i) =>
-          i === 1 ? { ...st, state: 'done' } : i === 2 ? { ...st, state: 'active' } : st,
-        ),
-      );
-    }, 1400);
-    return () => {
-      if (tickRef.current) clearTimeout(tickRef.current);
-    };
-  }, [isOffline]);
+  }, [beam, isOffline, needsRetake]);
 
   const savePhotoAsFallback = useCallback(
     async (photoUri: string) => {
@@ -91,83 +79,63 @@ export default function LoadingScreen() {
     [fromLibrary],
   );
 
-  const uploadPhotoWithRetry = useCallback(
-    async (photoUri: string, attempt = 1, maxAttempts = 3): Promise<void> => {
+  const uploadPhoto = useCallback(
+    async (uri: string, signal: AbortSignal) => {
       const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
-      const uploadUrl = `${apiBaseUrl}/api/v1/receipts/receipt-items/`;
-      let response: Response | undefined;
       try {
-        // Guard: on remote EAS builds the gitignored .env isn't present at bundle time,
-        // so EXPO_PUBLIC_API_BASE_URL can be undefined. Fail loudly instead of silently
-        // fetching `undefined/api/...` and burying it in the retry/fallback path.
-        if (!apiBaseUrl) {
-          throw new Error(
-            'EXPO_PUBLIC_API_BASE_URL is undefined in this build (env not inlined at bundle time).',
-          );
-        }
-
-        const formData = new FormData();
-        // SDK 56+ installs expo/fetch as the global `fetch`, and its multipart encoder
-        // only accepts string | Blob | { bytes() } parts — the React Native
-        // `{ uri, type, name }` convention now throws `Unsupported FormDataPart`.
-        // expo-file-system's `File` implements `bytes()`, so it encodes correctly.
-        formData.append('file', new File(photoUri));
+        if (!apiBaseUrl) throw new Error('EXPO_PUBLIC_API_BASE_URL is missing from this build.');
 
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
-        // Do NOT set 'Content-Type' for multipart/form-data — fetch must set it itself so
-        // it can append the required `boundary`. Hardcoding it produces a body the server
-        // can't parse.
-        const headers: { [key: string]: string } = {
-          'ngrok-skip-browser-warning': 'true',
-        };
+        const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
         if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
-        if (attempt > 1) {
-          setStatusMessage(`Retrying · attempt ${attempt} of ${maxAttempts}`);
-          setStatusDetail('Network took a pause. Hang tight.');
-        }
+        const readPhoto = () => {
+          let attempt = 0;
+          return retryApiCall(async () => {
+            if (signal.aborted) throw new Error('Receipt scan cancelled.');
+            attempt++;
+            if (attempt > 1) {
+              setStatusMessage(`Retrying connection · ${attempt} of 3`);
+              setStatusDetail('Uploading the same receipt photo.');
+            }
+            const body = new FormData();
+            // Expo's multipart encoder reads bytes from File and sets the boundary.
+            body.append('file', new File(uri));
+            const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
+              method: 'POST',
+              body,
+              headers,
+              signal,
+            });
+            if (!response.ok) throw new Error(`Receipt upload failed (HTTP ${response.status})`);
+            const data: unknown = await response.json();
+            return data;
+          });
+        };
 
-        console.log(
-          `[upload] attempt ${attempt}/${maxAttempts} → ${uploadUrl} (auth=${!!authToken})`,
-        );
-        response = await fetch(uploadUrl, {
-          method: 'POST',
-          body: formData,
-          headers,
+        const receipt = await scanReconciledReceipt(readPhoto, () => {
+          if (signal.aborted) return;
+          setStatusMessage('Reading receipt again');
+          setStatusDetail('Checking the items against the scanned total.');
         });
-        console.log(`[upload] response status=${response.status} ok=${response.ok}`);
-
-        if (response.ok) {
-          const data: unknown = await response.json();
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          router.replace({ pathname: '/receipt-details', params: { data: JSON.stringify(data) } });
+        if (signal.aborted) return;
+        if (!receipt) {
+          setNeedsRetake(true);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
           return;
         }
-        throw new Error(`HTTP error! status: ${response.status}`);
-      } catch (err) {
-        const e = err as Error;
-        console.warn(
-          `[upload] FAILED attempt ${attempt}/${maxAttempts} name=${e?.name} message=${e?.message} status=${response?.status ?? 'no-response'} url=${uploadUrl}`,
-        );
-        if (attempt < maxAttempts) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-          setStatusMessage(`Retrying in ${delay / 1000}s`);
-          setStatusDetail('We\u2019ll try a couple more times before giving up.');
-          await new Promise((r) => setTimeout(r, delay));
-          // Bounded self-recursion (max 3 attempts). The rule cannot prove the
-          // self-reference is only reached after initialization, but it always is.
-          // eslint-disable-next-line react-hooks/immutability
-          return uploadPhotoWithRetry(photoUri, attempt + 1, maxAttempts);
-        }
-        await savePhotoAsFallback(photoUri);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        router.replace({
+          pathname: '/receipt-details',
+          params: { data: JSON.stringify(receipt), photoUri: uri },
+        });
+      } catch (error) {
+        if (signal.aborted) return;
+        console.warn('[upload] Could not scan receipt', error);
+        await savePhotoAsFallback(uri);
       }
     },
     [savePhotoAsFallback],
-  );
-
-  const uploadPhoto = useCallback(
-    async (uri: string) => uploadPhotoWithRetry(uri),
-    [uploadPhotoWithRetry],
   );
 
   const handleLibraryPhotoOffline = useCallback(async () => {
@@ -213,9 +181,10 @@ export default function LoadingScreen() {
   );
 
   const checkConnectivityAndProcess = useCallback(
-    async (uri: string) => {
+    async (uri: string, signal: AbortSignal) => {
       try {
         const netInfoState = await NetInfo.fetch();
+        if (signal.aborted) return;
         console.log(
           `[netinfo] isConnected=${netInfoState.isConnected} type=${netInfoState.type} isInternetReachable=${netInfoState.isInternetReachable}`,
         );
@@ -224,7 +193,7 @@ export default function LoadingScreen() {
         // ever attempting the upload — a silent false-negative.
         const isConnected = netInfoState.isConnected !== false;
         if (isConnected) {
-          await uploadPhoto(uri);
+          await uploadPhoto(uri, signal);
         } else {
           setIsOffline(true);
           setStatusMessage('You\u2019re offline');
@@ -236,6 +205,7 @@ export default function LoadingScreen() {
           await handleOfflinePhoto(uri);
         }
       } catch {
+        if (signal.aborted) return;
         setIsOffline(true);
         setStatusMessage('Network check failed');
         setStatusDetail('Falling back to offline mode.');
@@ -248,14 +218,45 @@ export default function LoadingScreen() {
   useEffect(() => {
     // Kicks off the async upload pipeline on mount; every setState inside
     // happens after `await NetInfo.fetch()`, so none are synchronous here.
+    const controller = new AbortController();
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (photoUri) void checkConnectivityAndProcess(photoUri);
+    if (photoUri) void checkConnectivityAndProcess(photoUri, controller.signal);
+    return () => controller.abort();
   }, [photoUri, checkConnectivityAndProcess]);
 
   // beam translateY: 0 → photoHeight, within the card
   const PHOTO_H = 260;
   const beamY = beam.interpolate({ inputRange: [0, 1], outputRange: [0, PHOTO_H - 2] });
-  const beamOpacity = isOffline ? 0 : 1;
+  const beamOpacity = isOffline || needsRetake ? 0 : 1;
+
+  if (needsRetake) {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.content, styles.retakeContent]}>
+          <Image
+            accessibilityLabel="Original receipt photo"
+            source={{ uri: photoUri }}
+            style={styles.retakePhoto}
+            resizeMode="contain"
+          />
+          <Text style={styles.title}>Couldn’t verify the receipt total</Text>
+          <Text style={styles.subtitle}>
+            Retake the photo with every item, the tax, and the total visible.
+          </Text>
+          <PressableScale
+            style={styles.retakeButton}
+            testID="retake-receipt-photo"
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace('/');
+            }}
+          >
+            <Text style={styles.retakeButtonText}>Retake photo</Text>
+          </PressableScale>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -300,12 +301,12 @@ export default function LoadingScreen() {
 
         {/* 3-step progress */}
         <Entrance delay={240} style={styles.steps}>
-          {steps.map((s, i) => (
+          {scanSteps.map((s, i) => (
             <StepItem
-              key={i}
+              key={s.label}
               label={s.label}
               state={isOffline ? 'pending' : s.state}
-              isLast={i === steps.length - 1}
+              isLast={i === scanSteps.length - 1}
             />
           ))}
         </Entrance>
@@ -383,6 +384,21 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 420,
   },
+  retakeContent: { flex: 1, justifyContent: 'center' },
+  retakePhoto: {
+    width: '100%',
+    height: '48%',
+    borderRadius: theme.radiusSm,
+    backgroundColor: theme.surface,
+    marginBottom: 24,
+  },
+  retakeButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: theme.radius,
+    backgroundColor: theme.ink,
+  },
+  retakeButtonText: { ...type.body, color: theme.surface },
   photoCard: {
     width: 200,
     backgroundColor: '#fff',
