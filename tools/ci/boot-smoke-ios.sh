@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-runtime="$(xcrun simctl list runtimes --json | python3 -c 'import json,sys; r=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and r["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-")]; print(sorted(r,key=lambda r:tuple(map(int,r["version"].split("."))))[-1]["identifier"])')"
+runtime=$(xcrun simctl list runtimes --json | python3 -c '
+import json
+import sys
+available = [
+    runtime for runtime in json.load(sys.stdin)["runtimes"]
+    if runtime.get("isAvailable") and runtime["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-")
+]
+latest = max(available, key=lambda runtime: tuple(map(int, runtime["version"].split("."))))
+print(latest["identifier"])
+')
 device="$(xcrun simctl create 'Settle Down CI' com.apple.CoreSimulator.SimDeviceType.iPhone-17 "$runtime")"
 if ! xcrun simctl boot "$device" >&2; then
   xcrun simctl delete "$device" >&2

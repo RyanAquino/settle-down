@@ -52,11 +52,6 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Start iOS simulator
-        id: simulator
-        run: |
-          device=$(bash tools/ci/boot-smoke-ios.sh)
-          echo "device=$device" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
@@ -87,6 +82,11 @@ jobs:
           XCODE_XCCONFIG_FILE: ${{ github.workspace }}/tools/ci/smoke.xcconfig
           EXPO_PROFILE: '1'
         run: npx --no-install expo run:ios --configuration Release --device generic --no-bundler --output "$RUNNER_TEMP/ios-binary"
+      - name: Start iOS simulator
+        id: simulator
+        run: |
+          device=$(bash tools/ci/boot-smoke-ios.sh)
+          echo "device=$device" >> "$GITHUB_OUTPUT"
       - name: Cache Xcode compilation results
         if: steps.xcode-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -108,6 +108,7 @@ jobs:
         if: always()
         with:
           name: native-ios-evidence
+          include-hidden-files: true
           path: |
             test-results/ios/
             .expo/xcodebuild*.log
