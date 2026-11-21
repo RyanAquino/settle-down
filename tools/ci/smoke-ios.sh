@@ -7,4 +7,4 @@ device="${3:-$(bash "$(dirname "$0")/boot-smoke-ios.sh")}"
 trap 'xcrun simctl shutdown "$device" >/dev/null 2>&1 || true; xcrun simctl delete "$device" >/dev/null 2>&1 || true' EXIT
 xcrun simctl bootstatus "$device" -b
 xcrun simctl install "$device" "$binary"
-maestro --device "$device" test --format junit --output "$evidence/junit.xml" --test-output-dir "$evidence" .maestro/launch.yaml
+maestro --device "$device" test -e FRESH_IOS_INSTALL=1 --format junit --output "$evidence/junit.xml" --test-output-dir "$evidence" .maestro/launch.yaml

@@ -1,8 +1,14 @@
 appId: com.ryan.aquino.settledown
 name: Camera screen launches in a release build
 ---
+# The iOS smoke runner just installed the app on a new simulator. Reinstalling
+# it again can asynchronously revoke the camera grant after launch.
+- runFlow:
+    when:
+      true: ${typeof FRESH_IOS_INSTALL === 'undefined'}
+    commands:
+      - clearState
 - launchApp:
-    clearState: true
     permissions:
       all: allow
 - assertVisible: 'Benchmark receipt label'

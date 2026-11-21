@@ -81,7 +81,8 @@ credential is used; OTA loading is disabled with `CI_E2E=1`.
 
 The iOS simulator starts after npm installation and cache restoration so it can
 boot while Expo builds. Xcode can reuse individual Swift and Clang compilations,
-and CocoaPods shares its download cache with the iOS verifier.
+and CocoaPods shares its download cache with the iOS verifier. Maestro uses
+the fresh iOS install directly to keep its camera permission grant in place.
 Android caches Gradle task outputs and the CMake compiler results for all four
 architectures. The Android evidence includes Gradle's task timing report. Both jobs regenerate the native project
 and package the current checkout. GitHub stores the compiler and task results
