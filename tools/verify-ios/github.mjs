@@ -176,6 +176,15 @@ export function renderReport(
       '',
     );
   lines.push('Coverage: PR changes only, using a synthetic local backend.', '');
+  if (result?.agentAttempts?.length) {
+    lines.push('**Model selection**', '');
+    for (const [index, entry] of result.agentAttempts.entries()) {
+      const name = entry.provider === 'copilot' ? 'GitHub Copilot' : 'OpenRouter';
+      const quota = entry.reason === 'quota_exhausted' ? ' (quota exhausted)' : '';
+      lines.push(`${index + 1}. ${name} \`${escape(entry.model)}\`${quota}`);
+    }
+    lines.push('');
+  }
   if (result?.rationale) lines.push(escape(result.rationale).slice(0, 8000), '');
   lines.push('### Tested scenarios', '');
   if (!result?.scenarios?.length) lines.push('No scenario replay results are available.');

@@ -32,7 +32,10 @@ const content = (value) => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
 });
 const deadline = Number(process.env.VERIFY_AGENT_DEADLINE);
-const budget = new ExplorationBudget(Number.isFinite(deadline) && deadline > 0 ? { deadline } : {});
+const budget = new ExplorationBudget({
+  deadline: Number.isFinite(deadline) && deadline > 0 ? deadline : undefined,
+  calls: Number(process.env.VERIFY_PRIOR_CALLS || 0),
+});
 const scenarioEvidence = new ScenarioEvidence({
   initialResetReady: process.env.VERIFY_INITIAL_RESET_READY === '1',
 });

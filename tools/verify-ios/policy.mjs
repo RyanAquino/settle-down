@@ -253,6 +253,19 @@ export const resultSchema = z.strictObject({
   version: z.literal(1),
   headSha: z.string().regex(/^[a-f0-9]{40}$/),
   agentCompleted: z.boolean(),
+  agentAttempts: z
+    .array(
+      z.strictObject({
+        provider: z.enum(['copilot', 'openrouter']),
+        model: z
+          .string()
+          .max(256)
+          .regex(/^[a-zA-Z0-9./_:+-]+$/),
+        reason: z.literal('quota_exhausted').optional(),
+      }),
+    )
+    .max(2)
+    .optional(),
   disposition: z.enum(['ready', 'skipped', 'blocked']),
   rationale: z.string().max(8000).optional(),
   setupError: z.string().max(16000).optional(),

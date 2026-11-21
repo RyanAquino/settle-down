@@ -1,10 +1,10 @@
 # Comment-triggered iOS verification
 
-For PRs targeting `main`, the `iOS PR Verification` check is automatically marked
-skipped when the diff contains no app code, app assets, native iOS files, or app
-build and dependency settings. Docs-only, GitHub-workflow-only, and test or
-verification-tooling changes skip the simulator. A mixed PR with app changes
-still uses `/verify`. The required check name in the `main` ruleset stays the same.
+For PRs targeting `main`, the applicability workflow checks whether the diff
+affects app code, assets, native iOS files, or app build and dependency settings.
+For docs-only, GitHub-workflow-only, and test or verification-tooling changes,
+its `iOS PR Verification` job passes and records why the simulator was skipped.
+PRs that also change the app require a `/verify` run to satisfy the same check.
 
 Post a new PR conversation comment containing exactly `/verify` (surrounding
 whitespace is fine). Repository writers, maintainers, and admins can request runs
@@ -35,11 +35,11 @@ current evidence is never replaced with an older recording or test log.
 
 1. Merge the workflow files and tooling onto `main`. Comment requests and
    completion reports use default-branch workflows. The applicability workflow
-   runs from the base branch when a PR is opened, updated, reopened, or retargeted
-   to `main`.
-2. Enable GitHub Actions and Copilot Free for the repository owner. Copilot CLI
-   uses `GITHUB_TOKEN` with `copilot-requests: write`; no PAT, Expo token, Apple
-   signing account, backend secret, or OpenAI API key is required.
+   runs from the base branch on PR opens, pushes, reopens, and edits, including
+   title or description edits and changes of the target branch to `main`.
+2. Enable GitHub Actions and Copilot for the repository owner. By default, Copilot
+   CLI uses GitHub-hosted inference with the job's `GITHUB_TOKEN` and
+   `copilot-requests: write` permission.
 3. Rebase the PR being tested onto the setup commit so its app configuration
    supports `CI_E2E=1`. The build refuses a binary with OTA updates enabled.
 4. Post `/verify` on a small, testable UI PR and inspect the resulting check,
@@ -47,10 +47,32 @@ current evidence is never replaced with an older recording or test log.
    hardware-only change (expect PASS or SKIPPED with a physical-device list)
    before relying on this check for merge protection.
 
-Copilot Free has a limited allowance. Exhausted allowance or authentication errors
-produce BLOCKED; there is no paid-model or alternate-provider fallback. Standard
-public-repository runners are used. Artifacts consume GitHub storage: evidence is
-retained for seven days and the intermediate app archive for one day.
+GitHub retains verification evidence for seven days and the intermediate app
+archive for one day.
+
+### Model selection and quota fallback
+
+In the repository's **Settings → Secrets and variables → Actions**, add an
+`OPENROUTER_API_KEY` secret to enable fallback. When the CLI reports an exhausted
+GitHub Copilot quota, the verifier tries exploration once more with OpenRouter
+on the same simulator build. CI resets the app and fixture state, archives the
+first attempt's evidence under `copilot-quota/`, and gives the fallback the
+remaining exploration time and tool calls. With no key, an exhausted Copilot quota produces
+BLOCKED. Authentication errors, ordinary rate limits, and failed Maestro
+assertions do not trigger a provider switch.
+
+| Actions setting               | Kind     | Value                                                                                         |
+| ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `IOS_VERIFY_PROVIDER`         | Variable | Defaults to `copilot`. Set to `openrouter` to start exploration directly with OpenRouter.     |
+| `IOS_VERIFY_OPENROUTER_MODEL` | Variable | Defaults to `nvidia/nemotron-3.5-super-vl:free`. Use a `:free` model ID or `openrouter/free`. |
+| `OPENROUTER_API_KEY`          | Secret   | Authenticates OpenRouter requests for direct use or quota fallback.                           |
+
+Choose a model that supports tool calling, streaming, and image inputs. During
+OpenRouter exploration, the PR diff, source excerpts, simulator screenshots, and
+fixture data requested by the model go to OpenRouter and its inference provider.
+Free capacity depends on the model and account. The PR verdict lists each
+provider and requested model in order. Both paths require the same independent
+Maestro replay and JUnit evidence for PASS.
 
 ## What runs
 
@@ -64,7 +86,7 @@ retained for seven days and the intermediate app archive for one day.
   one synthetic receipt photo, and starts the fixture backend. The binary is built
   with Xcode 26.6. Both jobs use `macos-26` with Xcode 26.6. Node 22, Java 17,
   Maestro 2.12.1, and Copilot CLI 1.0.112 are selected explicitly.
-- Copilot reads the diff and selected source through a restricted MCP adapter.
+- The selected model reads the diff and selected source through a restricted MCP adapter.
   Diffs, source, hierarchies, and fixture requests are paged so each tool result
   stays under 16,000 bytes. Copilot CLI writes larger results (over 20,480 bytes)
   to a temp file and shows the model only a 500-character preview, which the
@@ -279,7 +301,7 @@ has a separate five-minute command limit and a four-minute Maestro startup
 allowance, with verbose logs. The attempt budget leaves room for both the
 observed multi-minute cold migration and driver startup.
 Permanent setup failures and app assertions are never retried. The setup budget
-is separate from the 25-minute Copilot deadline. The first scenario reset reuses
+is separate from the 25-minute exploration deadline. The first scenario reset reuses
 the runner's fresh install only while no flow has touched the app; later resets
 still reinstall it.
 Every tool reports remaining time/calls. The adapter reserves two minutes for
