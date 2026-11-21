@@ -5,7 +5,7 @@ name: Camera screen launches in a release build
     clearState: true
     permissions:
       all: allow
-- assertVisible: 'Benchmark receipt label'
+- assertVisible: 'Installed com.ryan.aquino.settledown'
 - assertVisible:
     id: pick-receipt
 - assertVisible: 'Capture receipt'
