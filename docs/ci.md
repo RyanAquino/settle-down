@@ -84,9 +84,17 @@ boot while Expo builds. Xcode can reuse individual Swift and Clang compilations,
 and CocoaPods shares its download cache with the iOS verifier. Maestro uses
 the fresh iOS install directly to keep its camera permission grant in place.
 Android caches Gradle task outputs and the CMake compiler results for all four
-architectures. The Android evidence includes Gradle's task timing report. Both jobs regenerate the native project
-and package the current checkout. GitHub stores the compiler and task results
+architectures. The Android evidence includes Gradle's task timing report. Both
+jobs regenerate the native project and package the current checkout. GitHub stores the compiler and task results
 after a successful build so they are available if the device test needs a rerun.
+
+The smoke flow can retry once on each platform. On Android, a failed
+`launchApp` command must report that the selected emulator went offline.
+CI waits up to 30 seconds for its ADB shell to respond before retrying.
+On iOS, Maestro has four minutes to start its XCTest driver. If that startup
+times out, CI installs the same binary on a fresh simulator for the retry.
+An assertion failure ends the job immediately. The native evidence artifacts
+keep each attempt, and a successful retry is recorded in the job summary.
 
 It runs on app/config/dependency/CI-related PR changes, all main-branch pushes,
 a weekly schedule, and manual dispatch. macOS builds can take substantially

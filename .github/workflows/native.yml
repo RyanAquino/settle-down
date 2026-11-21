@@ -100,6 +100,7 @@ jobs:
       - name: Run committed smoke test
         env:
           SMOKE_DEVICE: ${{ steps.simulator.outputs.device }}
+          MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
         run: |
           apps=("$RUNNER_TEMP"/ios-binary/*.app)
           test "${#apps[@]}" -eq 1
@@ -199,9 +200,8 @@ jobs:
           target: google_apis
           disable-animations: true
           script: |
-            mkdir -p test-results/android
             adb install android/app/build/outputs/apk/release/app-release.apk
-            maestro test --format junit --output test-results/android/junit.xml --test-output-dir test-results/android .maestro/launch.yaml
+            bash tools/ci/smoke-android.sh test-results/android
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
