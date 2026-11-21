@@ -79,6 +79,13 @@ app launches and exposes the camera screen controls, with permissions granted.
 Android also runs `lintRelease`. No signing account, real backend, or production
 credential is used; OTA loading is disabled with `CI_E2E=1`.
 
+The iOS simulator starts during setup. Xcode can reuse individual Swift and Clang
+compilations, and CocoaPods shares its download cache with the iOS verifier.
+Android enables Gradle's task output cache for the full Release build and lint,
+including all four native architectures. Both jobs regenerate the native project
+and package the current checkout. GitHub stores the compiler and task results
+after a successful build so they are available if the device test needs a rerun.
+
 It runs on app/config/dependency/CI-related PR changes, all main-branch pushes,
 a weekly schedule, and manual dispatch. macOS builds can take substantially
 longer than the Linux quality checks. The iOS runner/Xcode combination follows
