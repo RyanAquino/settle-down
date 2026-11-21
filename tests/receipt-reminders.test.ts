@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isRunningInExpoGo, requireOptionalNativeModule, uuid } from 'expo';
+import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { createPhotoDraft, removeDraft, saveDraft } from '@/utils/receipt-inbox';
@@ -20,6 +21,7 @@ jest.mock('expo', () => ({
 jest.mock('expo-file-system', () =>
   jest.requireActual<typeof import('./support/inbox-files')>('./support/inbox-files'),
 );
+jest.mock('expo-constants', () => ({ __esModule: true, default: {} }));
 jest.mock('expo-notifications', () => ({
   IosAuthorizationStatus: { PROVISIONAL: 3, EPHEMERAL: 4 },
   SchedulableTriggerInputTypes: { DATE: 'date', CALENDAR: 'calendar' },
@@ -37,6 +39,9 @@ const pending = new Map<string, Notifications.NotificationRequestInput>();
 const savedAt = new Date(2026, 10, 30, 23, 15);
 const threeHours = 3 * 60 * 60 * 1000;
 const morningId = 'receipt-reminder:morning:2026-12-01';
+const personalProject = randomUUID();
+const orgProject = randomUUID();
+const goMorningId = `receipt-reminder:${personalProject}:morning:2026-12-01`;
 const setPermission = (status: 'granted' | 'denied' | 'undetermined') => {
   jest.mocked(Notifications.getPermissionsAsync).mockResolvedValue({
     granted: status === 'granted',
@@ -51,6 +56,8 @@ beforeEach(() => {
   jest.spyOn(uuid, 'v4').mockImplementation(randomUUID);
   Platform.OS = 'ios';
   pending.clear();
+  Constants.easConfig = { projectId: personalProject };
+  Constants.expoConfig = null;
   jest.mocked(isRunningInExpoGo).mockReturnValue(false);
   jest.mocked(requireOptionalNativeModule).mockReturnValue(null);
   setPermission('granted');
@@ -76,15 +83,16 @@ afterEach(() => {
 });
 
 test('Expo Go schedules three elapsed hours and one month-end calendar fallback', async () => {
+  jest.mocked(isRunningInExpoGo).mockReturnValue(true);
   const draft = await createPhotoDraft(samplePhoto().uri);
-  const elapsedId = 'receipt-reminder:elapsed:' + draft.id;
+  const elapsedId = `receipt-reminder:${personalProject}:elapsed:${draft.id}`;
   await syncReceiptReminders();
   expect(pending.size).toBe(2);
   expect(pending.get(elapsedId)?.trigger).toMatchObject({
     type: 'date',
     date: +savedAt + threeHours,
   });
-  expect(pending.get(morningId)?.trigger).toEqual({
+  expect(pending.get(goMorningId)?.trigger).toEqual({
     type: 'calendar',
     year: 2026,
     month: 12,
@@ -98,9 +106,37 @@ test('Expo Go schedules three elapsed hours and one month-end calendar fallback'
   expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
 
   // A delivered morning must stay consumed even if travel makes the same local 9 AM upcoming again.
-  pending.delete(morningId);
+  pending.delete(goMorningId);
   await syncReceiptReminders();
-  expect(pending.has(morningId)).toBe(false);
+  expect(pending.has(goMorningId)).toBe(false);
+});
+
+test('one Expo Go project can schedule and discard a receipt while the other project keeps both reminders', async () => {
+  jest.mocked(isRunningInExpoGo).mockReturnValue(true);
+  const personal = await createPhotoDraft(samplePhoto().uri);
+  await syncReceiptReminders();
+  const personalRequests = new Map(pending);
+
+  // The other copy has its own inbox and sees the same host notification center.
+  removeDraft(personal.id);
+  Constants.easConfig = null;
+  Constants.expoConfig = {
+    name: 'Settle Down',
+    slug: 'settle-down',
+    extra: { eas: { projectId: orgProject } },
+  };
+  const org = await createPhotoDraft(samplePhoto().uri);
+  await syncReceiptReminders();
+  expect(pending.size).toBe(4);
+  const orgMorningId = `receipt-reminder:${orgProject}:morning:2026-12-01`;
+  expect(parseReceiptReminder(pending.get(goMorningId)?.content.data)?.draftIds).toEqual([
+    personal.id,
+  ]);
+  expect(parseReceiptReminder(pending.get(orgMorningId)?.content.data)?.draftIds).toEqual([org.id]);
+
+  removeDraft(org.id);
+  await syncReceiptReminders();
+  expect(pending).toEqual(personalRequests);
 });
 
 test('an iOS native build uses the floating Gregorian calendar module for mornings only', async () => {
@@ -127,12 +163,12 @@ test('Android Expo Go refreshes only the morning reminder when it resumes in a n
   jest.mocked(isRunningInExpoGo).mockReturnValue(true);
   await createPhotoDraft(samplePhoto().uri);
   await syncReceiptReminders();
-  const morning = pending.get(morningId)!;
+  const morning = pending.get(goMorningId)!;
   const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localMorning = new Date(2026, 11, 1, 9).getTime();
   expect(morning.content.data?.scheduledZone).toBe(localZone);
   // The OS still has the absolute timestamp scheduled before the device changed zones.
-  pending.set(morningId, {
+  pending.set(goMorningId, {
     ...morning,
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -145,8 +181,8 @@ test('Android Expo Go refreshes only the morning reminder when it resumes in a n
   });
   jest.mocked(Notifications.scheduleNotificationAsync).mockClear();
   await syncReceiptReminders();
-  expect(pending.get(morningId)?.trigger).toMatchObject({ type: 'date', date: localMorning });
-  expect(pending.get(morningId)?.content.data?.scheduledZone).toBe(localZone);
+  expect(pending.get(goMorningId)?.trigger).toMatchObject({ type: 'date', date: localMorning });
+  expect(pending.get(goMorningId)?.content.data?.scheduledZone).toBe(localZone);
   await syncReceiptReminders();
   expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
 });

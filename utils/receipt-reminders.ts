@@ -9,8 +9,7 @@ import { listDrafts, readDraft, type ReceiptDraft } from '@/utils/receipt-inbox'
 import { nextMorningDate } from '@/utils/receipt-morning';
 
 const channelId = 'receipt-reminders';
-const prefix = 'receipt-reminder:';
-const morningPrefix = prefix + 'morning:';
+const easProject = z.object({ projectId: z.uuid() });
 const threeHours = 3 * 60 * 60 * 1000;
 const native = () => Platform.OS === 'ios' || Platform.OS === 'android';
 const promptMarker = () => new File(Paths.document, 'receipt-reminder-permission-requested');
@@ -175,6 +174,7 @@ type Reminder = {
 };
 
 function scheduledReminders(
+  prefix: string,
   drafts: ReceiptDraft[],
   previous: MorningState,
   requests: Map<string, Notifications.NotificationRequest>,
@@ -194,7 +194,7 @@ function scheduledReminders(
     const prior = previous[draft.id];
     const morningDate = draft.morningDate ?? prior?.date ?? nextMorningDate(draft.createdAt);
     const morningAt = new Date(morningDate + 'T09:00:00').getTime();
-    const identifier = morningPrefix + morningDate;
+    const identifier = prefix + 'morning:' + morningDate;
     // A disappeared, previously armed one-shot has fired (or the native time-zone receiver
     // skipped it). Flying west across 9 AM must never create a second morning alert.
     if (
@@ -242,6 +242,15 @@ type ReceiptReminderCalendar = {
 };
 
 async function reconcile() {
+  // Expo Go shares a notification center between the personal and organization projects.
+  const expoGo = isRunningInExpoGo();
+  let prefix = 'receipt-reminder:';
+  if (expoGo) {
+    const projectId =
+      Constants.easConfig?.projectId ??
+      easProject.parse(Constants.expoConfig?.extra?.eas).projectId;
+    prefix += projectId + ':';
+  }
   const enabled = (await getReceiptReminderPermission()) === 'enabled';
   const pending = (await Notifications.getAllScheduledNotificationsAsync()).filter((request) =>
     request.identifier.startsWith(prefix),
@@ -250,7 +259,14 @@ async function reconcile() {
   const drafts = listDrafts();
   const file = new File(Paths.document, 'receipt-reminder-mornings.json');
   const previous = readMorningState(file);
-  const { upcoming, state } = scheduledReminders(drafts, previous, requests, enabled, Date.now());
+  const { upcoming, state } = scheduledReminders(
+    prefix,
+    drafts,
+    previous,
+    requests,
+    enabled,
+    Date.now(),
+  );
   if (upcoming.size) await createChannel();
   for (const request of pending) {
     if (!upcoming.has(request.identifier)) {
@@ -264,7 +280,7 @@ async function reconcile() {
       ? requireOptionalNativeModule<ReceiptReminderCalendar>('ReceiptReminderCalendar')
       : null;
   const fallbackZone =
-    (Platform.OS === 'ios' && !appleCalendar) || (Platform.OS === 'android' && isRunningInExpoGo())
+    expoGo || (Platform.OS === 'ios' && !appleCalendar)
       ? Intl.DateTimeFormat().resolvedOptions().timeZone
       : undefined;
   for (const reminder of upcoming.values()) {
