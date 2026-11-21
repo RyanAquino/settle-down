@@ -142,6 +142,8 @@ The app lives in two EAS projects: `@ryan.aquino/settle-down` (personal, the def
 `app.config.ts` picks one from the `EAS_PROJECT_OWNER` environment variable, and every script above has an `:org` variant (for example `npm run update:preview:org`) that targets the org project.
 After `Quality` passes for a push to `main`, GitHub Actions publishes that commit to the `preview` channel on iOS and Android for both projects. Each project uses its own EAS `preview` environment. Keep those environment variables in sync.
 
-Set the repository Actions secret `EXPO_TOKEN` to an Expo access token with permission to publish updates to both projects. If one publish fails, use **Re-run failed jobs** in **Publish Expo Go previews** to retry it. The workflow skips commits superseded on `main`. [Create an Expo access token](https://expo.dev/settings/access-tokens).
+To publish manually, the GitHub repository owner can open **Actions → Publish Expo Go previews → Run workflow**, select `main`, and click **Run workflow**. The selected commit must have passed `Quality` on a push to `main`. GitHub lets other writers request a run, but the workflow skips both publish jobs for those requests. Only the owner can rerun a publish.
+
+Set the repository Actions secret `EXPO_TOKEN` to an Expo access token with permission to publish updates to both projects. If one publish fails, the owner can use **Re-run failed jobs** to retry it. The workflow skips commits superseded on `main`. [Create an Expo access token](https://expo.dev/settings/access-tokens).
 
 **Sharing with testers:** Expo Go QR links from `eas update` don't open for people who aren't members of the Expo project. Invite testers to the `org-ryan` organization and share the org project's update, or use an internal-distribution build (`build:preview`). iOS internal builds require a paid Apple Developer account to register devices.
