@@ -26,8 +26,15 @@ test('synthetic API covers app contracts, errors, request evidence and reset', a
     body.append('file', new Blob([receiptPng()], { type: 'image/png' }), 'receipt.png');
     return fetch(`${base}/api/v1/receipts/receipt-items/`, { method: 'POST', body });
   };
-  assert.deepEqual(await (await upload()).json(), receipt);
-  assert.equal(receipt.receipt_items[1].cost, 200); // quantity 2, already a line total
+  const scanned = await (await upload()).json();
+  assert.deepEqual(scanned, receipt);
+  assert.deepEqual(
+    scanned.receipt_items.map(({ cost, discount }) => [cost, discount]),
+    [
+      [100, 0],
+      [200, 30], // Paid line total for two Onigiri, after savings.
+    ],
+  );
   const transaction = {
     group_id: 'ci-jpy',
     paying_member_id: 'ci-alex',

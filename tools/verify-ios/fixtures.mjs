@@ -19,7 +19,7 @@ export const receipt = {
       item_order: 2,
       cost: 200,
       quantity: 2,
-      discount: 0,
+      discount: 30,
     },
   ],
   en_shop_name: 'CI Receipt Shop',
