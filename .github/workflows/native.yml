@@ -113,12 +113,12 @@ jobs:
           if ./gradlew "${gradle_args[@]}" 2>&1 | tee "$log"; then
             exit 0
           fi
-          if ! grep -q 'Could not resolve all artifacts' "$log"; then
+          if ! grep -Fq -e 'Could not resolve all artifacts' -e 'Plugin Repositories (could not resolve plugin artifact' "$log"; then
             exit 1
           fi
           echo "::warning::Gradle failed to resolve dependencies. Retrying once."
           sleep 30
-          ./gradlew "${gradle_args[@]}" --refresh-dependencies
+          ./gradlew "${gradle_args[@]}" --refresh-dependencies --info
       - name: Install Maestro
         run: |
           bash tools/ci/install-maestro.sh "$RUNNER_TEMP/maestro"
