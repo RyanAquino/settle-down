@@ -9,11 +9,6 @@ name: Tap a device reminder to scan an offline inbox photo
 - tapOn:
     id: PXGGridLayout-Info
     index: 0
-- runFlow:
-    when:
-      visible: '.*Would Like to Send You Notifications.*'
-    commands:
-      - tapOn: Allow
 - assertVisible: You’re offline
 - tapOn: OK
 - assertVisible: Scan receipt, Receipt photo
