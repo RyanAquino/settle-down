@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { verdict, checkConclusion, resultSchema } from './policy.mjs';
+import { publishPreviewImages } from './preview-branch.mjs';
 import { inlineEvidence } from './inline-evidence.mjs';
 import { CHECK_NAME, needsVerification } from './applicability.mjs';
 
@@ -341,6 +342,11 @@ export async function publish({ github, context, core, directory }) {
     previous: existing?.body,
     token: process.env.IOS_EVIDENCE_UPLOAD_TOKEN,
     repoId: context.payload.repository?.id,
+    repository: fullName,
+    runId: run.id,
+    attempt: run.run_attempt,
+    publishImages: (files) =>
+      publishPreviewImages({ github, repo, runId: run.id, attempt: run.run_attempt, files }),
     warn: (message) => core.warning(message),
   }).catch(() => {
     core.warning('Inline previews unavailable. Publishing the verification result and artifacts.');

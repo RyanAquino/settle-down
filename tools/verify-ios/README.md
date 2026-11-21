@@ -20,8 +20,7 @@ explicitly identify stale commits.
 When a run finishes, the bot posts a separate **Final verdict** PR comment with
 the captured commit, scenario coverage and outcomes, failure/blocker details,
 and evidence downloads (recording, screenshots, test plan, JUnit results, and logs
-when available). When configured, it also embeds screenshots and playable replay
-clips. PASS means working in the tested scenarios; FAIL means a replay failed;
+when available). It also embeds captured screenshots and replay previews. PASS means working in the tested scenarios; FAIL means a replay failed;
 BLOCKED or CANCELLED means untestable; SKIPPED means no simulator-verifiable iOS UI
 change. Behavior that needs a physical device is listed separately and never blocks.
 Missing evidence is explicit. The original progress comment links to the verdict.
@@ -144,22 +143,22 @@ explicit. The full archive remains available alongside the inline previews.
 
 ### Inline screenshots and replay clips
 
-To enable GitHub-hosted previews, set the Actions repository secret
-`IOS_EVIDENCE_UPLOAD_TOKEN` to a GitHub-supported user token belonging to an
-account with write access to this repository. Prefer a fine-grained token
-restricted to this repository. The native attachment endpoint excludes
-installation tokens such as the workflow’s built-in `GITHUB_TOKEN`.
-See [GitHub CLI attachment token support](https://github.com/cli/cli/issues/14309).
+The trusted report job selects up to four captured screenshots per scenario plus
+a captured failure screenshot from that attempt’s Maestro journal. FFmpeg makes
+a short H.264 clip around the last capture and an animated GIF of the same clip.
 
-Only the trusted reporting step receives the upload credential. The bot uses
-its normal workflow token to write the verdict. A preceding step reads this
-attempt’s Maestro command journal, selects up to four captured screenshots per
-scenario plus a captured failure screenshot, and uses FFmpeg to make a short
-H.264 clip around the last capture. The comment embeds the uploaded images and
-playable clips. A missing credential or failed upload leaves the test verdict
-and artifact downloads available. Native attachments have a separate lifetime
-from the seven-day Actions artifact. Re-publishing the same verdict reuses its
-existing attachment URLs.
+For native video controls, set the optional repository secret
+`IOS_EVIDENCE_UPLOAD_TOKEN` to a user token with attachment upload access to
+this repository. Only the trusted reporting step receives it. When the token
+is absent or GitHub rejects an attachment, the reporter uses its workflow
+token to commit the affected PNGs and animated GIFs to the
+`ios-verification-media` branch. The verdict embeds images pinned to that
+commit. This fallback requires the reporting job’s `contents: write` permission
+and branch rules that allow it to create and update the media branch.
+
+Published previews outlive the seven-day archive. Re-publishing the same
+attempt reuses the previews in its existing verdict. If both publication paths
+fail, the verdict retains the evidence archive link and the report logs the error.
 
 ## Development checks
 

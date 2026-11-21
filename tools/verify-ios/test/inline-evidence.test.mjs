@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { preparePreviews } from '../prepare-previews.mjs';
+import { publishPreviewImages } from '../preview-branch.mjs';
 import { inlineEvidence } from '../inline-evidence.mjs';
 
 const png = Buffer.from('89504e470d0a1a0a', 'hex');
@@ -123,4 +124,110 @@ test('native uploads render a player and image, preserve previous uploads on ret
   const disabled = await inlineEvidence({ ...input, token: '', fetchImpl: upload });
   assert.ok(disabled.includes('evidence archive'));
   assert.equal(calls.length, 2);
+});
+
+test('a 403 or absent token embeds captured PNGs and animated replays at a pinned commit', async (t) => {
+  const directory = await temporary(t);
+  const gif = Buffer.from('GIF89a');
+  await writeFile(path.join(directory, 'split.amount.png'), png);
+  await writeFile(path.join(directory, 'split.replay.mp4'), Buffer.from('\0\0\0\u0018ftypmp42'));
+  await writeFile(path.join(directory, 'split.replay.gif'), gif);
+  await writeFile(path.join(directory, 'other.amount.png'), png);
+  const sha = 'a'.repeat(40);
+  const input = {
+    directory,
+    scenarios: [scenario],
+    repoId: 123,
+    repository: 'owner/repo',
+    runId: 456,
+    attempt: 2,
+    warn: () => {},
+    fetchImpl: async () => ({ ok: false, status: 403 }),
+    publishImages: async (files) => {
+      assert.deepEqual(
+        files.map(({ name, data }) => [name, data]),
+        [
+          ['split.amount.png', png],
+          ['split.replay.gif', gif],
+        ],
+      );
+      return sha;
+    },
+  };
+  const output = await inlineEvidence({ ...input, token: 'synthetic' });
+  assert.equal(output, await inlineEvidence(input));
+  assert.ok(
+    output.includes(
+      '![Replay clip / split](https://github.com/owner/repo/blob/' +
+        sha +
+        '/456/2/split.replay.gif?raw=true)',
+    ),
+  );
+  assert.ok(output.includes('![split / amount]('));
+  assert.ok(!output.includes('could not be published'));
+  assert.equal(
+    await inlineEvidence({ ...input, previous: output, publishImages: assert.fail }),
+    output,
+  );
+  assert.ok(
+    !(await inlineEvidence({ ...input, attempt: 3, scenarios: [], previous: output })).includes(
+      '/456/2/',
+    ),
+  );
+  assert.match(
+    await inlineEvidence({
+      ...input,
+      publishImages: async () => {
+        throw new Error('branch is protected');
+      },
+    }),
+    /evidence archive/,
+  );
+});
+
+test('concurrent initial report publication retries without replacing another commit', async () => {
+  const parents = [];
+  const repo = { owner: 'owner', repo: 'repo' };
+  const git = {
+    createBlob: async ({ content }) => {
+      assert.deepEqual(Buffer.from(content, 'base64'), png);
+      return { data: { sha: 'blob' } };
+    },
+    createTree: async ({ tree }) => {
+      assert.deepEqual(tree, [
+        { path: '456/2/split.amount.png', type: 'blob', mode: '100644', sha: 'blob' },
+      ]);
+      return { data: { sha: 'tree' } };
+    },
+    getRef: async () => {
+      if (!parents.length) throw Object.assign(new Error(), { status: 404 });
+      return { data: { object: { sha: 'concurrent' } } };
+    },
+    createCommit: async (args) => {
+      parents.push(args.parents);
+      return { data: { sha: 'commit' } };
+    },
+    createRef: async () => {
+      throw Object.assign(new Error(), { status: 422 });
+    },
+    updateRef: async (args) => {
+      assert.deepEqual(args, {
+        ...repo,
+        ref: 'heads/ios-verification-media',
+        sha: 'commit',
+        force: false,
+      });
+    },
+  };
+  assert.equal(
+    await publishPreviewImages({
+      github: { rest: { git } },
+      repo,
+      runId: 456,
+      attempt: 2,
+      files: [{ name: 'split.amount.png', data: png }],
+    }),
+    'commit',
+  );
+  assert.deepEqual(parents, [[], ['concurrent']]);
 });
