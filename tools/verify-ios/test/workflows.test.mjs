@@ -112,3 +112,14 @@ test('build and verification use the hosted image with the pinned iOS runtime', 
   );
   assert.equal(main.jobs.verify['timeout-minutes'], 90);
 });
+
+test('only the trusted verification step receives the optional OpenRouter key', () => {
+  const step = main.jobs.verify.steps.find((step) =>
+    step.run?.startsWith('node ci/tools/verify-ios/runner.mjs '),
+  );
+  assert.equal(step.env.OPENROUTER_API_KEY, '${{ secrets.OPENROUTER_API_KEY }}');
+  assert.equal(step.env.IOS_VERIFY_OPENROUTER_MODEL, '${{ vars.IOS_VERIFY_OPENROUTER_MODEL }}');
+  assert.equal(step.env.IOS_VERIFY_PROVIDER, '${{ vars.IOS_VERIFY_PROVIDER }}');
+  assert.equal(JSON.stringify(main).split('secrets.OPENROUTER_API_KEY').length - 1, 1);
+  assert.ok(!JSON.stringify(report).includes('secrets.OPENROUTER_API_KEY'));
+});

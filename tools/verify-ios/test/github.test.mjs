@@ -349,6 +349,10 @@ test('a partial rerun links current evidence and retains reused build and reques
     agentCompleted: true,
     verdict: 'PASS',
     limitations: [],
+    agentAttempts: [
+      { provider: 'copilot', model: 'auto', reason: 'quota_exhausted' },
+      { provider: 'openrouter', model: 'example/vision:free' },
+    ],
     scenarios: [
       {
         id: 'changed-ui',
@@ -396,6 +400,11 @@ test('a partial rerun links current evidence and retains reused build and reques
   await publish({ ...h, directory });
   assert.equal(h.writes[0].conclusion, 'success');
   const body = h.writes[1].body;
+  assert.ok(
+    body.includes(
+      '1. GitHub Copilot `auto` (quota exhausted)\n2. OpenRouter `example/vision:free`',
+    ),
+  );
   for (const name of ['ios-evidence-3', 'ios-build-2', 'ios-app-2', 'verify-request-1'])
     assert.ok(body.includes(name), `Missing ${name}`);
   for (const name of ['ios-evidence-1', 'ios-evidence-2', 'ios-evidence-4', 'ios-build-1'])
