@@ -13,12 +13,17 @@ public final class ReceiptReminderCalendarModule: Module {
                       userInfo: [NSLocalizedDescriptionKey: "Invalid receipt reminder date."])
       }
 
-      // Expo's calendar trigger pins the calendar's time zone at creation. Persist an
-      // autoupdating zone so iOS itself keeps 9 AM local after travel while the app is closed.
-      var calendar = Calendar(identifier: .gregorian)
-      calendar.timeZone = .autoupdatingCurrent
-      let components = DateComponents(calendar: calendar, year: year, month: month, day: day,
-                                      hour: 9, minute: 0, second: 0)
+      // usernotificationsd archives the calendar's current zone even if it is autoupdating.
+      // Pass only the date fields in the user's calendar so the system resolves 9 AM locally.
+      let gregorian = Calendar(identifier: .gregorian)
+      guard let localDate = gregorian.date(from: DateComponents(year: year, month: month, day: day, hour: 12)) else {
+        throw NSError(domain: "ReceiptReminderCalendar", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "Invalid receipt reminder date."])
+      }
+      var components = Calendar.current.dateComponents([.era, .year, .month, .day], from: localDate)
+      components.hour = 9
+      components.minute = 0
+      components.second = 0
       let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
       let content = UNMutableNotificationContent()
       content.title = title
