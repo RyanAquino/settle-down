@@ -1,9 +1,33 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
+import * as ImagePicker from 'expo-image-picker';
 import CameraScreen from './camera';
 import { Entrance, PressableScale } from '@/components/motion';
+
+// The verifier can set connectivity for one import while keeping its local backend online.
+async function importOfflinePhoto() {
+  try {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 1,
+    });
+    if (!result.canceled) {
+      router.push({
+        pathname: '/loading',
+        params: {
+          photoUri: result.assets[0].uri,
+          fromLibrary: 'true',
+          verifyOfflineImport: 'true',
+        },
+      });
+    }
+  } catch {
+    Alert.alert('Error', 'Failed to pick photo from library. Please try again.');
+  }
+}
 
 export default function Index() {
   const insets = useSafeAreaInsets();
@@ -33,6 +57,18 @@ export default function Index() {
           <Text style={styles.debugButtonText}>Inbox</Text>
         </PressableScale>
       </View>
+      {Constants.expoConfig?.extra?.verifyOfflineImport === true && (
+        <View style={[styles.inboxOverlay, { top: insets.top + 56 }]}>
+          <PressableScale
+            style={styles.debugButton}
+            testID="verify-import-offline"
+            accessibilityLabel="Import offline photo"
+            onPress={() => void importOfflinePhoto()}
+          >
+            <Text style={styles.debugButtonText}>Import offline photo</Text>
+          </PressableScale>
+        </View>
+      )}
       {showDebugButton && (
         <Entrance delay={120} style={styles.debugOverlay}>
           <PressableScale

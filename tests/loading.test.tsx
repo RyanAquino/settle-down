@@ -7,6 +7,12 @@ import { createPhotoDraft, readDraft, saveDraft, removeDraft } from '@/utils/rec
 import { Alert } from 'react-native';
 import LoadingScreen from '../app/loading';
 
+const mockExpoExtra = { verifyOfflineImport: false };
+jest.mock('expo-constants', () => ({
+  get expoConfig() {
+    return { extra: mockExpoExtra };
+  },
+}));
 jest.mock('expo-router', () => ({
   useLocalSearchParams: jest.fn(),
   router: { back: jest.fn(), canGoBack: () => true, replace: jest.fn() },
@@ -53,6 +59,7 @@ function scanResponse(total_amount: number) {
 }
 
 beforeEach(() => {
+  mockExpoExtra.verifyOfflineImport = false;
   jest.mocked(useLocalSearchParams).mockReturnValue({ photoUri: 'file:///receipt.jpg' });
   jest.mocked(createPhotoDraft).mockResolvedValue(draft);
   jest
@@ -129,6 +136,34 @@ test.each([false, true])(
     expect(createPhotoDraft).toHaveBeenCalledTimes(1);
     expect(MediaLibrary.requestPermissionsAsync).toHaveBeenCalledTimes(fromLibrary ? 0 : 1);
     expect(upload).not.toHaveBeenCalled();
+  },
+);
+
+test.each([true, false])(
+  'the offline import route simulates disconnection only in verification builds (enabled=%s)',
+  async (enabled) => {
+    const alert = jest.spyOn(Alert, 'alert');
+    mockExpoExtra.verifyOfflineImport = enabled;
+    jest.mocked(useLocalSearchParams).mockReturnValue({
+      photoUri: 'file:///receipt.jpg',
+      fromLibrary: 'true',
+      verifyOfflineImport: 'true',
+    });
+    const upload = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(scanResponse(100));
+    await render(<LoadingScreen />);
+    if (enabled) {
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/inbox'));
+      expect(alert).toHaveBeenCalledWith('You’re offline', expect.any(String));
+      expect(upload).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() =>
+        expect(router.replace).toHaveBeenCalledWith(
+          expect.objectContaining({ pathname: '/receipt-details' }),
+        ),
+      );
+      expect(NetInfo.fetch).toHaveBeenCalled();
+      expect(upload).toHaveBeenCalledTimes(1);
+    }
   },
 );
 

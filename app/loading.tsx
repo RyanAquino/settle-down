@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, Image, Animated, Easing, Alert } from 'react-na
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
+import Constants from 'expo-constants';
 import NetInfo from '@react-native-community/netinfo';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { File } from 'expo-file-system';
@@ -33,6 +34,9 @@ export default function LoadingScreen() {
   const importing = useRef<{ uri: string; result: Promise<ReceiptDraft> } | null>(null);
   const activeDraft = useRef<ReceiptDraft | null>(null);
   const fromLibrary = params.fromLibrary === 'true';
+  const verifyOfflineImport =
+    Constants.expoConfig?.extra?.verifyOfflineImport === true &&
+    params.verifyOfflineImport === 'true';
   const [isOffline, setIsOffline] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Reading receipt');
   const [statusDetail, setStatusDetail] = useState('Extracting items and amounts');
@@ -132,7 +136,9 @@ export default function LoadingScreen() {
         return;
       }
 
-      const network = await NetInfo.fetch().catch(() => null);
+      const network = verifyOfflineImport
+        ? { isConnected: false }
+        : await NetInfo.fetch().catch(() => null);
       if (signal.aborted) return;
       if (network?.isConnected === false) {
         setIsOffline(true);
@@ -205,7 +211,7 @@ export default function LoadingScreen() {
       else router.replace('/');
     });
     return () => controller.abort();
-  }, [photoUri, fromLibrary, draftId]);
+  }, [verifyOfflineImport, photoUri, fromLibrary, draftId]);
 
   // beam translateY: 0 → photoHeight, within the card
   const PHOTO_H = 260;

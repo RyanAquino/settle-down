@@ -109,6 +109,14 @@ transaction endpoints. It supplies a fixed-date receipt with line totals (includ
 one quantity-two item), JPY/TWD/HKD groups, and synthetic Alex/Sam members. Presets:
 `success`, `upload-error`, `groups-error`, `no-groups`, `users-error`, `sync-error`, `out-of-order-members`.
 
+For the receipt inbox offline case, use the `success` fixture and tap **Import offline photo**
+(`verify-import-offline`) on the camera screen. Pick the seeded photo. A `CI_E2E=1` build
+supplies a disconnected NetInfo result for that import only. Assert **You’re offline**,
+dismiss the alert, and assert **Scan receipt, Receipt photo** in the inbox. No receipt upload
+should appear in the fixture requests until you open the queued photo. Tap it and assert
+the receipt details to verify recovery. The regular library button uses device connectivity.
+[Offline inbox replay](../../.maestro/receipt-inbox-offline.yaml) contains the Maestro assertions.
+
 The out-of-order member preset gives Japan three members for uneven splits
 and holds Taiwan’s member response until Hong Kong
 returns Alex. Taiwan then returns Sam, making a stale overwrite visible in the payer list.
