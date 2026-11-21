@@ -44,6 +44,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REQUESTED: ${{ inputs.release_tag }}
           MAIN_COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+          RELEASE_QUERY: |
+            query($owner:String!, $repo:String!, $tag:String!) {
+              repository(owner:$owner, name:$repo) { release(tagName:$tag) { isDraft } }
+            }
         run: |
           tag=${REQUESTED:-expo-preview-$MAIN_COMMIT}
           if [[ ! "$tag" =~ ^expo-preview-[0-9a-f]{40}$ ]]; then
@@ -58,9 +62,8 @@ jobs:
             fi
           fi
           state=$(gh api graphql -f owner="$GITHUB_REPOSITORY_OWNER" -f repo="${GITHUB_REPOSITORY#*/}" -f tag="$tag" \
-            -f query='query($owner:String!, $repo:String!, $tag:String!) {
-              repository(owner:$owner, name:$repo) { release(tagName:$tag) { isDraft } }
-            }' --jq 'if .data.repository.release == null then "missing" elif .data.repository.release.isDraft then "draft" else "published" end')
+            -f query="$RELEASE_QUERY" \
+            --jq 'if .data.repository.release == null then "missing" elif .data.repository.release.isDraft then "draft" else "published" end')
           if [[ "$state" != published ]]; then
             if [[ -n "$REQUESTED" ]]; then
               echo "::error::Choose a published preview release from GitHub Releases."
