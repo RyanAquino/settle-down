@@ -2,11 +2,13 @@ import { fixtureControl } from './fixture-control.mjs';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 
-export const cleanEnv = () =>
+export const cleanEnv = (env = process.env) =>
   Object.fromEntries(
-    Object.entries(process.env).filter(
+    Object.entries(env).filter(
       ([key]) =>
-        !/TOKEN|SECRET|PASSWORD|ACTIONS_|GITHUB_|GH_|COPILOT_|NODE_OPTIONS|BASH_ENV/.test(key),
+        !/TOKEN|SECRET|PASSWORD|ACTIONS_|GITHUB_|GH_|COPILOT_|OPENROUTER_|NODE_OPTIONS|BASH_ENV/.test(
+          key,
+        ),
     ),
   );
 
@@ -21,6 +23,7 @@ export function run(
     env = cleanEnv(),
     cwd,
     allowFailure = false,
+    captureStdoutTail = false,
     signal,
     killGraceMs = 1000,
   } = {},
@@ -42,7 +45,12 @@ export function run(
       stream?.write(data);
       if (output.length < 2_000_000) output += data.toString();
     };
-    child.stdout.on('data', consume);
+    // Keep terminal CLI events even after long image/tool transcripts exceed the output cap.
+    let stdoutTail = '';
+    child.stdout.on('data', (data) => {
+      if (captureStdoutTail) stdoutTail = (stdoutTail + data.toString()).slice(-256_000);
+      consume(data);
+    });
     child.stderr.on('data', consume);
     const groupSignal = (signal) => {
       if (!child.pid) return false;
@@ -99,6 +107,7 @@ export function run(
       await stop();
       cleanup();
       const result = { code, output, timedOut, cancelled };
+      if (captureStdoutTail) result.stdoutTail = stdoutTail;
       if (!allowFailure && (code !== 0 || timedOut || cancelled))
         reject(
           new Error(

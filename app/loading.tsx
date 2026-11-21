@@ -1,13 +1,22 @@
-import { View, Text, StyleSheet, Image, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Image, Animated, Easing, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
+import Constants from 'expo-constants';
 import NetInfo from '@react-native-community/netinfo';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { File } from 'expo-file-system';
 import { theme, type } from '@/utils/theme';
 import { Entrance, PressableScale } from '@/components/motion';
 import { scanReconciledReceipt } from '@/utils/receipt-preview';
+import {
+  createPhotoDraft,
+  draftPhotoUri,
+  readDraft,
+  removeDraft,
+  saveDraft,
+  type ReceiptDraft,
+} from '@/utils/receipt-inbox';
 import { retryApiCall } from '@/utils/retry';
 
 const scanSteps = [
@@ -20,8 +29,14 @@ type StepState = (typeof scanSteps)[number]['state'];
 
 export default function LoadingScreen() {
   const params = useLocalSearchParams();
-  const photoUri = params.photoUri as string;
+  const photoUri = typeof params.photoUri === 'string' ? params.photoUri : '';
+  const draftId = typeof params.draftId === 'string' ? params.draftId : '';
+  const importing = useRef<{ uri: string; result: Promise<ReceiptDraft> } | null>(null);
+  const activeDraft = useRef<ReceiptDraft | null>(null);
   const fromLibrary = params.fromLibrary === 'true';
+  const verifyOfflineImport =
+    Constants.expoConfig?.extra?.verifyOfflineImport === true &&
+    params.verifyOfflineImport === 'true';
   const [isOffline, setIsOffline] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Reading receipt');
   const [statusDetail, setStatusDetail] = useState('Extracting items and amounts');
@@ -51,55 +66,103 @@ export default function LoadingScreen() {
     return () => loop.stop();
   }, [beam, isOffline, needsRetake]);
 
-  const savePhotoAsFallback = useCallback(
-    async (photoUri: string) => {
-      try {
-        if (!fromLibrary) {
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    async function returnToInbox(draft: ReceiptDraft | null, offline: boolean) {
+      let savedToLibrary = false;
+      if (!fromLibrary && !draftId) {
+        try {
           const { status } = await MediaLibrary.requestPermissionsAsync();
           if (status === MediaLibrary.PermissionStatus.GRANTED) {
             await MediaLibrary.saveToLibraryAsync(photoUri);
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            router.replace({
-              pathname: '/',
-              params: { message: 'Upload failed. Photo saved to your photo library.' },
-            });
-            return;
+            savedToLibrary = true;
           }
+        } catch {
+          // The inbox copy is independent of Photos access.
         }
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        router.replace({ pathname: '/', params: { error: 'Upload failed. Please try again.' } });
-      } catch {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        router.replace({
-          pathname: '/',
-          params: { error: 'Upload failed. Unable to save photo.' },
-        });
       }
-    },
-    [fromLibrary],
-  );
+      if (signal.aborted) return;
+      if (draft) {
+        if (draftId && router.canGoBack()) router.back();
+        else router.replace('/inbox');
+        Alert.alert(
+          offline ? 'You’re offline' : 'Couldn’t scan receipt',
+          'Your photo is in the receipt inbox. Open it when you’re ready to scan.',
+        );
+      } else {
+        const message =
+          savedToLibrary || fromLibrary
+            ? 'The photo is in your photo library. Select it again to scan.'
+            : 'Unable to save the photo. Please try again.';
+        router.replace({ pathname: '/', params: { error: message } });
+      }
+    }
 
-  const uploadPhoto = useCallback(
-    async (uri: string, signal: AbortSignal) => {
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+    async function processPhoto() {
+      let draft: ReceiptDraft | null = null;
+      if (draftId) {
+        draft = readDraft(draftId);
+        if (!draft) {
+          router.replace('/inbox');
+          return;
+        }
+      } else {
+        if (!photoUri) {
+          router.replace('/');
+          return;
+        }
+        // Keep the same import across effect replay while the large photo is copying.
+        if (importing.current?.uri !== photoUri) {
+          importing.current = { uri: photoUri, result: createPhotoDraft(photoUri) };
+        }
+        try {
+          draft = await importing.current.result;
+        } catch {
+          // Keep the existing upload and photo-library fallback if device storage is full.
+        }
+      }
+      if (signal.aborted) return;
+      activeDraft.current = draft;
+      const uri = draft ? draftPhotoUri(draft) : photoUri;
+      const details = (data: string) =>
+        router.replace({
+          pathname: '/receipt-details',
+          params: { data, photoUri: uri, ...(draft && { draftId: draft.id }) },
+        });
+      if (draft?.receipt) {
+        details(JSON.stringify(draft.receipt));
+        return;
+      }
+
+      const network = verifyOfflineImport
+        ? { isConnected: false }
+        : await NetInfo.fetch().catch(() => null);
+      if (signal.aborted) return;
+      if (network?.isConnected === false) {
+        setIsOffline(true);
+        setStatusMessage('You’re offline');
+        setStatusDetail('Saving your receipt for later.');
+        await returnToInbox(draft, true);
+        return;
+      }
+
       try {
+        const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
         if (!apiBaseUrl) throw new Error('EXPO_PUBLIC_API_BASE_URL is missing from this build.');
-
-        const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
         const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+        const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
         if (authToken) headers.Authorization = `Bearer ${authToken}`;
-
         const readPhoto = () => {
           let attempt = 0;
           return retryApiCall(async () => {
             if (signal.aborted) throw new Error('Receipt scan cancelled.');
-            attempt++;
-            if (attempt > 1) {
+            if (++attempt > 1) {
               setStatusMessage(`Retrying connection · ${attempt} of 3`);
               setStatusDetail('Uploading the same receipt photo.');
             }
             const body = new FormData();
-            // Expo's multipart encoder reads bytes from File and sets the boundary.
             body.append('file', new File(uri));
             const response = await fetch(`${apiBaseUrl}/api/v1/receipts/receipt-items/`, {
               method: 'POST',
@@ -112,7 +175,6 @@ export default function LoadingScreen() {
             return data;
           });
         };
-
         const receipt = await scanReconciledReceipt(readPhoto, () => {
           if (signal.aborted) return;
           setStatusMessage('Reading receipt again');
@@ -124,105 +186,32 @@ export default function LoadingScreen() {
           void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
           return;
         }
+        if (draft) {
+          try {
+            saveDraft({ ...draft, receipt });
+          } catch {
+            Alert.alert('Couldn’t save the scan', 'You can still finish this receipt now.');
+          }
+        } else {
+          Alert.alert('Couldn’t save a draft', 'You can still finish this receipt now.');
+        }
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        router.replace({
-          pathname: '/receipt-details',
-          params: { data: JSON.stringify(receipt), photoUri: uri },
-        });
+        details(JSON.stringify(receipt));
       } catch (error) {
         if (signal.aborted) return;
         console.warn('[upload] Could not scan receipt', error);
-        await savePhotoAsFallback(uri);
+        await returnToInbox(draft, false);
       }
-    },
-    [savePhotoAsFallback],
-  );
-
-  const handleLibraryPhotoOffline = useCallback(async () => {
-    try {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setTimeout(() => {
-        router.replace({
-          pathname: '/',
-          params: { message: 'Internet connection required to process photos from your library.' },
-        });
-      }, 1800);
-    } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      router.replace({ pathname: '/', params: { error: 'Unable to process photo.' } });
     }
-  }, []);
 
-  const saveCameraPhotoToLibrary = useCallback(async (photoUri: string) => {
-    try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== MediaLibrary.PermissionStatus.GRANTED)
-        throw new Error('Media library permission denied');
-      await MediaLibrary.saveToLibraryAsync(photoUri);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setTimeout(() => {
-        router.replace({
-          pathname: '/',
-          params: { message: 'Photo saved to your photo library.' },
-        });
-      }, 1800);
-    } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      router.replace({ pathname: '/', params: { error: 'Failed to save photo to library.' } });
-    }
-  }, []);
-
-  const handleOfflinePhoto = useCallback(
-    async (photoUri: string) => {
-      if (fromLibrary) await handleLibraryPhotoOffline();
-      else await saveCameraPhotoToLibrary(photoUri);
-    },
-    [fromLibrary, handleLibraryPhotoOffline, saveCameraPhotoToLibrary],
-  );
-
-  const checkConnectivityAndProcess = useCallback(
-    async (uri: string, signal: AbortSignal) => {
-      try {
-        const netInfoState = await NetInfo.fetch();
-        if (signal.aborted) return;
-        console.log(
-          `[netinfo] isConnected=${netInfoState.isConnected} type=${netInfoState.type} isInternetReachable=${netInfoState.isInternetReachable}`,
-        );
-        // Only an explicit `false` means offline. A strict `=== true` check treats an
-        // unknown (`null`) reading as offline and routes to the save-photo path without
-        // ever attempting the upload — a silent false-negative.
-        const isConnected = netInfoState.isConnected !== false;
-        if (isConnected) {
-          await uploadPhoto(uri, signal);
-        } else {
-          setIsOffline(true);
-          setStatusMessage('You\u2019re offline');
-          setStatusDetail(
-            fromLibrary
-              ? 'Come back when you\u2019re online to scan this one.'
-              : 'Saving the photo. We\u2019ll process it next time you\u2019re online.',
-          );
-          await handleOfflinePhoto(uri);
-        }
-      } catch {
-        if (signal.aborted) return;
-        setIsOffline(true);
-        setStatusMessage('Network check failed');
-        setStatusDetail('Falling back to offline mode.');
-        await handleOfflinePhoto(uri);
-      }
-    },
-    [uploadPhoto, handleOfflinePhoto, fromLibrary],
-  );
-
-  useEffect(() => {
-    // Kicks off the async upload pipeline on mount; every setState inside
-    // happens after `await NetInfo.fetch()`, so none are synchronous here.
-    const controller = new AbortController();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (photoUri) void checkConnectivityAndProcess(photoUri, controller.signal);
+    void processPhoto().catch(() => {
+      if (signal.aborted) return;
+      Alert.alert('Couldn’t open receipt', 'Please try again.');
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
+    });
     return () => controller.abort();
-  }, [photoUri, checkConnectivityAndProcess]);
+  }, [verifyOfflineImport, photoUri, fromLibrary, draftId]);
 
   // beam translateY: 0 → photoHeight, within the card
   const PHOTO_H = 260;
@@ -247,7 +236,16 @@ export default function LoadingScreen() {
             style={styles.retakeButton}
             testID="retake-receipt-photo"
             onPress={() => {
-              if (router.canGoBack()) router.back();
+              if (activeDraft.current) {
+                try {
+                  removeDraft(activeDraft.current.id);
+                } catch {
+                  Alert.alert('Couldn’t discard the photo', 'Please try again.');
+                  return;
+                }
+              }
+              if (draftId) router.dismissTo('/');
+              else if (router.canGoBack()) router.back();
               else router.replace('/');
             }}
           >
