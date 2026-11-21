@@ -61,12 +61,14 @@ beforeEach(() => {
 
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-function run(platform, results, commands) {
+function run(platform, results, commands, initialDevice) {
   results.forEach((result, i) => writeFileSync(path.join(root, `result-${i + 1}`), result));
   if (commands) writeFileSync(path.join(root, 'commands'), JSON.stringify(commands));
   const args = [`tools/ci/smoke-${platform}.sh`];
   if (platform === 'ios') args.push('Sample.app');
-  const { status, error } = spawnSync('bash', [...args, evidence], {
+  args.push(evidence);
+  if (initialDevice) args.push(initialDevice);
+  const { status, error } = spawnSync('bash', args, {
     cwd: path.resolve(__dirname, '..'),
     env: {
       ...process.env,
@@ -131,6 +133,16 @@ describe.each(['android', 'ios'])('%s smoke', (platform) => {
     expect(status).toBe(1);
     expect(maestro).toHaveLength(1);
   });
+});
+
+it('uses the prebooted simulator first and creates a new one for a driver retry', () => {
+  const { status, calls, maestro } = run('ios', [iosTimeout, 'passed'], undefined, 'prebooted');
+  expect(status).toBe(0);
+  expect(calls.filter((call) => call.startsWith('simctl create '))).toHaveLength(1);
+  expect(calls).toContain('simctl install prebooted Sample.app');
+  expect(calls).toContain('simctl delete prebooted');
+  expect(maestro[0]).toContain('--device prebooted test -e FRESH_IOS_INSTALL=1');
+  expect(maestro[1]).toContain('--device device-1 test -e FRESH_IOS_INSTALL=1');
 });
 
 it.each([

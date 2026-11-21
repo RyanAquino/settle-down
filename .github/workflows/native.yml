@@ -61,23 +61,55 @@ jobs:
           distribution: temurin
           java-version: '17'
       - run: npm ci
+      - name: Cache CocoaPods and React Native downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/Library/Caches/ReactNative
+            ~/.cocoapods/repos
+          key: ios-downloads-macos26-xcode26.6-arm64-v1-${{ hashFiles('package-lock.json') }}
+          restore-keys: ios-downloads-macos26-xcode26.6-arm64-v1-
+      - name: Restore Xcode compilation results
+        id: xcode-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
+          key: smoke-clang-swift-xcode26.6-arm64-v1-${{ hashFiles('package-lock.json', 'modules/**', 'plugins/**', 'app.json', 'app.config.*') }}
+          restore-keys: smoke-clang-swift-xcode26.6-arm64-v1-
+      - name: Start iOS simulator
+        id: simulator
+        run: |
+          device=$(bash tools/ci/boot-smoke-ios.sh)
+          echo "device=$device" >> "$GITHUB_OUTPUT"
       - name: Build simulator binary
+        env:
+          XCODE_XCCONFIG_FILE: ${{ github.workspace }}/tools/ci/smoke.xcconfig
+          EXPO_PROFILE: '1'
         run: npx --no-install expo run:ios --configuration Release --device generic --no-bundler --output "$RUNNER_TEMP/ios-binary"
+      - name: Cache Xcode compilation results
+        if: steps.xcode-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/CompilationCache.noindex
+          key: ${{ steps.xcode-cache.outputs.cache-primary-key }}
       - name: Install Maestro
         run: |
           bash tools/ci/install-maestro.sh "$RUNNER_TEMP/maestro"
           echo "$RUNNER_TEMP/maestro/maestro/bin" >> "$GITHUB_PATH"
       - name: Run committed smoke test
         env:
+          SMOKE_DEVICE: ${{ steps.simulator.outputs.device }}
           MAESTRO_DRIVER_STARTUP_TIMEOUT: '240000'
         run: |
           apps=("$RUNNER_TEMP"/ios-binary/*.app)
           test "${#apps[@]}" -eq 1
-          bash tools/ci/smoke-ios.sh "${apps[0]}" test-results/ios
+          bash tools/ci/smoke-ios.sh "${apps[0]}" test-results/ios "$SMOKE_DEVICE"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: native-ios-evidence
+          include-hidden-files: true
           path: |
             test-results/ios/
             .expo/xcodebuild*.log
@@ -102,14 +134,37 @@ jobs:
           java-version: '17'
       - run: npm ci
       - run: npx --no-install expo prebuild --platform android --no-install
+      - name: Install CMake compiler cache
+        run: |
+          if ! command -v ccache >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ccache
+          fi
+      - name: Restore Gradle and CMake compilation results
+        id: android-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.gradle/caches/build-cache-1
+            ~/.cache/ccache
+          key: smoke-android-ubuntu24-java17-v1-${{ hashFiles('package-lock.json', 'modules/**', 'plugins/**', 'app.json', 'app.config.*') }}
+          restore-keys: smoke-android-ubuntu24-java17-v1-
       - name: Build and lint Android release
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+          CCACHE_COMPILERCHECK: content
+          CCACHE_MAXSIZE: 1G
         working-directory: android
         run: |
           set -o pipefail
+          export CCACHE_DIR="$HOME/.cache/ccache"
+          ccache --zero-stats
+          trap 'ccache --show-stats' EXIT
           log="$RUNNER_TEMP/android-gradle.log"
           # R8 and lint can exhaust the generated default of 512 MiB of metaspace.
           gradle_args=(
-            :app:assembleRelease :app:lintRelease --no-daemon
+            :app:assembleRelease :app:lintRelease --build-cache --profile --no-daemon
             '-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1536m -XX:+ExitOnOutOfMemoryError'
           )
           if ./gradlew "${gradle_args[@]}" 2>&1 | tee "$log"; then
@@ -121,6 +176,14 @@ jobs:
           echo "::warning::Gradle failed to resolve dependencies. Retrying once."
           sleep 30
           ./gradlew "${gradle_args[@]}" --refresh-dependencies --info
+      - name: Cache Gradle and CMake compilation results
+        if: steps.android-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.gradle/caches/build-cache-1
+            ~/.cache/ccache
+          key: ${{ steps.android-cache.outputs.cache-primary-key }}
       - name: Install Maestro
         run: |
           bash tools/ci/install-maestro.sh "$RUNNER_TEMP/maestro"
@@ -146,5 +209,6 @@ jobs:
           path: |
             test-results/android/
             android/app/build/reports/lint-results-release.*
+            android/build/reports/profile/*.html
           retention-days: 7
           if-no-files-found: warn

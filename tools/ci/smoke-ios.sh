@@ -3,8 +3,7 @@ set -euo pipefail
 binary="${1:?Expected .app path}"
 evidence="${2:?Expected evidence directory}"
 mkdir -p "$evidence"
-runtime="$(xcrun simctl list runtimes --json | python3 -c 'import json,sys; r=[r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and r["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS-")]; print(sorted(r,key=lambda r:tuple(map(int,r["version"].split("."))))[-1]["identifier"])')"
-device=''
+device="${3:-}"
 cleanup_device() {
   if [[ -n "$device" ]]; then
     xcrun simctl shutdown "$device" >/dev/null 2>&1 || true
@@ -18,13 +17,14 @@ timeout_exception='xcuitest.installer.LocalXCTestInstaller$IOSDriverTimeoutExcep
 for attempt in 1 2; do
   attempt_dir="$evidence/attempt-$attempt"
   mkdir -p "$attempt_dir"
-  device="$(xcrun simctl create 'Settle Down CI' com.apple.CoreSimulator.SimDeviceType.iPhone-17 "$runtime")"
-  xcrun simctl boot "$device"
+  if [[ -z "$device" ]]; then
+    device=$(bash "$(dirname "$0")/boot-smoke-ios.sh")
+  fi
   xcrun simctl bootstatus "$device" -b
   xcrun simctl install "$device" "$binary"
 
   status=0
-  maestro --device "$device" test --format junit --output "$attempt_dir/junit.xml" \
+  maestro --device "$device" test -e FRESH_IOS_INSTALL=1 --format junit --output "$attempt_dir/junit.xml" \
     --test-output-dir "$attempt_dir" .maestro/launch.yaml 2>&1 | tee "$attempt_dir/maestro.log" || {
     statuses=("${PIPESTATUS[@]}")
     if (( statuses[1] != 0 )); then exit "${statuses[1]}"; fi
