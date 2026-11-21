@@ -79,8 +79,9 @@ app launches and exposes the camera screen controls, with permissions granted.
 Android also runs `lintRelease`. No signing account, real backend, or production
 credential is used; OTA loading is disabled with `CI_E2E=1`.
 
-It runs on app/config/dependency/CI-related PR changes, all main-branch pushes,
-a weekly schedule, and manual dispatch. macOS builds can take substantially
+Pull requests that change app, config, dependency, or CI files run the iOS smoke
+test. Both platforms run on every push to `main`, on the weekly schedule, and
+on manual dispatch. macOS builds can take substantially
 longer than the Linux quality checks. The iOS runner/Xcode combination follows
 the existing verification workflow; update both together when runner images change.
 

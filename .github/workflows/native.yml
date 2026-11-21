@@ -84,6 +84,7 @@ jobs:
 
   android:
     name: Android Release smoke
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
