@@ -11,7 +11,7 @@ name: Camera screen launches in a release build
 - launchApp:
     permissions:
       all: allow
-- assertVisible: 'Installed com.ryan.aquino.settledown'
+- assertVisible: 'Point at a receipt'
 - assertVisible:
     id: pick-receipt
 - assertVisible: 'Capture receipt'
