@@ -1,14 +1,34 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert, FlatList, Image, StyleSheet, Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PressableScale } from '@/components/motion';
 import { draftPhotoUri, listDrafts, removeDraft, type ReceiptDraft } from '@/utils/receipt-inbox';
+import {
+  getReminderPermissionSnapshot,
+  openReminderSettings,
+  subscribeReminderPermission,
+} from '@/utils/receipt-reminder-lifecycle';
+import { scheduleVerificationReceiptReminder } from '@/utils/receipt-reminders';
 import { theme, type } from '@/utils/theme';
 
 export default function ReceiptInboxScreen() {
   const [drafts, setDrafts] = useState<ReceiptDraft[]>([]);
   const [failed, setFailed] = useState(false);
+  const { missingReceipt } = useLocalSearchParams<{ missingReceipt?: string }>();
+  const [dismissedNotice, setDismissedNotice] = useState<string>();
+  const permission = useSyncExternalStore(
+    subscribeReminderPermission,
+    getReminderPermissionSnapshot,
+    getReminderPermissionSnapshot,
+  );
+  useEffect(() => {
+    if (!missingReceipt) return;
+    const timeout = setTimeout(() => setDismissedNotice(missingReceipt), 4500);
+    return () => clearTimeout(timeout);
+  }, [missingReceipt]);
+
   const opening = useRef(false);
   const reload = useCallback(() => {
     try {
@@ -69,7 +89,39 @@ export default function ReceiptInboxScreen() {
           <Text style={styles.backText}>←</Text>
         </PressableScale>
         <Text style={styles.title}>Receipt inbox</Text>
+        {permission === 'denied' && (
+          <PressableScale
+            style={styles.settings}
+            onPress={() => {
+              void openReminderSettings().catch(() =>
+                Alert.alert('Couldn’t open notification settings', 'Please try again.'),
+              );
+            }}
+          >
+            <Text style={styles.action}>Enable reminders</Text>
+          </PressableScale>
+        )}
       </View>
+      {Constants.expoConfig?.extra?.verifyReceiptReminders === true &&
+        drafts.length > 0 &&
+        permission === 'enabled' && (
+          <PressableScale
+            testID="verify-receipt-reminder"
+            style={styles.notice}
+            onPress={() => {
+              void scheduleVerificationReceiptReminder().catch(() =>
+                Alert.alert('Couldn’t schedule test reminder'),
+              );
+            }}
+          >
+            <Text style={styles.action}>Test reminder in 8 seconds</Text>
+          </PressableScale>
+        )}
+      {missingReceipt && missingReceipt !== dismissedNotice && (
+        <Text accessibilityRole="alert" style={styles.missingNotice}>
+          This receipt is no longer in your inbox.
+        </Text>
+      )}
       <FlatList
         contentContainerStyle={styles.list}
         data={drafts}
@@ -132,7 +184,9 @@ const styles = StyleSheet.create({
     gap: 14,
     alignItems: 'center',
   },
-  title: { ...type.title, color: theme.ink },
+  title: { ...type.title, color: theme.ink, flexShrink: 1 },
+  settings: { marginLeft: 'auto', minHeight: 44, justifyContent: 'center', flexShrink: 1 },
+  missingNotice: { ...type.body, color: theme.ink, marginHorizontal: 16, marginBottom: 8 },
   back: {
     width: 44,
     height: 44,

@@ -1,8 +1,16 @@
-import { Stack } from 'expo-router';
+import { useEffect } from 'react';
+import { router, Stack, useRootNavigationState } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
+import { startReceiptReminders } from '@/utils/receipt-reminder-lifecycle';
+
 export default function RootLayout() {
+  const ready = Boolean(useRootNavigationState()?.key);
+  useEffect(() => {
+    if (ready) return startReceiptReminders((href) => router.navigate(href));
+  }, [ready]);
+
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />

@@ -1,0 +1,24 @@
+appId: com.ryan.aquino.settledown
+name: Tap a device reminder to scan an offline inbox photo
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: verify-import-offline
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- assertVisible: You’re offline
+- tapOn: OK
+- assertVisible: Scan receipt, Receipt photo
+- tapOn:
+    id: verify-receipt-reminder
+- pressKey: Home
+- extendedWaitUntil:
+    visible: '.*Ready to scan your saved receipt.*'
+    timeout: 20000
+- takeScreenshot: photo-reminder
+- tapOn: '.*Ready to scan your saved receipt.*'
+- assertVisible: Cranberry juice
+- takeScreenshot: scanned-from-reminder

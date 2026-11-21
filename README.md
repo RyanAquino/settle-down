@@ -25,6 +25,12 @@ Open **Inbox** from the camera to pick up an unfinished receipt. Camera captures
 
 Scanned drafts save edits, the selected group, payer, and item assignments on this device as you work. Tap **Save for later** to return to the inbox, or reopen the draft after leaving the app. A confirmed Settle Up submission or an explicit **Discard** removes the draft and its inbox photo.
 
+### Receipt reminders in Expo Go
+
+Settle Down schedules local notifications in the SDK 58 Expo Go app. Allow notifications for Expo Go when you first leave a receipt for later. The three-hour reminder keeps its original deadline. Receipts due the next morning share a 9 AM reminder. If you change time zones while Expo Go is closed, the pending morning alert can still fire on the previous zone’s schedule. Reopening Settle Down before delivery updates it to the current zone.
+
+On iOS, tapping a reminder while Expo Go is in the background returns to the saved receipt. If Expo Go was fully closed, the alert still appears. Tapping it can open Expo Go Home, where you can select Settle Down from **Recently Opened**.
+
 ## Tech stack
 
 - **Expo SDK 58**, React Native 0.88, React 19, TypeScript

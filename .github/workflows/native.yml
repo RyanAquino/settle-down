@@ -5,6 +5,7 @@ on:
     paths:
       - 'app/**'
       - 'components/**'
+      - 'modules/**'
       - 'plugins/**'
       - 'utils/**'
       - 'package*.json'

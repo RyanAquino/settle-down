@@ -17,6 +17,8 @@ import {
   saveDraft,
   type ReceiptDraft,
 } from '@/utils/receipt-inbox';
+import { receiptLeftForLater } from '@/utils/receipt-reminder-lifecycle';
+import { useActiveReceiptDraft } from '@/utils/use-active-receipt-draft';
 import { retryApiCall } from '@/utils/retry';
 
 const scanSteps = [
@@ -31,8 +33,10 @@ export default function LoadingScreen() {
   const params = useLocalSearchParams();
   const photoUri = typeof params.photoUri === 'string' ? params.photoUri : '';
   const draftId = typeof params.draftId === 'string' ? params.draftId : '';
+  const reminder = typeof params.reminder === 'string' ? params.reminder : '';
+  const [activeDraft, setActiveDraft] = useState<ReceiptDraft | null>(null);
+  useActiveReceiptDraft(draftId || activeDraft?.id);
   const importing = useRef<{ uri: string; result: Promise<ReceiptDraft> } | null>(null);
-  const activeDraft = useRef<ReceiptDraft | null>(null);
   const fromLibrary = params.fromLibrary === 'true';
   const verifyOfflineImport =
     Constants.expoConfig?.extra?.verifyOfflineImport === true &&
@@ -85,8 +89,9 @@ export default function LoadingScreen() {
       }
       if (signal.aborted) return;
       if (draft) {
-        if (draftId && router.canGoBack()) router.back();
+        if (draftId && !reminder && router.canGoBack()) router.back();
         else router.replace('/inbox');
+        await receiptLeftForLater();
         Alert.alert(
           offline ? 'You’re offline' : 'Couldn’t scan receipt',
           'Your photo is in the receipt inbox. Open it when you’re ready to scan.',
@@ -105,7 +110,9 @@ export default function LoadingScreen() {
       if (draftId) {
         draft = readDraft(draftId);
         if (!draft) {
-          router.replace('/inbox');
+          router.replace(
+            reminder ? { pathname: '/inbox', params: { missingReceipt: reminder } } : '/inbox',
+          );
           return;
         }
       } else {
@@ -124,12 +131,17 @@ export default function LoadingScreen() {
         }
       }
       if (signal.aborted) return;
-      activeDraft.current = draft;
+      setActiveDraft(draft);
       const uri = draft ? draftPhotoUri(draft) : photoUri;
       const details = (data: string) =>
         router.replace({
           pathname: '/receipt-details',
-          params: { data, photoUri: uri, ...(draft && { draftId: draft.id }) },
+          params: {
+            data,
+            photoUri: uri,
+            ...(draft && { draftId: draft.id }),
+            ...(reminder && { reminder }),
+          },
         });
       if (draft?.receipt) {
         details(JSON.stringify(draft.receipt));
@@ -211,7 +223,7 @@ export default function LoadingScreen() {
       else router.replace('/');
     });
     return () => controller.abort();
-  }, [verifyOfflineImport, photoUri, fromLibrary, draftId]);
+  }, [verifyOfflineImport, photoUri, fromLibrary, draftId, reminder]);
 
   // beam translateY: 0 → photoHeight, within the card
   const PHOTO_H = 260;
@@ -236,9 +248,9 @@ export default function LoadingScreen() {
             style={styles.retakeButton}
             testID="retake-receipt-photo"
             onPress={() => {
-              if (activeDraft.current) {
+              if (activeDraft) {
                 try {
-                  removeDraft(activeDraft.current.id);
+                  removeDraft(activeDraft.id);
                 } catch {
                   Alert.alert('Couldn’t discard the photo', 'Please try again.');
                   return;
