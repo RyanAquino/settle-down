@@ -147,10 +147,41 @@ export async function preparePreviews(evidence, output) {
         ],
         { timeout: 5000 },
       );
-      if (Number(stdout.trim()) > 0 && (await stat(partial)).size < maxBytes)
-        await rename(partial, target);
+      if (!(Number(stdout.trim()) > 0) || (await stat(partial)).size >= maxBytes) continue;
+      await rename(partial, target);
     } catch {
       console.warn('Could not prepare the replay clip for ' + id);
+      continue;
+    }
+    // GitHub renders animated images from repository files inside PR comments.
+    try {
+      const gif = path.join(output, id + '.replay.gif');
+      await exec(
+        'ffmpeg',
+        [
+          '-nostdin',
+          '-y',
+          '-v',
+          'error',
+          '-protocol_whitelist',
+          'file',
+          '-f',
+          'mov',
+          '-i',
+          target,
+          '-vf',
+          'fps=8,scale=320:-2,split[a][b];[a]palettegen[p];[b][p]paletteuse',
+          '-loop',
+          '0',
+          '-f',
+          'gif',
+          gif + '.partial',
+        ],
+        { timeout: 30000 },
+      );
+      if ((await stat(gif + '.partial')).size < maxBytes) await rename(gif + '.partial', gif);
+    } catch {
+      console.warn('Could not prepare the animated replay for ' + id);
     }
   }
 }

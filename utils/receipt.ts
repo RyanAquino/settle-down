@@ -8,7 +8,7 @@ const receiptItemSchema = z.object({
   quantity: z.number().finite(),
   discount: z.number().finite().default(0),
 });
-const receiptSchema = z.object({
+export const receiptSchema = z.object({
   receipt_items: z.array(receiptItemSchema),
   en_shop_name: z.string(),
   jp_shop_name: z.string(),
@@ -21,15 +21,15 @@ const receiptSchema = z.object({
   receipt_image_url: z.string().optional(),
 });
 export type ReceiptData = z.output<typeof receiptSchema>;
-export const groupsSchema = z.object({
-  items: z
-    .array(z.object({ name: z.string(), id: z.string(), currency: z.string().nullable() }))
-    .default([]),
+export const groupSchema = z.object({
+  name: z.string(),
+  id: z.string(),
+  currency: z.string().nullable(),
 });
+export const groupsSchema = z.object({ items: z.array(groupSchema).default([]) });
 export type SettleUpGroup = z.output<typeof groupsSchema>['items'][number];
-export const usersSchema = z.object({
-  items: z.array(z.object({ name: z.string(), id: z.string() })).default([]),
-});
+export const groupUserSchema = z.object({ name: z.string(), id: z.string() });
+export const usersSchema = z.object({ items: z.array(groupUserSchema).default([]) });
 export type GroupUser = z.output<typeof usersSchema>['items'][number];
 export type ReceiptItem = ReceiptData['receipt_items'][number];
 
@@ -53,12 +53,14 @@ export function receiptTotals(items: ReceiptItem[], taxPercentage: number) {
   return { subtotal, taxAmount: (subtotal * taxPercentage) / 100 };
 }
 
-export type ItemSplit = {
-  mode: 'equal' | 'quantity';
-  portions: { memberId: string; units: number }[];
-};
+const itemSplitSchema = z.object({
+  mode: z.enum(['equal', 'quantity']),
+  portions: z.array(z.object({ memberId: z.string(), units: z.number().positive() })),
+});
+export type ItemSplit = z.output<typeof itemSplitSchema>;
 
-export type ItemAssignment = string | ItemSplit;
+export const itemAssignmentSchema = z.union([z.string(), itemSplitSchema]);
+export type ItemAssignment = z.output<typeof itemAssignmentSchema>;
 
 export function moneyDigits(currency: string | null) {
   if (!currency) return 2;

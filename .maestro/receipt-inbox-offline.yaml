@@ -1,0 +1,19 @@
+appId: com.ryan.aquino.settledown
+name: Queue an offline photo and scan it after reconnecting
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: verify-import-offline
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- assertVisible: You’re offline
+- tapOn: OK
+- assertVisible: Receipt inbox
+- assertVisible: Scan receipt, Receipt photo
+- takeScreenshot: offline-photo-in-inbox
+- tapOn: Scan receipt, Receipt photo
+- assertVisible: CI Receipt Shop
+- takeScreenshot: scanned-inbox-photo

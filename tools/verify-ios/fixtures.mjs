@@ -19,7 +19,7 @@ export const receipt = {
       item_order: 2,
       cost: 200,
       quantity: 2,
-      discount: 0,
+      discount: 30,
     },
   ],
   en_shop_name: 'CI Receipt Shop',
@@ -30,6 +30,12 @@ export const receipt = {
   receipt_image_url: `${FIXTURE_ORIGIN}/receipt.png`,
 };
 const mismatchedReceipt = { ...receipt, total_amount: 410 };
+const receiptWithMissingDiscount = {
+  ...receipt,
+  receipt_items: receipt.receipt_items.map((item) =>
+    item.discount === 0 ? { ...item, discount: undefined } : item,
+  ),
+};
 
 export const groups = [
   { id: 'ci-jpy', name: 'CI Japan', currency: 'JPY' },
@@ -115,6 +121,7 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
         }
         if (preset === 'upload-error') return send(503, { error: 'Synthetic upload failure' });
         validUploads++;
+        if (preset === 'missing-discount') return send(200, receiptWithMissingDiscount);
         const mismatch =
           preset === 'scan-mismatch' || (preset === 'scan-mismatch-once' && validUploads === 1);
         return send(200, mismatch ? mismatchedReceipt : receipt);

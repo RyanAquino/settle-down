@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { verdict, checkConclusion, resultSchema } from './policy.mjs';
+import { publishPreviewImages } from './preview-branch.mjs';
 import { inlineEvidence } from './inline-evidence.mjs';
 import { CHECK_NAME, needsVerification } from './applicability.mjs';
 
@@ -175,6 +176,15 @@ export function renderReport(
       '',
     );
   lines.push('Coverage: PR changes only, using a synthetic local backend.', '');
+  if (result?.agentAttempts?.length) {
+    lines.push('**Model selection**', '');
+    for (const [index, entry] of result.agentAttempts.entries()) {
+      const name = entry.provider === 'copilot' ? 'GitHub Copilot' : 'OpenRouter';
+      const quota = entry.reason === 'quota_exhausted' ? ' (quota exhausted)' : '';
+      lines.push(`${index + 1}. ${name} \`${escape(entry.model)}\`${quota}`);
+    }
+    lines.push('');
+  }
   if (result?.rationale) lines.push(escape(result.rationale).slice(0, 8000), '');
   lines.push('### Tested scenarios', '');
   if (!result?.scenarios?.length) lines.push('No scenario replay results are available.');
@@ -341,6 +351,11 @@ export async function publish({ github, context, core, directory }) {
     previous: existing?.body,
     token: process.env.IOS_EVIDENCE_UPLOAD_TOKEN,
     repoId: context.payload.repository?.id,
+    repository: fullName,
+    runId: run.id,
+    attempt: run.run_attempt,
+    publishImages: (files) =>
+      publishPreviewImages({ github, repo, runId: run.id, attempt: run.run_attempt, files }),
     warn: (message) => core.warning(message),
   }).catch(() => {
     core.warning('Inline previews unavailable. Publishing the verification result and artifacts.');

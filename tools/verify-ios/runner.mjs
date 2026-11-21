@@ -1,7 +1,8 @@
 import { CI_RUNTIME, prepareRuntime } from './runtime-preparation.mjs';
 import { provisionSimulator } from './simulator-setup.mjs';
 import { cameraRegressionsApply, runCameraRegressions } from './camera-regressions.mjs';
-import { EXPLORATION_MS, requireScenarioEvidence, agentFailureMessage } from './exploration.mjs';
+import { requireScenarioEvidence } from './exploration.mjs';
+import { runExploration } from './agent-run.mjs';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { appendFile, mkdir, mkdtemp, open, readFile, writeFile } from 'node:fs/promises';
@@ -101,6 +102,7 @@ async function main() {
   const result = {
     version: 1,
     agentCompleted: false,
+    agentAttempts: [],
     disposition: 'blocked',
     limitations: [],
     deviceOnly: [],
@@ -192,6 +194,7 @@ async function main() {
             members,
             notes: [
               'The app calls 127.0.0.1:8765. Reset selects one preset. No real OCR or transactions. One receipt photo is preseeded.',
+              'missing-discount omits the discount field on the full-price Cranberry juice. Onigiri still has a paid line total of 200 and a discount of 30. Groups and members are available as in success.',
               'out-of-order-members starts CI Japan with Alex, Sam and Lee for three-way splits. To verify clearing assignments and ignoring stale members in one flow, assign an item and payer in Japan. Select CI Taiwan (its users request waits), then CI Hong Kong. Hong Kong returns only Alex, then Taiwan returns only Sam. Assert Alex remains selectable and Sam absent after the switch. Hong Kong requires an overlapping Taiwan request.',
               'scan-mismatch-once returns HTTP 200 with the wrong total (410) on the first valid upload after a reset. Subsequent uploads return the reconciled receipt (330).',
               'scan-mismatch returns the same HTTP 200 receipt with the wrong total (410) on every valid upload.',
@@ -301,75 +304,29 @@ async function main() {
       error: record.error,
     }));
     await writeFile(`${evidence}/context.json`, JSON.stringify(capturedContext, null, 2));
-    const agentWork = `${work}/agent`;
-    await mkdir(agentWork);
-    const agentEnv = {
-      ...cleanEnv(),
-      GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-      COPILOT_HOME: `${work}/copilot-home`,
-    };
-    const agentDeadline = Date.now() + EXPLORATION_MS;
-    const config = {
-      mcpServers: {
-        verify: {
-          type: 'local',
-          command: process.execPath,
-          args: [`${toolRoot}/agent-tools.mjs`],
-          tools: ['*'],
-          env: {
-            GITHUB_TOKEN: '',
-            GH_TOKEN: '',
-            COPILOT_GITHUB_TOKEN: '',
-            VERIFY_AGENT_DEADLINE: String(agentDeadline),
-            VERIFY_INITIAL_RESET_READY: regressions.length ? '0' : '1',
-            VERIFY_EVIDENCE: evidence,
-            VERIFY_SOURCE: source,
-            VERIFY_UDID: udid,
-            VERIFY_APP: appPath,
-            VERIFY_FIXTURE_TOKEN: fixtureToken,
-            MAESTRO_CLI_NO_ANALYTICS: '1',
-          },
-        },
-      },
-    };
-    await writeFile(`${work}/mcp.json`, JSON.stringify(config));
-    const agent = await run(
-      `${toolRoot}/node_modules/.bin/copilot`,
-      [
-        '-p',
-        await readFile(`${toolRoot}/prompt.md`, 'utf8'),
-        '--model',
-        'auto',
-        '--additional-mcp-config',
-        `@${work}/mcp.json`,
-        '--disable-builtin-mcps',
-        '--disable-mcp-server',
-        'computer-use',
-        '--no-custom-instructions',
-        '--no-ask-user',
-        '--no-auto-update',
-        '--output-format',
-        'json',
-        '--allow-tool',
-        'verify',
-        '--deny-tool',
-        'shell,read,write,url,task',
-      ],
-      {
-        cwd: agentWork,
-        env: agentEnv,
-        timeout: Math.max(1, agentDeadline - Date.now()),
-        log: `${evidence}/agent.jsonl`,
-        allowFailure: true,
-      },
-    );
-    const journal = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8').catch(() => ''))
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => JSON.parse(line));
-    if (cancelled || agent.timedOut || agent.code !== 0)
-      throw new Error(agentFailureMessage(agent, journal));
+    const journal = await runExploration({
+      toolRoot,
+      work,
+      source,
+      evidence,
+      udid,
+      appPath,
+      fixtureToken,
+      initialResetReady: regressions.length === 0,
+      attempts: result.agentAttempts,
+      signal: cancellation.signal,
+      run,
+      resetForFallback: (signal) =>
+        resetScenario({
+          udid,
+          appPath,
+          appId: APP_ID,
+          fixture: 'success',
+          phase: 'provider-fallback',
+          token: fixtureToken,
+          signal,
+        }),
+    });
     const plan = validatePlan(JSON.parse(await readFile(`${evidence}/plan.json`, 'utf8')));
     requireScenarioEvidence(plan, journal, regressions);
     if (

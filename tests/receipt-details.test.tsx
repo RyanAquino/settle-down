@@ -5,6 +5,7 @@ import ReceiptDetailsScreen from '../app/receipt-details';
 
 jest.mock('expo-router', () => ({
   useLocalSearchParams: jest.fn(),
+  usePreventRemove: jest.fn(),
   router: { back: jest.fn() },
 }));
 jest.mock('react-native-safe-area-context', () => ({

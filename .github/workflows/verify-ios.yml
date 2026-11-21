@@ -208,6 +208,9 @@ jobs:
       - name: Explore PR behavior and replay saved tests
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          IOS_VERIFY_PROVIDER: ${{ vars.IOS_VERIFY_PROVIDER }}
+          IOS_VERIFY_OPENROUTER_MODEL: ${{ vars.IOS_VERIFY_OPENROUTER_MODEL }}
         run: node ci/tools/verify-ios/runner.mjs pr-source "$RUNNER_TEMP/verify-request" "$RUNNER_TEMP/verify-app/app.tar.gz" "$RUNNER_TEMP/ios-evidence"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

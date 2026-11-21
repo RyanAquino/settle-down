@@ -15,7 +15,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, usePreventRemove, router } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -35,48 +35,21 @@ import {
   splitReceipt,
   type ItemAssignment,
   type ReceiptData,
-  type ReceiptItem,
   type SettleUpGroup,
-  type GroupUser,
 } from '@/utils/receipt';
+import {
+  draftPhotoUri,
+  readDraft,
+  removeDraft,
+  saveDraft,
+  type ReceiptDraft,
+  type ReceiptEdits,
+} from '@/utils/receipt-inbox';
 import { retryApiCall } from '@/utils/retry';
 import { previewReceipt, reconcileReceipt } from '@/utils/receipt-preview';
 
-export default function ReceiptDetailsScreen() {
-  const params = useLocalSearchParams();
-  const insets = useSafeAreaInsets();
-  const [editableItems, setEditableItems] = useState<ReceiptItem[]>([]);
-  const [editableTaxPercentage, setEditableTaxPercentage] = useState(0);
-  const [shopInfo, setShopInfo] = useState({
-    en_shop_name: '',
-    jp_shop_name: '',
-    total_amount: 0,
-    receipt_date: new Date(),
-    receipt_image_url: '',
-  });
-  const [groups, setGroups] = useState<SettleUpGroup[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
-  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
-  const [groupsError, setGroupsError] = useState<string | null>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [groupUsers, setGroupUsers] = useState<GroupUser[]>([]);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  const [groupsFetchAttempts, setGroupsFetchAttempts] = useState(0);
-  const [userSelections, setUserSelections] = useState<Record<number, ItemAssignment>>({});
-  const [splitItemOrder, setSplitItemOrder] = useState<number | null>(null);
-  const groupRequest = useRef(0);
-  const [paidByUserId, setPaidByUserId] = useState<string>('');
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [showShares, setShowShares] = useState(false);
-  const [showPhoto, setShowPhoto] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [costInputs, setCostInputs] = useState<{ [itemOrder: number]: string }>({});
-  const [taxPercentageInput, setTaxPercentageInput] = useState<string | null>(null);
-
-  // Drives the thin "items assigned" progress bar in the Items header.
-  const [assignProgress] = useState(() => new Animated.Value(0));
-
-  const mockReceiptData: ReceiptData = {
+function sampleReceipt(): ReceiptData {
+  return {
     receipt_items: [
       {
         english_name: 'Cranberry juice',
@@ -118,112 +91,227 @@ export default function ReceiptDetailsScreen() {
     receipt_date: new Date(),
     receipt_image_url: 'https://example.com/mock-receipt-image.jpg',
   };
+}
 
-  const receiptData = useMemo((): ReceiptData | null => {
-    if (params.useMockData === 'true') return mockReceiptData;
-    return parseReceipt(params.data);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.useMockData, params.data]);
+export default function ReceiptDetailsScreen() {
+  const params = useLocalSearchParams();
+  const draftId = typeof params.draftId === 'string' ? params.draftId : '';
+  const draft = useMemo(() => (draftId ? readDraft(draftId) : null), [draftId]);
+  const receipt = useMemo(() => {
+    if (params.useMockData === 'true') return sampleReceipt();
+    if (draftId && !draft) return null;
+    return draft?.receipt ?? parseReceipt(params.data);
+  }, [draftId, draft, params.useMockData, params.data]);
+  if (!receipt) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>Couldn’t load receipt data.</Text>
+        <PressableScale
+          style={styles.primaryBtn}
+          haptic="light"
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+            else router.replace('/');
+          }}
+        >
+          <Text style={styles.primaryBtnText}>Go back</Text>
+        </PressableScale>
+      </View>
+    );
+  }
+  const photoUri = draft
+    ? draftPhotoUri(draft)
+    : typeof params.photoUri === 'string'
+      ? params.photoUri
+      : '';
+  return (
+    <ReceiptEditor
+      key={draftId || String(params.data ?? 'sample')}
+      receipt={receipt}
+      draft={draft}
+      photoUri={photoUri}
+    />
+  );
+}
 
-  // -------- data fetching --------
-  const fetchGroupUsers = useCallback(async (groupId: string) => {
-    if (!groupId) return;
-    const request = ++groupRequest.current;
-    setGroupUsers([]);
-    setUserSelections({});
-    setPaidByUserId('');
-    setSplitItemOrder(null);
-    const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
-    setIsLoadingUsers(true);
-    try {
-      const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
-      const headers: { [key: string]: string } = { 'ngrok-skip-browser-warning': 'true' };
-      if (authToken) headers.Authorization = `Bearer ${authToken}`;
-      const response = await retryApiCall(async () =>
-        fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${groupId}`, { headers }),
-      );
-      if (response.ok) {
-        const data = usersSchema.parse(await response.json());
-        if (request === groupRequest.current) setGroupUsers(data.items);
-      } else throw new Error(`HTTP error! status: ${response.status}`);
-    } catch {
-      if (request === groupRequest.current) setGroupUsers([]);
-    } finally {
-      if (request === groupRequest.current) setIsLoadingUsers(false);
-    }
-  }, []);
+function inputAmount(text: string) {
+  const amount = parseFloat(text);
+  return Number.isFinite(amount) ? Math.max(0, amount) : 0;
+}
+
+function ReceiptEditor({
+  receipt,
+  draft,
+  photoUri,
+}: {
+  receipt: ReceiptData;
+  draft: ReceiptDraft | null;
+  photoUri: string;
+}) {
+  const insets = useSafeAreaInsets();
+  // Hydrate before mounting the editor. The initial roster download must never reset
+  // a saved payer or assignment while the receipt is reopening.
+  const [edits, setEdits] = useState<ReceiptEdits>(
+    () =>
+      draft?.edits ?? {
+        costs: {},
+        tax: String(receipt.tax_percentage),
+        date: receipt.receipt_date.toISOString(),
+        group: null,
+        members: [],
+        payer: '',
+        assignments: {},
+      },
+  );
+  const latest = useRef(edits);
+  const mounted = useRef(true);
+  const posting = useRef(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [groups, setGroups] = useState<SettleUpGroup[]>(edits.group ? [edits.group] : []);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+  const [groupsError, setGroupsError] = useState<string | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [rosterVerified, setRosterVerified] = useState(false);
+  const [groupsFetchAttempts, setGroupsFetchAttempts] = useState(0);
+  const [splitItemOrder, setSplitItemOrder] = useState<number | null>(null);
+  const requests = useRef({ groups: 0, members: 0 });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [showShares, setShowShares] = useState(false);
+  const [showPhoto, setShowPhoto] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [assignProgress] = useState(() => new Animated.Value(0));
+  usePreventRemove(isSyncing);
+
+  const changeEdits = useCallback(
+    (patch: Partial<ReceiptEdits>) => {
+      if (!mounted.current || posting.current) return false;
+      const next = { ...latest.current, ...patch };
+      latest.current = next;
+      setEdits(next);
+      if (draft) {
+        try {
+          // Persist in the event that changed the draft, before navigation or suspension.
+          saveDraft({ ...draft, receipt, edits: next });
+          setSaveFailed(false);
+        } catch {
+          setSaveFailed(true);
+          return false;
+        }
+      }
+      return true;
+    },
+    [draft, receipt],
+  );
+
+  const {
+    costs: costInputs,
+    assignments: userSelections,
+    members: groupUsers,
+    payer: paidByUserId,
+  } = edits;
+  const selectedGroupId = edits.group?.id ?? '';
+  const editableItems = useMemo(
+    () =>
+      [...receipt.receipt_items]
+        .sort((a, b) => a.item_order - b.item_order)
+        .map((item) =>
+          costInputs[item.item_order] === undefined
+            ? item
+            : { ...item, cost: inputAmount(costInputs[item.item_order]) },
+        ),
+    [receipt.receipt_items, costInputs],
+  );
+  const editableTaxPercentage = inputAmount(edits.tax);
+  const shopInfo = { ...receipt, receipt_date: new Date(edits.date) };
+
+  const fetchGroupUsers = useCallback(
+    async (groupId: string) => {
+      const request = ++requests.current.members;
+      setIsLoadingUsers(true);
+      setRosterVerified(false);
+      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
+      try {
+        const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
+        const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+        if (authToken) headers.Authorization = `Bearer ${authToken}`;
+        const response = await retryApiCall(() =>
+          fetch(`${apiBaseUrl}/api/v1/settle-up/users/?group_id=${encodeURIComponent(groupId)}`, {
+            headers,
+          }),
+        );
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const { items: members } = usersSchema.parse(await response.json());
+        if (request !== requests.current.members || latest.current.group?.id !== groupId) return;
+        const ids = new Set(members.map((user) => user.id));
+        const assignments = Object.fromEntries(
+          Object.entries(latest.current.assignments).filter(([, assignment]) =>
+            typeof assignment === 'string'
+              ? assignment === 'shared' || ids.has(assignment)
+              : assignment.portions.every((part) => ids.has(part.memberId)),
+          ),
+        );
+        changeEdits({
+          members,
+          assignments,
+          payer: ids.has(latest.current.payer) ? latest.current.payer : '',
+        });
+        setRosterVerified(true);
+      } catch {
+        if (request === requests.current.members) setGroupsError('Couldn’t refresh group members.');
+      } finally {
+        if (request === requests.current.members) setIsLoadingUsers(false);
+      }
+    },
+    [changeEdits],
+  );
 
   const fetchSettleUpGroups = useCallback(
     async (isAutoRetry = false) => {
+      const request = ++requests.current.groups;
       const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
       setIsLoadingGroups(true);
       setGroupsError(null);
-      if (isAutoRetry) setGroupsFetchAttempts((p) => p + 1);
-      else setGroupsFetchAttempts(1);
+      setGroupsFetchAttempts((p) => (isAutoRetry ? p + 1 : 1));
       try {
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
-        const headers: { [key: string]: string } = { 'ngrok-skip-browser-warning': 'true' };
+        const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
         if (authToken) headers.Authorization = `Bearer ${authToken}`;
-        const response = await retryApiCall(async () =>
+        const response = await retryApiCall(() =>
           fetch(`${apiBaseUrl}/api/v1/settle-up/groups/`, { headers }),
         );
-        if (response.ok) {
-          const data = groupsSchema.parse(await response.json());
-          setGroups(data.items || []);
-          setGroupsFetchAttempts(0);
-          if (data.items && data.items.length > 0) {
-            const firstGroupId = data.items[0].id;
-            setSelectedGroupId(firstGroupId);
-            void fetchGroupUsers(firstGroupId);
-          }
-        } else throw new Error(`HTTP error! status: ${response.status}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const { items } = groupsSchema.parse(await response.json());
+        if (request !== requests.current.groups) return;
+        setGroups(items);
+        setGroupsFetchAttempts(0);
+        const saved = latest.current.group;
+        const group = saved ? (items.find((g) => g.id === saved.id) ?? saved) : items[0];
+        if (group) {
+          changeEdits({ group });
+          void fetchGroupUsers(group.id);
+        }
       } catch {
-        setGroupsError('Couldn\u2019t load groups.');
-        setGroups([]);
+        if (request === requests.current.groups) setGroupsError('Couldn’t load groups.');
       } finally {
-        setIsLoadingGroups(false);
+        if (request === requests.current.groups) setIsLoadingGroups(false);
       }
     },
-    [fetchGroupUsers],
+    [changeEdits, fetchGroupUsers],
   );
 
-  // -------- init --------
   useEffect(() => {
-    if (!receiptData) {
-      router.back();
-      return;
-    }
-    // Sort by item_order once here so display order is stable; per-item state
-    // (userSelections, costInputs, React keys) is keyed by item_order, not array index.
-    const sortedItems = [...receiptData.receipt_items].sort((a, b) => a.item_order - b.item_order);
-    // Seeds editable state once from the route param. Converting this to
-    // lazy useState initializers is a worthwhile follow-up, but it has to
-    // coexist with the `!receiptData -> router.back()` guard above.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEditableItems(sortedItems);
-    setEditableTaxPercentage(receiptData.tax_percentage);
-    setTaxPercentageInput(receiptData.tax_percentage.toString());
-    const initialCostInputs: { [itemOrder: number]: string } = {};
-    sortedItems.forEach((item) => {
-      initialCostInputs[item.item_order] = item.cost.toString();
-    });
-    setCostInputs(initialCostInputs);
-    setShopInfo({
-      en_shop_name: receiptData.en_shop_name,
-      jp_shop_name: receiptData.jp_shop_name,
-      total_amount: receiptData.total_amount,
-      receipt_date: new Date(receiptData.receipt_date),
-      receipt_image_url: receiptData?.receipt_image_url || '',
-    });
-  }, [receiptData]);
-
-  // Fetch groups once on mount.
-  useEffect(() => {
-    // Async fetch on mount; setState happens in its await continuation.
+    const pending = requests.current;
+    mounted.current = true;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchSettleUpGroups();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => {
+      mounted.current = false;
+      pending.groups++;
+      pending.members++;
+    };
+  }, [fetchSettleUpGroups]);
 
   // Animate the assignment progress bar whenever selections change.
   useEffect(() => {
@@ -253,40 +341,12 @@ export default function ReceiptDetailsScreen() {
   // so hook order stays stable across renders.
   const userColorMap = useMemo(() => buildUserColorMap(groupUsers), [groupUsers]);
 
-  if (!receiptData) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Couldn\u2019t load receipt data.</Text>
-        <PressableScale style={styles.primaryBtn} haptic="light" onPress={() => router.back()}>
-          <Text style={styles.primaryBtnText}>Go back</Text>
-        </PressableScale>
-      </View>
-    );
-  }
-
-  // -------- handlers --------
-  const updateItemCost = (itemOrder: number, cost: string) => {
-    setCostInputs((p) => ({ ...p, [itemOrder]: cost }));
-    const parsed = cost === '' ? 0 : parseFloat(cost);
-    const next = Math.max(0, isNaN(parsed) ? 0 : parsed);
-    // Immutable update keyed by item_order (the item's stable identity), not array
-    // index — mutating in place would break per-row memoization, and the functional
-    // updater avoids a stale `editableItems` closure.
-    setEditableItems((prev) =>
-      prev.map((it) => (it.item_order === itemOrder ? { ...it, cost: next } : it)),
-    );
-  };
-  // `cost` from the API is the line total (already accounts for quantity), so we
-  // sum it directly — multiplying by quantity would double-count multi-unit lines.
-
-  const getTotal = () => shopInfo.total_amount;
-  const updateTaxPercentage = (t: string) => {
-    setTaxPercentageInput(t);
-    const parsed = t === '' ? 0 : parseFloat(t);
-    setEditableTaxPercentage(Math.max(0, isNaN(parsed) ? 0 : parsed));
-  };
-  const handleDateChange = (_: unknown, d?: Date) => {
-    if (d) setShopInfo((p) => ({ ...p, receipt_date: d }));
+  const updateItemCost = (itemOrder: number, cost: string) =>
+    changeEdits({ costs: { ...latest.current.costs, [itemOrder]: cost } });
+  const getTotal = () => receipt.total_amount;
+  const updateTaxPercentage = (value: string) => changeEdits({ tax: value });
+  const handleDateChange = (_: unknown, date?: Date) => {
+    if (date) changeEdits({ date: date.toISOString() });
   };
   const formatDate = (d: Date) =>
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -294,21 +354,25 @@ export default function ReceiptDetailsScreen() {
     d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
   const assignItem = (itemOrder: number, assignment: ItemAssignment) => {
-    setUserSelections((p) => ({ ...p, [itemOrder]: assignment }));
+    changeEdits({ assignments: { ...latest.current.assignments, [itemOrder]: assignment } });
   };
-  const getSelectedGroupName = () =>
-    groups.find((g) => g.id === selectedGroupId)?.name || 'Select group';
+  const getSelectedGroupName = () => edits.group?.name || 'Select group';
 
   const showGroupPicker = () => {
     if (groups.length > 0) setIsDropdownOpen(true);
   };
   const handleGroupSelection = (g: SettleUpGroup) => {
-    setSelectedGroupId(g.id);
     setIsDropdownOpen(false);
-    if (g.id !== selectedGroupId) void fetchGroupUsers(g.id);
+    if (g.id !== selectedGroupId) {
+      setSplitItemOrder(null);
+      setGroupsError(null);
+      changeEdits({ group: g, members: [], payer: '', assignments: {} });
+      void fetchGroupUsers(g.id);
+    }
   };
 
   const syncTransaction = async () => {
+    if (posting.current || !rosterVerified) return;
     if (!selectedGroupId) return Alert.alert('Pick a group', 'Please select a settle-up group.');
     if (!paidByUserId) return Alert.alert('Who paid?', 'Please select who paid for this receipt.');
     const unassigned = editableItems.filter((item) => !userSelections[item.item_order]);
@@ -322,6 +386,7 @@ export default function ReceiptDetailsScreen() {
         'The items and tax must add up to the scanned total.',
       );
 
+    posting.current = true;
     setIsSyncing(true);
     try {
       const payload = {
@@ -343,22 +408,39 @@ export default function ReceiptDetailsScreen() {
       };
       if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
-      const response = await retryApiCall(async () =>
-        fetch(`${apiBaseUrl}/api/v1/settle-up/transactions/`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-        }),
-      );
-      if (response.ok) {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('Synced', 'Transaction sent to Settle Up.', [
-          { text: 'OK', onPress: () => router.back() },
-        ]);
-      } else throw new Error(`HTTP error! status: ${response.status}`);
+      // The create endpoint has no idempotency key. A lost response may still have
+      // created the transaction, so only send once per explicit submission.
+      const response = await fetch(`${apiBaseUrl}/api/v1/settle-up/transactions/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (response.status >= 500 || response.status === 408)
+        throw new Error('Unconfirmed submission');
+      if (!response.ok) {
+        posting.current = false;
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        Alert.alert('Sync failed', 'Settle Up rejected the transaction. Please try again.');
+        return;
+      }
+      setSubmitted(true);
+      let message = 'Transaction sent to Settle Up.';
+      if (draft) {
+        try {
+          removeDraft(draft.id);
+        } catch {
+          message += ' Couldn’t remove the local draft. Discard it from the inbox.';
+        }
+      }
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      Alert.alert('Synced', message, [{ text: 'OK', onPress: () => router.back() }]);
     } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Sync failed', 'Couldn\u2019t sync this transaction. Please try again.');
+      posting.current = false;
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      Alert.alert(
+        'Couldn’t confirm sync',
+        'Check your Settle Up group before trying again. The transaction may already have been posted.',
+      );
     } finally {
       setIsSyncing(false);
     }
@@ -369,17 +451,15 @@ export default function ReceiptDetailsScreen() {
   const total = getTotal();
   const balance = reconcileReceipt(editableItems, editableTaxPercentage, total);
   const taxIncluded = balance?.taxAmount === 0 && editableTaxPercentage > 0;
-  const receiptPhoto =
-    (typeof params.photoUri === 'string' ? params.photoUri : '') || shopInfo.receipt_image_url;
-  // Null until a group is selected (still loading, or the fetch failed).
-  const currency = groups.find((g) => g.id === selectedGroupId)?.currency ?? null;
+  const receiptPhoto = photoUri || shopInfo.receipt_image_url;
+  const currency = edits.group?.currency ?? null;
   const priceSymbol = currencySymbol(currency);
   const splitItem = editableItems.find((item) => item.item_order === splitItemOrder);
   const splitAssignment = splitItem ? userSelections[splitItem.item_order] : undefined;
   const assignedCount = Object.keys(userSelections).length;
   const allAssigned = editableItems.length > 0 && assignedCount === editableItems.length;
   const canPreview = allAssigned && !!balance && !!selectedGroupId && groupUsers.length > 0;
-  const readyToSync = canPreview && !!paidByUserId;
+  const readyToSync = canPreview && !!paidByUserId && rosterVerified && !submitted;
 
   // -------- render --------
   return (
@@ -406,7 +486,18 @@ export default function ReceiptDetailsScreen() {
               <Text style={styles.iconBtnText}>←</Text>
             </PressableScale>
             <Text style={styles.headerKicker}>RECEIPT</Text>
-            <View style={styles.iconBtnSpacer} />
+            {draft && !submitted ? (
+              <PressableScale
+                disabled={isSyncing}
+                onPress={() => {
+                  if (changeEdits({})) router.dismissTo('/inbox');
+                }}
+              >
+                <Text style={styles.summaryActionText}>Save for later</Text>
+              </PressableScale>
+            ) : (
+              <View style={styles.iconBtnSpacer} />
+            )}
           </View>
 
           <Text style={styles.shopName} numberOfLines={2}>
@@ -429,10 +520,16 @@ export default function ReceiptDetailsScreen() {
           </PressableScale>
         </Entrance>
 
+        {saveFailed && (
+          <PressableScale style={styles.retryBtn} onPress={() => changeEdits({})}>
+            <Text style={styles.retryBtnText}>Couldn’t save your changes. Tap to retry.</Text>
+          </PressableScale>
+        )}
+
         {/* Group — compact single-line pill card */}
         <Entrance delay={70} style={styles.groupCard}>
           <Text style={styles.eyebrow}>GROUP</Text>
-          {groupsError ? (
+          {groupsError && (
             <PressableScale
               style={styles.retryBtn}
               haptic="light"
@@ -440,9 +537,10 @@ export default function ReceiptDetailsScreen() {
                 void fetchSettleUpGroups(false);
               }}
             >
-              <Text style={styles.retryBtnText}>Retry</Text>
+              <Text style={styles.retryBtnText}>{groupsError} Retry</Text>
             </PressableScale>
-          ) : isLoadingGroups ? (
+          )}
+          {isLoadingGroups && !edits.group ? (
             <ActivityIndicator size="small" color={theme.ink} />
           ) : (
             <PressableScale
@@ -455,7 +553,7 @@ export default function ReceiptDetailsScreen() {
               <Text
                 style={[styles.groupValueText, groups.length === 0 && styles.fieldValueTextDim]}
               >
-                {groups.length === 0 ? 'No groups' : getSelectedGroupName()}
+                {edits.group ? getSelectedGroupName() : 'No groups'}
               </Text>
               {groups.length > 0 && <Text style={styles.chev}>↓</Text>}
             </PressableScale>
@@ -465,7 +563,7 @@ export default function ReceiptDetailsScreen() {
         {/* Paid by — inline one-tap chips */}
         <Entrance delay={130} style={styles.paidByCard}>
           <Text style={[styles.eyebrow, { marginBottom: 8 }]}>PAID BY</Text>
-          {isLoadingUsers ? (
+          {isLoadingUsers && groupUsers.length === 0 ? (
             <ActivityIndicator size="small" color={theme.ink} style={{ alignSelf: 'flex-start' }} />
           ) : groupUsers.length === 0 ? (
             <Text style={styles.mutedHint}>Select a group to see members.</Text>
@@ -478,7 +576,7 @@ export default function ReceiptDetailsScreen() {
                   <PressableScale
                     key={u.id}
                     style={[styles.paidByChip, selected && { backgroundColor: c, borderColor: c }]}
-                    onPress={() => setPaidByUserId(u.id)}
+                    onPress={() => changeEdits({ payer: u.id })}
                     accessibilityLabel={`Paid by ${u.name}`}
                     testID={`paid-by-${u.id}`}
                   >
@@ -566,11 +664,7 @@ export default function ReceiptDetailsScreen() {
                       style={styles.priceInput}
                       testID={`item-cost-${item.item_order}`}
                       accessibilityLabel={`Cost of ${item.english_name || item.japanese_name}`}
-                      value={
-                        costInputs.hasOwnProperty(item.item_order)
-                          ? costInputs[item.item_order]
-                          : item.cost.toString()
-                      }
+                      value={costInputs[item.item_order] ?? item.cost.toString()}
                       onChangeText={(t) => updateItemCost(item.item_order, t)}
                       keyboardType="decimal-pad"
                       placeholder="0"
@@ -690,11 +784,7 @@ export default function ReceiptDetailsScreen() {
                   style={styles.taxInput}
                   testID="receipt-tax"
                   accessibilityLabel="Tax percentage"
-                  value={
-                    taxPercentageInput !== null
-                      ? taxPercentageInput
-                      : editableTaxPercentage.toString()
-                  }
+                  value={edits.tax}
                   onChangeText={updateTaxPercentage}
                   keyboardType="decimal-pad"
                   placeholder="0"
@@ -743,15 +833,19 @@ export default function ReceiptDetailsScreen() {
         style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}
       >
         <Text style={styles.footerHint}>
-          {readyToSync
-            ? 'Ready to sync.'
-            : !balance && editableItems.length > 0
-              ? 'Check the receipt amounts.'
-              : !selectedGroupId
-                ? 'Pick a group to continue.'
-                : !paidByUserId
-                  ? 'Select who paid.'
-                  : `${editableItems.length - assignedCount} item${editableItems.length - assignedCount === 1 ? '' : 's'} left to assign.`}
+          {submitted
+            ? 'Synced to Settle Up.'
+            : readyToSync
+              ? 'Ready to sync.'
+              : !balance && editableItems.length > 0
+                ? 'Check the receipt amounts.'
+                : !selectedGroupId
+                  ? 'Pick a group to continue.'
+                  : !rosterVerified && allAssigned && paidByUserId
+                    ? 'Refresh group members to sync.'
+                    : !paidByUserId
+                      ? 'Select who paid.'
+                      : `${editableItems.length - assignedCount} item${editableItems.length - assignedCount === 1 ? '' : 's'} left to assign.`}
         </Text>
         <PressableScale
           scaleTo={0.98}
