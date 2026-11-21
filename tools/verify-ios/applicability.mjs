@@ -43,29 +43,14 @@ export async function needsVerification(github, repo, pr) {
   );
 }
 
-export async function skipIfExempt({ github, context, core }) {
+export async function isExempt({ github, context, core }) {
   const eventPR = context.payload.pull_request;
   const repo = context.repo;
   const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: eventPR.number });
   if (pr.state !== 'open' || pr.head.sha !== eventPR.head.sha || pr.base.ref !== eventPR.base.ref) {
-    return;
+    return false;
   }
   const required = await needsVerification(github, repo, pr);
-  if (required !== false) {
-    if (required)
-      core.notice('iOS verification is required. An authorized writer can post /verify.');
-    return;
-  }
-  await github.rest.checks.create({
-    ...repo,
-    name: CHECK_NAME,
-    head_sha: pr.head.sha,
-    status: 'completed',
-    conclusion: 'skipped',
-    output: {
-      title: 'iOS verification skipped',
-      summary:
-        'The changed files are outside the app, its native iOS project, and its build settings.',
-    },
-  });
+  if (required) core.notice('iOS verification is required. An authorized writer can post /verify.');
+  return required === false;
 }

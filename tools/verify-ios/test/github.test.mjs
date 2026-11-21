@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
-import { skipIfExempt } from '../applicability.mjs';
+import { isExempt } from '../applicability.mjs';
 import path from 'node:path';
 import {
   isCommand,
@@ -135,9 +135,13 @@ function harness() {
   }
   return { github, context, core, writes, outputs, pr, comments, setFiles };
 }
-test('docs, workflows, and verifier-only changes skip the required check on the PR head', async () => {
+test('docs, workflows, and verifier-only changes remain exempt after a PR title edit', async () => {
   const h = harness();
-  h.context.payload = { pull_request: h.pr };
+  h.context.payload = {
+    action: 'edited',
+    changes: { title: { from: 'Old title' } },
+    pull_request: h.pr,
+  };
   h.setFiles(
     'README.md',
     'docs/ci.md',
@@ -146,13 +150,8 @@ test('docs, workflows, and verifier-only changes skip the required check on the 
     'tools/verify-ios/github.mjs',
   );
 
-  await skipIfExempt(h);
-
-  assert.equal(h.writes.length, 1);
-  assert.equal(h.writes[0].name, 'iOS PR Verification');
-  assert.equal(h.writes[0].head_sha, sha);
-  assert.equal(h.writes[0].status, 'completed');
-  assert.equal(h.writes[0].conclusion, 'skipped');
+  assert.equal(await isExempt(h), true);
+  assert.deepEqual(h.writes, []);
 });
 
 test('any app, asset, native, or build change retains verification', async () => {
@@ -170,19 +169,17 @@ test('any app, asset, native, or build change retains verification', async () =>
     const h = harness();
     h.context.payload = { pull_request: h.pr };
     h.setFiles('docs/ci.md', '.github/workflows/native.yml', file);
-    await skipIfExempt(h);
-    assert.deepEqual(h.writes, [], JSON.stringify(file));
+    assert.equal(await isExempt(h), false, JSON.stringify(file));
   }
 });
 
-test('an incomplete file list or a changed PR head cannot receive a skipped check', async () => {
+test('an incomplete file list or a changed PR head cannot grant an exemption', async () => {
   for (const changedCount of [2, 3001]) {
     const h = harness();
     h.setFiles('README.md');
     h.pr.changed_files = changedCount;
     h.context.payload = { pull_request: h.pr };
-    await skipIfExempt(h);
-    assert.deepEqual(h.writes, []);
+    assert.equal(await isExempt(h), false);
   }
 
   const h = harness();
@@ -193,8 +190,7 @@ test('an incomplete file list or a changed PR head cannot receive a skipped chec
     });
     return [{ filename: 'README.md' }];
   };
-  await skipIfExempt(h);
-  assert.deepEqual(h.writes, []);
+  assert.equal(await isExempt(h), false);
 });
 
 test('a /verify comment on an exempt PR does not start a simulator build', async () => {
