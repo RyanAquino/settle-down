@@ -2,7 +2,8 @@ import { fireEvent, render, screen, userEvent, waitFor } from '@testing-library/
 import { router, useLocalSearchParams } from 'expo-router';
 import { uuid } from 'expo';
 import { randomUUID } from 'node:crypto';
-import { Alert } from 'react-native';
+import { receiptLeftForLater, setActiveReceiptDraft } from '@/utils/receipt-reminder-lifecycle';
+import { Alert, View, ScrollView } from 'react-native';
 import ReceiptDetailsScreen from '@/app/receipt-details';
 import { createPhotoDraft, readDraft, saveDraft } from '@/utils/receipt-inbox';
 import { samplePhoto, setupInboxFiles } from './support/inbox-files';
@@ -10,7 +11,15 @@ import { samplePhoto, setupInboxFiles } from './support/inbox-files';
 jest.mock('expo-file-system', () =>
   jest.requireActual<typeof import('./support/inbox-files')>('./support/inbox-files'),
 );
+jest.mock('@/utils/receipt-reminder-lifecycle', () => ({
+  setActiveReceiptDraft: jest.fn(),
+  receiptLeftForLater: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('expo-router', () => ({
+  useFocusEffect: (effect: () => void) => {
+    const { useEffect } = jest.requireActual<typeof import('react')>('react');
+    useEffect(effect, [effect]);
+  },
   useLocalSearchParams: jest.fn(),
   usePreventRemove: jest.fn(),
   router: { back: jest.fn(), dismissTo: jest.fn() },
@@ -113,6 +122,8 @@ test('edits, payer and quantity splits reopen from disk and only a confirmed syn
   await user.press(screen.getByTestId('split-done'));
   await user.press(screen.getByText('Save for later'));
   expect(router.dismissTo).toHaveBeenCalledWith('/inbox');
+  expect(setActiveReceiptDraft).toHaveBeenCalledWith(draft.id);
+  expect(receiptLeftForLater).toHaveBeenCalledTimes(1);
   await first.unmount();
 
   const edited = readDraft(draft.id)?.edits;
@@ -208,3 +219,45 @@ test('a missing saved group keeps its edits until the user selects another avail
     }),
   );
 });
+
+test.each([false, true])(
+  'a reminder opens the first unassigned item or the summary (all assigned=%s)',
+  async (allAssigned) => {
+    const draft = {
+      ...(await createPhotoDraft(samplePhoto().uri)),
+      receipt,
+      edits: {
+        costs: {},
+        tax: '0',
+        date: receipt.receipt_date.toISOString(),
+        group: groups[0],
+        members,
+        payer: 'ren',
+        assignments: { 8: 'aya', ...(allAssigned && { 12: 'ren' }) },
+      },
+    };
+    saveDraft(draft);
+    jest.mocked(useLocalSearchParams).mockReturnValue({ draftId: draft.id, reminder: 'tap-a' });
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response(groups))
+      .mockResolvedValueOnce(response(members));
+    const nativeView = View.prototype as {
+      measureLayout: (content: unknown, callback: (x: number, y: number) => void) => void;
+    };
+    const measure = jest.spyOn(nativeView, 'measureLayout').mockImplementation(function (
+      this: { props: { testID?: string } },
+      _content: unknown,
+      measured,
+    ) {
+      expect(this.props.testID).toBe(allAssigned ? 'receipt-review-summary' : 'receipt-item-12');
+      measured(0, this.props.testID === 'receipt-item-12' ? 500 : 900);
+    });
+    jest.spyOn(ScrollView.prototype, 'getInnerViewRef').mockReturnValue({});
+    const scroll = jest.spyOn(ScrollView.prototype, 'scrollTo');
+    await render(<ReceiptDetailsScreen />);
+    await screen.findByTestId('paid-by-ren');
+    expect(measure).toHaveBeenCalledTimes(1);
+    expect(scroll).toHaveBeenCalledWith({ y: allAssigned ? 888 : 488, animated: false });
+  },
+);

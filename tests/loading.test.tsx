@@ -4,6 +4,7 @@ import { File } from 'expo-file-system';
 import NetInfo from '@react-native-community/netinfo';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { createPhotoDraft, readDraft, saveDraft, removeDraft } from '@/utils/receipt-inbox';
+import { receiptLeftForLater, setActiveReceiptDraft } from '@/utils/receipt-reminder-lifecycle';
 import { Alert } from 'react-native';
 import LoadingScreen from '../app/loading';
 
@@ -13,7 +14,15 @@ jest.mock('expo-constants', () => ({
     return { extra: mockExpoExtra };
   },
 }));
+jest.mock('@/utils/receipt-reminder-lifecycle', () => ({
+  setActiveReceiptDraft: jest.fn(),
+  receiptLeftForLater: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('expo-router', () => ({
+  useFocusEffect: (effect: () => void) => {
+    const { useEffect } = jest.requireActual<typeof import('react')>('react');
+    useEffect(effect, [effect]);
+  },
   useLocalSearchParams: jest.fn(),
   router: { back: jest.fn(), canGoBack: () => true, replace: jest.fn() },
 }));
@@ -133,6 +142,7 @@ test.each([false, true])(
     const upload = jest.spyOn(globalThis, 'fetch');
     await render(<LoadingScreen />);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/inbox'));
+    expect(receiptLeftForLater).toHaveBeenCalledTimes(1);
     expect(createPhotoDraft).toHaveBeenCalledTimes(1);
     expect(MediaLibrary.requestPermissionsAsync).toHaveBeenCalledTimes(fromLibrary ? 0 : 1);
     expect(upload).not.toHaveBeenCalled();
@@ -167,8 +177,10 @@ test.each([true, false])(
   },
 );
 
-test('resuming a queued photo scans its durable copy and promotes the same draft', async () => {
-  jest.mocked(useLocalSearchParams).mockReturnValue({ draftId: draft.id, photoUri: durableUri });
+test('tapping a photo reminder scans its durable copy and promotes the same draft', async () => {
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue({ draftId: draft.id, photoUri: durableUri, reminder: 'tap-a' });
   jest.mocked(readDraft).mockReturnValue(draft);
   jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(scanResponse(100));
   await render(<LoadingScreen />);
@@ -177,6 +189,11 @@ test('resuming a queued photo scans its durable copy and promotes the same draft
       expect.objectContaining({ pathname: '/receipt-details' }),
     ),
   );
+  expect(setActiveReceiptDraft).toHaveBeenCalledWith(draft.id);
+  expect(jest.mocked(router.replace).mock.lastCall?.[0]).toMatchObject({
+    pathname: '/receipt-details',
+    params: { draftId: draft.id, reminder: 'tap-a' },
+  });
   expect(createPhotoDraft).not.toHaveBeenCalled();
   expect(File).toHaveBeenCalledWith(durableUri);
   expect(jest.mocked(saveDraft).mock.calls[0][0]).toMatchObject({

@@ -119,6 +119,29 @@ should appear in the fixture requests until you open the queued photo. Tap it an
 the receipt details to verify recovery. The regular library button uses device connectivity.
 [Offline inbox replay](../../.maestro/receipt-inbox-offline.yaml) contains the Maestro assertions.
 
+### Receipt reminders
+
+Use the `success` fixture. Verification builds show **Test reminder in 8 seconds**
+(`verify-receipt-reminder`) in the inbox once permission is granted and it contains at
+least one receipt. The control sends a native notification for the current inbox and
+leaves the regular three-hour and 9 AM schedules intact. Use **Home** to check delivery
+in the background. The [photo reminder replay](../../.maestro/receipt-reminders.yaml)
+opens the delivered alert and checks that the photo is scanned.
+
+- On a clean install, leave a photo or split for later and decline the notification
+  prompt. Check **Enable reminders**, save a second receipt, and check that no second
+  prompt appears. Tap **Enable reminders**, allow notifications in Settings, and
+  return to the app to see the test control.
+- Save a split with the first item assigned. Trigger a reminder, tap the notification,
+  and check that the first unassigned item is visible. Repeat with every item assigned
+  and check that the summary is visible. For a stale tap, let the notification arrive,
+  discard the receipt, then tap its delivered notification in Notification Center.
+  Check **This receipt is no longer in your inbox.**
+- Leave two receipts in the inbox. Trigger a reminder and check the grouped count and
+  inbox destination. Repeat and immediately open one split before delivery. Only the
+  other receipt should appear in the notification, and tapping it should open that
+  receipt. With a single open receipt, the test notification should stay silent.
+
 The out-of-order member preset gives Japan three members for uneven splits
 and holds Taiwan’s member response until Hong Kong
 returns Alex. Taiwan then returns Sam, making a stale overwrite visible in the payer list.

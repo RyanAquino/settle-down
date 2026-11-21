@@ -2,7 +2,7 @@
   "expo": {
     "name": "Settle Down",
     "slug": "settle-down",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "settledown",
@@ -45,6 +45,8 @@
     },
     "plugins": [
       "expo-router",
+      ["expo-notifications", { "enableRemoteNotifications": false }],
+      "./plugins/with-receipt-reminder-time-zone.js",
       [
         "expo-camera",
         {

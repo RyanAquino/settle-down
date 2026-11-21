@@ -16,7 +16,7 @@ import {
   Easing,
 } from 'react-native';
 import { useLocalSearchParams, usePreventRemove, router } from 'expo-router';
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type ComponentRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
@@ -45,6 +45,8 @@ import {
   type ReceiptDraft,
   type ReceiptEdits,
 } from '@/utils/receipt-inbox';
+import { receiptLeftForLater } from '@/utils/receipt-reminder-lifecycle';
+import { useActiveReceiptDraft } from '@/utils/use-active-receipt-draft';
 import { retryApiCall } from '@/utils/retry';
 import { previewReceipt, reconcileReceipt } from '@/utils/receipt-preview';
 
@@ -96,12 +98,18 @@ function sampleReceipt(): ReceiptData {
 export default function ReceiptDetailsScreen() {
   const params = useLocalSearchParams();
   const draftId = typeof params.draftId === 'string' ? params.draftId : '';
+  const reminder = typeof params.reminder === 'string' ? params.reminder : '';
   const draft = useMemo(() => (draftId ? readDraft(draftId) : null), [draftId]);
   const receipt = useMemo(() => {
     if (params.useMockData === 'true') return sampleReceipt();
     if (draftId && !draft) return null;
     return draft?.receipt ?? parseReceipt(params.data);
   }, [draftId, draft, params.useMockData, params.data]);
+  useEffect(() => {
+    if (reminder && draftId && !draft) {
+      router.replace({ pathname: '/inbox', params: { missingReceipt: reminder } });
+    }
+  }, [reminder, draftId, draft]);
   if (!receipt) {
     return (
       <View style={styles.errorContainer}>
@@ -130,6 +138,7 @@ export default function ReceiptDetailsScreen() {
       receipt={receipt}
       draft={draft}
       photoUri={photoUri}
+      reminder={reminder}
     />
   );
 }
@@ -143,11 +152,14 @@ function ReceiptEditor({
   receipt,
   draft,
   photoUri,
+  reminder,
 }: {
   receipt: ReceiptData;
   draft: ReceiptDraft | null;
   photoUri: string;
+  reminder: string;
 }) {
+  useActiveReceiptDraft(draft?.id);
   const insets = useSafeAreaInsets();
   // Hydrate before mounting the editor. The initial roster download must never reset
   // a saved payer or assignment while the receipt is reopening.
@@ -223,6 +235,24 @@ function ReceiptEditor({
         ),
     [receipt.receipt_items, costInputs],
   );
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const reminderTarget = useRef<ComponentRef<typeof View>>(null);
+  const handledReminder = useRef('');
+  const firstUnassigned = reminder
+    ? editableItems.find((item) => !userSelections[item.item_order])?.item_order
+    : undefined;
+  const scrollToReminder = useCallback(() => {
+    if (!reminder || handledReminder.current === reminder) return;
+    const target = reminderTarget.current;
+    const content = scrollRef.current?.getInnerViewRef();
+    if (!target || !content) return;
+    target.measureLayout(content, (_, y) => {
+      if (reminderTarget.current !== target || handledReminder.current === reminder) return;
+      handledReminder.current = reminder;
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - insets.top - 12), animated: false });
+    });
+  }, [reminder, insets.top]);
+  useEffect(scrollToReminder, [scrollToReminder]);
   const editableTaxPercentage = inputAmount(edits.tax);
   const shopInfo = { ...receipt, receipt_date: new Date(edits.date) };
 
@@ -469,6 +499,8 @@ function ReceiptEditor({
       keyboardVerticalOffset={0}
     >
       <ScrollView
+        ref={scrollRef}
+        onContentSizeChange={reminder ? scrollToReminder : undefined}
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: 180 + insets.bottom }]}
         keyboardShouldPersistTaps="handled"
@@ -490,7 +522,10 @@ function ReceiptEditor({
               <PressableScale
                 disabled={isSyncing}
                 onPress={() => {
-                  if (changeEdits({})) router.dismissTo('/inbox');
+                  if (changeEdits({})) {
+                    router.dismissTo('/inbox');
+                    void receiptLeftForLater();
+                  }
                 }}
               >
                 <Text style={styles.summaryActionText}>Save for later</Text>
@@ -637,6 +672,8 @@ function ReceiptEditor({
             return (
               <View
                 key={item.item_order}
+                ref={item.item_order === firstUnassigned ? reminderTarget : undefined}
+                collapsable={item.item_order === firstUnassigned ? false : undefined}
                 testID={`receipt-item-${item.item_order}`}
                 style={[styles.itemRow, index > 0 && styles.itemRowDivider]}
               >
@@ -764,7 +801,12 @@ function ReceiptEditor({
 
         {/* Summary */}
         <Entrance delay={320} style={styles.summaryCard}>
-          <View style={styles.summaryLine}>
+          <View
+            testID="receipt-review-summary"
+            ref={reminder && firstUnassigned === undefined ? reminderTarget : undefined}
+            collapsable={reminder && firstUnassigned === undefined ? false : undefined}
+            style={styles.summaryLine}
+          >
             <Text style={styles.summaryLabel}>Subtotal</Text>
             <Text style={styles.summaryValue}>
               {formatMoney(balance?.subtotal ?? subtotal, currency)}
