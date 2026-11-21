@@ -1,4 +1,3 @@
-import { applicationId } from 'expo-application';
 import { CameraView } from 'expo-camera';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -150,7 +149,7 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
           }}
         />
         <View pointerEvents="none" style={[styles.topHint, { top: insets.top + 12 }]}>
-          <Text style={styles.topHintText}>Installed {applicationId}</Text>
+          <Text style={styles.topHintText}>Point at a receipt</Text>
         </View>
         {cameraError && (
           <View style={styles.errorPanel}>
