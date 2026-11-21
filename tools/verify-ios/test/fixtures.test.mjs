@@ -67,6 +67,13 @@ test('synthetic API covers app contracts, errors, request evidence and reset', a
   };
   assert.deepEqual(await readScan(), mismatch);
   assert.deepEqual(await readScan(), receipt);
+  assert.equal((await reset('missing-discount')).status, 200);
+  const [juice, onigiri] = (await readScan()).receipt_items;
+  assert.equal(Object.hasOwn(juice, 'discount'), false);
+  assert.deepEqual({ ...juice, discount: 0 }, receipt.receipt_items[0]);
+  assert.deepEqual(onigiri, receipt.receipt_items[1]);
+  assert.equal((await reset('success')).status, 200);
+  assert.deepEqual(await readScan(), receipt);
   assert.equal((await reset('scan-mismatch-once')).status, 200);
   assert.deepEqual(await readScan(), mismatch);
   assert.equal((await reset('scan-mismatch')).status, 200);
