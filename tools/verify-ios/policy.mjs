@@ -5,6 +5,7 @@ import { z } from 'zod';
 export const APP_ID = 'com.ryan.aquino.settledown';
 export const PRESETS = [
   'success',
+  'missing-discount',
   'upload-error',
   'scan-mismatch-once',
   'scan-mismatch',

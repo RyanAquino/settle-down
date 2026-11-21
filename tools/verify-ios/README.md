@@ -107,7 +107,10 @@ Real OCR and real Settle Up integration are never exercised.
 The fixture service implements the app's existing receipt, groups, members, and
 transaction endpoints. It supplies a fixed-date receipt with line totals (including
 one quantity-two item), JPY/TWD/HKD groups, and synthetic Alex/Sam members. Presets:
-`success`, `upload-error`, `groups-error`, `no-groups`, `users-error`, `sync-error`, `out-of-order-members`.
+`success`, `missing-discount`, `upload-error`, `groups-error`, `no-groups`, `users-error`, `sync-error`, `out-of-order-members`.
+
+The `missing-discount` preset omits the discount field on the full-price juice.
+The two Onigiri have a paid line total of 200 and a discount of 30.
 
 The out-of-order member preset gives Japan three members for uneven splits
 and holds Taiwan’s member response until Hong Kong
