@@ -19,11 +19,11 @@ Camera / Library  →  Loading (upload + OCR)  →  Receipt details  →  Settle
    - correct item costs, the tax %, or the receipt date if needed
 4. **Sync**: the split is sent to Settle Up as a transaction.
 
-### Offline behavior
+### Receipt inbox and offline behavior
 
-- **Camera photos taken offline** are saved to your photo library, so you can process them later.
-- **Library photos picked offline** are rejected with a prompt to try again once you're online.
-- **Uploads that fail** after all retries also fall back to saving camera photos to your library.
+Open **Inbox** from the camera to pick up an unfinished receipt. Camera captures and library selections are copied to app storage before scanning. If you are offline or the upload fails, open the saved photo from the inbox when you are online. Camera captures also go to your photo library when permission allows.
+
+Scanned drafts save edits, the selected group, payer, and item assignments on this device as you work. Tap **Save for later** to return to the inbox, or reopen the draft after leaving the app. A confirmed Settle Up submission or an explicit **Discard** removes the draft and its inbox photo.
 
 ## Tech stack
 
