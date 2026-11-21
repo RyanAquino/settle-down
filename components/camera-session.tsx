@@ -149,7 +149,7 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
           }}
         />
         <View pointerEvents="none" style={[styles.topHint, { top: insets.top + 12 }]}>
-          <Text style={styles.topHintText}>Point at a receipt</Text>
+          <Text style={styles.topHintText}>Benchmark receipt label</Text>
         </View>
         {cameraError && (
           <View style={styles.errorPanel}>
