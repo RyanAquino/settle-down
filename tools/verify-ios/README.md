@@ -119,6 +119,13 @@ should appear in the fixture requests until you open the queued photo. Tap it an
 the receipt details to verify recovery. The regular library button uses device connectivity.
 [Offline inbox replay](../../.maestro/receipt-inbox-offline.yaml) contains the Maestro assertions.
 
+To verify recovery when a capture cannot be saved, start with a fresh inbox and the
+`success` fixture. Tap **Try missing capture** (`verify-missing-capture`) on the camera
+screen. This CI-only control opens the offline capture flow with a missing local file,
+so the real inbox copy fails. Assert **Couldn’t save the receipt to your inbox. Please
+retake the photo.** Dismiss the alert and open **Inbox** to confirm **No saved receipts**.
+[Inbox copy failure replay](../../.maestro/receipt-inbox-copy-failure.yaml) contains the assertions.
+
 The out-of-order member preset gives Japan three members for uneven splits
 and holds Taiwan’s member response until Hong Kong
 returns Alex. Taiwan then returns Sam, making a stale overwrite visible in the payer list.
