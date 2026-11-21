@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { requireOptionalNativeModule, uuid } from 'expo';
+import { isRunningInExpoGo, requireOptionalNativeModule, uuid } from 'expo';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { createPhotoDraft, removeDraft, saveDraft } from '@/utils/receipt-inbox';
@@ -14,6 +14,7 @@ import { samplePhoto, setupInboxFiles } from './support/inbox-files';
 
 jest.mock('expo', () => ({
   ...jest.requireActual<typeof import('expo')>('expo'),
+  isRunningInExpoGo: jest.fn(),
   requireOptionalNativeModule: jest.fn(),
 }));
 jest.mock('expo-file-system', () =>
@@ -50,6 +51,7 @@ beforeEach(() => {
   jest.spyOn(uuid, 'v4').mockImplementation(randomUUID);
   Platform.OS = 'ios';
   pending.clear();
+  jest.mocked(isRunningInExpoGo).mockReturnValue(false);
   jest.mocked(requireOptionalNativeModule).mockReturnValue(null);
   setPermission('granted');
   jest
@@ -118,6 +120,35 @@ test('an iOS native build uses the floating Gregorian calendar module for mornin
     },
   );
   expect([...pending.keys()]).toEqual(['receipt-reminder:elapsed:' + draft.id]);
+});
+
+test('Android Expo Go refreshes only the morning reminder when it resumes in a new time zone', async () => {
+  Platform.OS = 'android';
+  jest.mocked(isRunningInExpoGo).mockReturnValue(true);
+  await createPhotoDraft(samplePhoto().uri);
+  await syncReceiptReminders();
+  const morning = pending.get(morningId)!;
+  const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localMorning = new Date(2026, 11, 1, 9).getTime();
+  expect(morning.content.data?.scheduledZone).toBe(localZone);
+  // The OS still has the absolute timestamp scheduled before the device changed zones.
+  pending.set(morningId, {
+    ...morning,
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
+      date: localMorning + threeHours,
+    },
+    content: {
+      ...morning.content,
+      data: { ...morning.content.data, scheduledZone: localZone === 'UTC' ? 'Asia/Tokyo' : 'UTC' },
+    },
+  });
+  jest.mocked(Notifications.scheduleNotificationAsync).mockClear();
+  await syncReceiptReminders();
+  expect(pending.get(morningId)?.trigger).toMatchObject({ type: 'date', date: localMorning });
+  expect(pending.get(morningId)?.content.data?.scheduledZone).toBe(localZone);
+  await syncReceiptReminders();
+  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(1);
 });
 
 test('permission granted after the elapsed deadline only schedules the upcoming local morning', async () => {

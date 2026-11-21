@@ -1,4 +1,4 @@
-import { PermissionStatus, requireOptionalNativeModule } from 'expo';
+import { isRunningInExpoGo, PermissionStatus, requireOptionalNativeModule } from 'expo';
 import Constants from 'expo-constants';
 import { File, Paths } from 'expo-file-system';
 import * as Notifications from 'expo-notifications';
@@ -257,14 +257,14 @@ async function reconcile() {
       await Notifications.cancelScheduledNotificationAsync(request.identifier);
     }
   }
-  // Expo's iOS Calendar trigger captures its Calendar's current zone. The local module uses a
-  // floating time zone. In Expo Go, replace the fallback trigger on resume if the zone changed.
+  // Expo Go lacks both the iOS floating calendar module and the Android time-zone receiver.
+  // Refresh its pending morning trigger on resume if the device's time zone changed.
   const appleCalendar =
     Platform.OS === 'ios'
       ? requireOptionalNativeModule<ReceiptReminderCalendar>('ReceiptReminderCalendar')
       : null;
   const fallbackZone =
-    Platform.OS === 'ios' && !appleCalendar
+    (Platform.OS === 'ios' && !appleCalendar) || (Platform.OS === 'android' && isRunningInExpoGo())
       ? Intl.DateTimeFormat().resolvedOptions().timeZone
       : undefined;
   for (const reminder of upcoming.values()) {

@@ -1,4 +1,5 @@
 import { AppState, Linking, Platform } from 'react-native';
+import { isRunningInExpoGo } from 'expo';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import type { Href } from 'expo-router';
@@ -70,7 +71,9 @@ export async function openReminderSettings() {
       await Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
         {
           key: 'android.provider.extra.APP_PACKAGE',
-          value: Constants.expoConfig?.android?.package ?? 'com.ryan.aquino.settledown',
+          value: isRunningInExpoGo()
+            ? 'host.exp.exponent'
+            : (Constants.expoConfig?.android?.package ?? 'com.ryan.aquino.settledown'),
         },
       ]);
     }

@@ -1,4 +1,5 @@
-import { AppState } from 'react-native';
+import { AppState, Linking, Platform } from 'react-native';
+import { isRunningInExpoGo } from 'expo';
 import * as Notifications from 'expo-notifications';
 import { draftPhotoUri, readDraft } from '@/utils/receipt-inbox';
 import {
@@ -6,8 +7,16 @@ import {
   presentReceiptReminder,
   receiptReminderForPresentation,
 } from '@/utils/receipt-reminders';
-import { setActiveReceiptDraft, startReceiptReminders } from '@/utils/receipt-reminder-lifecycle';
+import {
+  openReminderSettings,
+  setActiveReceiptDraft,
+  startReceiptReminders,
+} from '@/utils/receipt-reminder-lifecycle';
 
+jest.mock('expo', () => ({
+  ...jest.requireActual<typeof import('expo')>('expo'),
+  isRunningInExpoGo: jest.fn(),
+}));
 jest.mock('expo-notifications', () => ({
   DEFAULT_ACTION_IDENTIFIER: 'open',
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
@@ -58,6 +67,28 @@ beforeEach(() => {
   getLast.mockReturnValue(null);
   parse.mockReturnValue({ draftIds: ['a', 'b'] });
 });
+
+test.each([
+  [true, 'host.exp.exponent'],
+  [false, 'com.ryan.aquino.settledown'],
+] as const)(
+  'opens notification settings for the Android app hosting the receipt (Expo Go: %s)',
+  async (expoGo, appPackage) => {
+    const previousOS = Platform.OS;
+    Platform.OS = 'android';
+    const intent = jest.spyOn(Linking, 'sendIntent').mockResolvedValue(undefined);
+    try {
+      jest.mocked(isRunningInExpoGo).mockReturnValue(expoGo);
+      await openReminderSettings();
+      expect(intent).toHaveBeenCalledWith('android.settings.APP_NOTIFICATION_SETTINGS', [
+        { key: 'android.provider.extra.APP_PACKAGE', value: appPackage },
+      ]);
+    } finally {
+      Platform.OS = previousOS;
+      intent.mockRestore();
+    }
+  },
+);
 
 test('cold and live delivery of the same tap navigates once and clears native state', () => {
   getLast.mockReturnValue(response);
