@@ -17,7 +17,7 @@ test('Copilot with auto model remains the default even with a configured fallbac
 test('OpenRouter uses its free model, vision support, and its own credential', () => {
   const selected = initialProvider({ IOS_VERIFY_PROVIDER: 'openrouter' });
   assert.deepEqual(providerConfig(selected, env), {
-    model: 'google/gemma-4-26b-a4b-it:free',
+    model: 'nvidia/nemotron-3.5-super-vl:free',
     env: {
       COPILOT_PROVIDER_TYPE: 'openai',
       COPILOT_PROVIDER_BASE_URL: 'https://openrouter.ai/api/v1',

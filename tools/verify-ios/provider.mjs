@@ -11,7 +11,7 @@ export function providerConfig(provider, env = process.env) {
   if (provider === 'copilot') return { model: 'auto', env: { GITHUB_TOKEN: env.GITHUB_TOKEN } };
   if (provider !== 'openrouter') throw new Error('Unknown verification provider');
 
-  const model = env.IOS_VERIFY_OPENROUTER_MODEL || 'google/gemma-4-26b-a4b-it:free';
+  const model = env.IOS_VERIFY_OPENROUTER_MODEL || 'nvidia/nemotron-3.5-super-vl:free';
   const freeModelId = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*:free$/;
   if (model.length > 256 || (model !== 'openrouter/free' && !freeModelId.test(model))) {
     throw new Error(

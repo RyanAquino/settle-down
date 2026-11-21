@@ -61,11 +61,11 @@ remaining exploration time and tool calls. With no key, an exhausted Copilot quo
 BLOCKED. Authentication errors, ordinary rate limits, and failed Maestro
 assertions do not trigger a provider switch.
 
-| Actions setting               | Kind     | Value                                                                                      |
-| ----------------------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `IOS_VERIFY_PROVIDER`         | Variable | Defaults to `copilot`. Set to `openrouter` to start exploration directly with OpenRouter.  |
-| `IOS_VERIFY_OPENROUTER_MODEL` | Variable | Defaults to `google/gemma-4-26b-a4b-it:free`. Use a `:free` model ID or `openrouter/free`. |
-| `OPENROUTER_API_KEY`          | Secret   | Authenticates OpenRouter requests for direct use or quota fallback.                        |
+| Actions setting               | Kind     | Value                                                                                         |
+| ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| `IOS_VERIFY_PROVIDER`         | Variable | Defaults to `copilot`. Set to `openrouter` to start exploration directly with OpenRouter.     |
+| `IOS_VERIFY_OPENROUTER_MODEL` | Variable | Defaults to `nvidia/nemotron-3.5-super-vl:free`. Use a `:free` model ID or `openrouter/free`. |
+| `OPENROUTER_API_KEY`          | Secret   | Authenticates OpenRouter requests for direct use or quota fallback.                           |
 
 Choose a model that supports tool calling, streaming, and image inputs. During
 OpenRouter exploration, the PR diff, source excerpts, simulator screenshots, and
