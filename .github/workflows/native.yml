@@ -133,21 +133,37 @@ jobs:
           java-version: '17'
       - run: npm ci
       - run: npx --no-install expo prebuild --platform android --no-install
-      - name: Restore Gradle task outputs
-        id: gradle-cache
+      - name: Install CMake compiler cache
+        run: |
+          if ! command -v ccache >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ccache
+          fi
+      - name: Restore Gradle and CMake compilation results
+        id: android-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ~/.gradle/caches/build-cache-1
-          key: smoke-gradle-ubuntu24-java17-v1-${{ hashFiles('package-lock.json', 'modules/**', 'plugins/**', 'app.json', 'app.config.*') }}
-          restore-keys: smoke-gradle-ubuntu24-java17-v1-
+          path: |
+            ~/.gradle/caches/build-cache-1
+            ~/.cache/ccache
+          key: smoke-android-ubuntu24-java17-v1-${{ hashFiles('package-lock.json', 'modules/**', 'plugins/**', 'app.json', 'app.config.*') }}
+          restore-keys: smoke-android-ubuntu24-java17-v1-
       - name: Build and lint Android release
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+          CCACHE_COMPILERCHECK: content
+          CCACHE_MAXSIZE: 1G
         working-directory: android
         run: |
           set -o pipefail
+          export CCACHE_DIR="$HOME/.cache/ccache"
+          ccache --zero-stats
+          trap 'ccache --show-stats' EXIT
           log="$RUNNER_TEMP/android-gradle.log"
           # R8 and lint can exhaust the generated default of 512 MiB of metaspace.
           gradle_args=(
-            :app:assembleRelease :app:lintRelease --build-cache --no-daemon
+            :app:assembleRelease :app:lintRelease --build-cache --profile --no-daemon
             '-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1536m -XX:+ExitOnOutOfMemoryError'
           )
           if ./gradlew "${gradle_args[@]}" 2>&1 | tee "$log"; then
@@ -159,12 +175,14 @@ jobs:
           echo "::warning::Gradle failed to resolve dependencies. Retrying once."
           sleep 30
           ./gradlew "${gradle_args[@]}" --refresh-dependencies
-      - name: Cache Gradle task outputs
-        if: steps.gradle-cache.outputs.cache-hit != 'true'
+      - name: Cache Gradle and CMake compilation results
+        if: steps.android-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ~/.gradle/caches/build-cache-1
-          key: ${{ steps.gradle-cache.outputs.cache-primary-key }}
+          path: |
+            ~/.gradle/caches/build-cache-1
+            ~/.cache/ccache
+          key: ${{ steps.android-cache.outputs.cache-primary-key }}
       - name: Install Maestro
         run: |
           bash tools/ci/install-maestro.sh "$RUNNER_TEMP/maestro"
@@ -191,5 +209,6 @@ jobs:
           path: |
             test-results/android/
             android/app/build/reports/lint-results-release.*
+            android/build/reports/profile/*.html
           retention-days: 7
           if-no-files-found: warn

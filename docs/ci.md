@@ -82,8 +82,8 @@ credential is used; OTA loading is disabled with `CI_E2E=1`.
 The iOS simulator boots during cache upload and Maestro installation. Xcode can
 reuse individual Swift and Clang compilations, and CocoaPods shares its download
 cache with the iOS verifier.
-Android enables Gradle's task output cache for the full Release build and lint,
-including all four native architectures. Both jobs regenerate the native project
+Android caches Gradle task outputs and the CMake compiler results for all four
+architectures. The Android evidence includes Gradle's task timing report. Both jobs regenerate the native project
 and package the current checkout. GitHub stores the compiler and task results
 after a successful build so they are available if the device test needs a rerun.
 
