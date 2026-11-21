@@ -1,0 +1,57 @@
+name: Publish Expo Go previews
+
+on:
+  workflow_run:
+    workflows: [Quality]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish preview (${{ matrix.owner }})
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        owner: [org-ryan, ryan.aquino]
+    concurrency:
+      group: publish-preview-${{ matrix.owner }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm install --global eas-cli@24.7.0
+      - name: Check whether the tested commit is still main
+        id: main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$(git rev-parse HEAD)" == "$main_sha" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping superseded commit. Current main is $main_sha."
+          fi
+      - name: Publish iOS and Android updates
+        if: steps.main.outputs.current == 'true'
+        env:
+          EAS_PROJECT_OWNER: ${{ matrix.owner }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          : "${EXPO_TOKEN:?Set the EXPO_TOKEN repository Actions secret to publish previews}"
+          npm run update:preview -- --platform all --non-interactive --message "$(git log -1 --format='main %h: %s')"
