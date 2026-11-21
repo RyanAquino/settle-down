@@ -79,6 +79,14 @@ app launches and exposes the camera screen controls, with permissions granted.
 Android also runs `lintRelease`. No signing account, real backend, or production
 credential is used; OTA loading is disabled with `CI_E2E=1`.
 
+The smoke flow can retry once on each platform. On Android, a failed
+`launchApp` command must report that the selected emulator went offline.
+CI waits up to 30 seconds for its ADB shell to respond before retrying.
+On iOS, Maestro has four minutes to start its XCTest driver. If that startup
+times out, CI installs the same binary on a fresh simulator for the retry.
+An assertion failure ends the job immediately. The native evidence artifacts
+keep each attempt, and a successful retry is recorded in the job summary.
+
 It runs on app/config/dependency/CI-related PR changes, all main-branch pushes,
 a weekly schedule, and manual dispatch. macOS builds can take substantially
 longer than the Linux quality checks. The iOS runner/Xcode combination follows
