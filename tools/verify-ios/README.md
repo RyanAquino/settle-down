@@ -114,7 +114,7 @@ The two Onigiri have a paid line total of 200 and a discount of 30.
 For the receipt inbox offline case, use the `success` fixture and tap **Import offline photo**
 (`verify-import-offline`) on the camera screen. Pick the seeded photo. A `CI_E2E=1` build
 supplies a disconnected NetInfo result for that import only. Assert **You’re offline**,
-dismiss the alert, and assert **Scan receipt, Receipt photo** in the inbox. No receipt upload
+dismiss the alert, and assert **Scan receipt, Receipt photo** in the inbox. The import should reach the inbox without a prompt to save to Photos. No receipt upload
 should appear in the fixture requests until you open the queued photo. Tap it and assert
 the receipt details to verify recovery. The regular library button uses device connectivity.
 [Offline inbox replay](../../.maestro/receipt-inbox-offline.yaml) contains the Maestro assertions.

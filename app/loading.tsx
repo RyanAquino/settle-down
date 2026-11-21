@@ -4,7 +4,6 @@ import { useEffect, useState, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
 import NetInfo from '@react-native-community/netinfo';
-import * as MediaLibrary from 'expo-media-library/legacy';
 import { File } from 'expo-file-system';
 import { theme, type } from '@/utils/theme';
 import { Entrance, PressableScale } from '@/components/motion';
@@ -70,20 +69,7 @@ export default function LoadingScreen() {
     const controller = new AbortController();
     const { signal } = controller;
 
-    async function returnToInbox(draft: ReceiptDraft | null, offline: boolean) {
-      let savedToLibrary = false;
-      if (!fromLibrary && !draftId) {
-        try {
-          const { status } = await MediaLibrary.requestPermissionsAsync();
-          if (status === MediaLibrary.PermissionStatus.GRANTED) {
-            await MediaLibrary.saveToLibraryAsync(photoUri);
-            savedToLibrary = true;
-          }
-        } catch {
-          // The inbox copy is independent of Photos access.
-        }
-      }
-      if (signal.aborted) return;
+    function returnToInbox(draft: ReceiptDraft | null, offline: boolean) {
       if (draft) {
         if (draftId && router.canGoBack()) router.back();
         else router.replace('/inbox');
@@ -92,10 +78,9 @@ export default function LoadingScreen() {
           'Your photo is in the receipt inbox. Open it when you’re ready to scan.',
         );
       } else {
-        const message =
-          savedToLibrary || fromLibrary
-            ? 'The photo is in your photo library. Select it again to scan.'
-            : 'Unable to save the photo. Please try again.';
+        const message = fromLibrary
+          ? 'The photo is in your photo library. Select it again to scan.'
+          : 'Couldn’t save the receipt to your inbox. Please retake the photo.';
         router.replace({ pathname: '/', params: { error: message } });
       }
     }
@@ -120,7 +105,7 @@ export default function LoadingScreen() {
         try {
           draft = await importing.current.result;
         } catch {
-          // Keep the existing upload and photo-library fallback if device storage is full.
+          // Try scanning the original photo if the inbox copy failed.
         }
       }
       if (signal.aborted) return;
@@ -144,7 +129,7 @@ export default function LoadingScreen() {
         setIsOffline(true);
         setStatusMessage('You’re offline');
         setStatusDetail('Saving your receipt for later.');
-        await returnToInbox(draft, true);
+        returnToInbox(draft, true);
         return;
       }
 
@@ -200,7 +185,7 @@ export default function LoadingScreen() {
       } catch (error) {
         if (signal.aborted) return;
         console.warn('[upload] Could not scan receipt', error);
-        await returnToInbox(draft, false);
+        returnToInbox(draft, false);
       }
     }
 
