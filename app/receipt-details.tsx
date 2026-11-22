@@ -20,6 +20,8 @@ import { useState, useEffect, useCallback, useMemo, useRef, type ComponentRef } 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
+import Constants from 'expo-constants';
+import VerifyReminderDelivery from '@/components/verify-reminder-delivery';
 import { theme, shadow, type, buildUserColorMap, initialFor } from '@/utils/theme';
 import { Entrance, PressableScale } from '@/components/motion';
 import ItemSplitEditor from '@/components/item-split-editor';
@@ -874,6 +876,11 @@ function ReceiptEditor({
         distance={20}
         style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}
       >
+        {draft &&
+          Platform.OS === 'ios' &&
+          Constants.expoConfig?.extra?.verifyReceiptReminders === true && (
+            <VerifyReminderDelivery draftId={draft.id} />
+          )}
         <Text style={styles.footerHint}>
           {submitted
             ? 'Synced to Settle Up.'

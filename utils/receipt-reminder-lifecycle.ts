@@ -3,6 +3,7 @@ import { isRunningInExpoGo } from 'expo';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import type { Href } from 'expo-router';
+import { observeReminderPresentation } from '@/utils/verify-reminder-presentation';
 import { draftPhotoUri, readDraft, subscribeToInbox } from '@/utils/receipt-inbox';
 import {
   askForReceiptReminders,
@@ -91,11 +92,14 @@ const visibility = (show: boolean): Notifications.NotificationBehavior => ({
 
 // Native schedules stay armed even while editing. If the app is suspended or killed,
 // delivery does not depend on JavaScript running a background transition.
+function currentDraft() {
+  return AppState.currentState === 'active' ? (focused?.id ?? null) : null;
+}
+
 function presentation({ request }: Notifications.Notification) {
   const original = parseReceiptReminder(request.content.data);
   if (!original) return visibility(false);
-  const activeId = AppState.currentState === 'active' ? (focused?.id ?? null) : null;
-  const updated = receiptReminderForPresentation(request.content.data, activeId);
+  const updated = receiptReminderForPresentation(request.content.data, currentDraft());
   if (!updated) return visibility(false);
   const remaining = parseReceiptReminder(updated.data);
   if (
@@ -111,9 +115,14 @@ function presentation({ request }: Notifications.Notification) {
 
 export function startReceiptReminders(navigate: (href: Href) => void) {
   if (!native) return;
-  Notifications.setNotificationHandler({
+  const handler: Notifications.NotificationHandler = {
     handleNotification: (notification) => Promise.resolve(presentation(notification)),
-  });
+  };
+  Notifications.setNotificationHandler(
+    Platform.OS === 'ios' && Constants.expoConfig?.extra?.verifyReceiptReminders === true
+      ? observeReminderPresentation(handler, currentDraft)
+      : handler,
+  );
   const unsubscribe = subscribeToInbox(synchronize);
   function resume() {
     void refreshPermission().catch(reportReminderError);

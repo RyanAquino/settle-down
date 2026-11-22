@@ -111,6 +111,24 @@ test('Expo Go schedules three elapsed hours and one month-end calendar fallback'
   expect(pending.has(goMorningId)).toBe(false);
 });
 
+test('simulator inspection records when the actual elapsed request was submitted without moving its deadline', async () => {
+  Constants.expoConfig = {
+    name: 'Settle Down',
+    slug: 'settle-down',
+    extra: { verifyReceiptReminders: true },
+  };
+  const draft = await createPhotoDraft(samplePhoto().uri);
+  const registeredAt = +savedAt + 90_000;
+  jest.setSystemTime(registeredAt);
+  await syncReceiptReminders();
+  const request = pending.get('receipt-reminder:elapsed:' + draft.id);
+  expect(request?.content.data?.verifySubmittedAt).toBe(registeredAt);
+  expect(request?.trigger).toMatchObject({ type: 'date', date: +savedAt + threeHours });
+  jest.setSystemTime(registeredAt + 10_000);
+  await syncReceiptReminders();
+  expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
+});
+
 test('one Expo Go project can schedule and discard a receipt while the other project keeps both reminders', async () => {
   jest.mocked(isRunningInExpoGo).mockReturnValue(true);
   const personal = await createPhotoDraft(samplePhoto().uri);

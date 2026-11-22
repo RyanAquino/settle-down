@@ -10,5 +10,8 @@ Pod::Spec.new do |s|
   s.static_framework = true
   s.dependency 'ExpoModulesCore'
   s.framework = 'UserNotifications'
+  if ENV['CI_E2E'] == '1'
+    s.pod_target_xcconfig = { 'SWIFT_ACTIVE_COMPILATION_CONDITIONS' => '$(inherited) RECEIPT_REMINDER_VERIFICATION' }
+  end
   s.source_files = '*.swift'
 end

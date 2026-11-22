@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Alert, FlatList, Image, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Image, Platform, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PressableScale } from '@/components/motion';
-import { draftPhotoUri, listDrafts, removeDraft, type ReceiptDraft } from '@/utils/receipt-inbox';
+import { ReminderScheduleInspector } from '@/components/reminder-schedule-inspector';
+import { nextMorningDate } from '@/utils/receipt-morning';
+import {
+  draftPhotoUri,
+  listDrafts,
+  removeDraft,
+  saveDraft,
+  type ReceiptDraft,
+} from '@/utils/receipt-inbox';
 import {
   getReminderPermissionSnapshot,
   openReminderSettings,
@@ -117,6 +125,25 @@ export default function ReceiptInboxScreen() {
             <Text style={styles.action}>Test reminder in 8 seconds</Text>
           </PressableScale>
         )}
+      {Platform.OS === 'ios' && Constants.expoConfig?.extra?.verifyReceiptReminders === true && (
+        <>
+          <ReminderScheduleInspector drafts={drafts} />
+          {drafts.length === 1 && (
+            <PressableScale
+              testID="verify-age-receipt"
+              onPress={() => {
+                // Exercise missed deadlines through the normal inbox change listener.
+                const createdAt = Date.now() - 48 * 60 * 60 * 1000;
+                saveDraft({ ...drafts[0], createdAt, morningDate: nextMorningDate(createdAt) });
+                reload();
+              }}
+              style={styles.fixtureControl}
+            >
+              <Text style={styles.action}>Move receipt to two days ago</Text>
+            </PressableScale>
+          )}
+        </>
+      )}
       {missingReceipt && missingReceipt !== dismissedNotice && (
         <Text accessibilityRole="alert" style={styles.missingNotice}>
           This receipt is no longer in your inbox.
@@ -196,6 +223,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backText: { ...type.title, color: theme.ink },
+  fixtureControl: { paddingHorizontal: 16, paddingVertical: 8 },
   list: { padding: 16, gap: 12 },
   card: {
     borderRadius: theme.radius,

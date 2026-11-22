@@ -5,6 +5,12 @@ public final class ReceiptReminderCalendarModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ReceiptReminderCalendar")
 
+    #if RECEIPT_REMINDER_VERIFICATION && targetEnvironment(simulator)
+    AsyncFunction("inspectSchedule") { (createdAt: [String: Double]) async -> [String] in
+      await ReminderScheduleInspection.read(createdAt: createdAt)
+    }
+    #endif
+
     AsyncFunction("schedule") { (identifier: String, calendarDate: String, title: String,
                                  body: String, data: [String: String]) async throws in
       let date = calendarDate.split(separator: "-")

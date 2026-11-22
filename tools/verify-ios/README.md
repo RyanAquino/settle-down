@@ -172,26 +172,36 @@ explicit. The full archive remains available alongside the inline previews.
 
 ### Receipt reminders
 
-Use the `success` fixture. Verification builds show **Test reminder in 8 seconds**
-(`verify-receipt-reminder`) in the inbox once permission is granted and it contains at
-least one receipt. The control sends a native notification for the current inbox and
-leaves the regular three-hour and 9 AM schedules intact. Use **Home** to check delivery
-in the background. The [photo reminder replay](../../.maestro/receipt-reminders.yaml)
-opens the delivered alert and checks that the photo is scanned.
+Use the `success` fixture and a fresh simulator app installation for each flow.
+The offline-import control opens the system photo picker with a seeded receipt.
+The following three Maestro flows use the commands supported by the trusted
+verifier. Each starts on the camera screen and captures its own evidence.
 
-- On a clean install, leave a photo or split for later and decline the notification
-  prompt. Check **Enable reminders**, save a second receipt, and check that no second
-  prompt appears. Tap **Enable reminders**, allow notifications in Settings, and
-  return to the app to see the test control.
-- Save a split with the first item assigned. Trigger a reminder, tap the notification,
-  and check that the first unassigned item is visible. Repeat with every item assigned
-  and check that the summary is visible. For a stale tap, let the notification arrive,
-  discard the receipt, then tap its delivered notification in Notification Center.
-  Check **This receipt is no longer in your inbox.**
-- Leave two receipts in the inbox. Trigger a reminder and check the grouped count and
-  inbox destination. Repeat and immediately open one split before delivery. Only the
-  other receipt should appear in the notification, and tapping it should open that
-  receipt. With a single open receipt, the test notification should stay silent.
+- [Reminder schedule, taps and submission](../../.maestro/receipt-reminders.yaml).
+  Inspect the pending requests for a saved photo. Check the three-hour interval
+  and the next day’s 09:00 trigger, including its equivalent UTC times in Tokyo
+  and Singapore. Tap the actual iOS banners for a photo, a partially assigned
+  split and a fully assigned split. Submit the transaction and check that both
+  pending requests disappear.
+- [Grouped and active receipts](../../.maestro/receipt-reminders-group.yaml).
+  Open the split before delivery and observe the native foreground handler’s
+  acknowledgement in the editor. With two receipts, check one grouped morning
+  request, tap the grouped banner to open the inbox, and verify that only the
+  other receipt is presented while editing. Discard one receipt and inspect the
+  remaining schedules. Arm a final notification, discard its receipt and tap
+  the delivered banner to check the stale-receipt message and empty schedule.
+- [Denied permission and missed reminders](../../.maestro/receipt-reminders-permission.yaml).
+  Leave a photo and save its split while permission is denied. Age the saved
+  split by two days, open Settings from **Enable reminders**, turn on the iOS
+  **Allow Notifications** switch and resume the app. Check that neither missed
+  request appears. Add a fresh photo and verify that only its upcoming requests
+  are pending.
+
+In a CI build, **Inspect reminder schedule** reads iOS’s pending notification
+requests. The time-zone rows resolve the stored calendar trigger in each named
+zone. **Test reminder in 8 seconds** sends a separate local notification through
+normal delivery and tap handling. **Move receipt to two days ago** updates the
+only draft’s saved date and morning deadline, which triggers normal scheduling.
 
 ### Inline screenshots and replay clips
 

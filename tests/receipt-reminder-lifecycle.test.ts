@@ -1,6 +1,10 @@
 import { AppState, Linking, Platform } from 'react-native';
 import { isRunningInExpoGo } from 'expo';
 import * as Notifications from 'expo-notifications';
+import {
+  observeReminderPresentation,
+  subscribeToVerifiedDeliveries,
+} from '@/utils/verify-reminder-presentation';
 import { draftPhotoUri, readDraft } from '@/utils/receipt-inbox';
 import {
   parseReceiptReminder,
@@ -167,5 +171,42 @@ test('delivery replaces a group with the remaining receipt and presents the repl
     AppState.currentState = previousState;
     currentScreen();
     stop?.();
+  }
+});
+
+test('simulator evidence records suppression and replacement only after native acknowledgement', async () => {
+  const record = jest.fn();
+  const unsubscribe = subscribeToVerifiedDeliveries(record);
+  const handleNotification = jest.fn().mockResolvedValue({ shouldShowBanner: false });
+  const observer = observeReminderPresentation({ handleNotification }, () => 'a');
+  try {
+    await observer.handleNotification(notification);
+    expect(record).not.toHaveBeenCalled();
+    observer.handleError?.('morning', new Error('Native handler timed out'));
+    observer.handleSuccess?.('morning');
+    expect(record).not.toHaveBeenCalled();
+
+    await observer.handleNotification(notification);
+    observer.handleSuccess?.('morning');
+    expect(record).toHaveBeenLastCalledWith({
+      identifier: 'morning',
+      openDraftId: 'a',
+      description: 'Suppressed 2 receipts including this receipt',
+    });
+    handleNotification.mockResolvedValue({ shouldShowBanner: true });
+    parse.mockReturnValue({ draftIds: ['b'] });
+    const replacement = {
+      ...notification,
+      request: { ...notification.request, identifier: 'replacement' },
+    };
+    await observer.handleNotification(replacement);
+    observer.handleSuccess?.('replacement');
+    expect(record).toHaveBeenLastCalledWith({
+      identifier: 'replacement',
+      openDraftId: 'a',
+      description: 'Presented 1 receipt excluding this receipt',
+    });
+  } finally {
+    unsubscribe();
   }
 });

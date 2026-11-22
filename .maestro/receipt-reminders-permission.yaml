@@ -1,0 +1,98 @@
+appId: com.ryan.aquino.settledown
+name: Enable notifications in Settings and skip missed reminders
+---
+- launchApp:
+    permissions:
+      all: deny
+      camera: allow
+- tapOn:
+    id: verify-import-offline
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- assertVisible: You’re offline
+- tapOn: OK
+- assertVisible: Enable reminders
+- tapOn: Scan receipt, Receipt photo
+- assertVisible: CI Receipt Shop
+- tapOn: Save for later
+- assertVisible: Continue split, CI Receipt Shop
+- assertVisible: Enable reminders
+- tapOn:
+    id: verify-age-receipt
+- tapOn: Enable reminders
+- runFlow:
+    when:
+      visible:
+        id: Settings
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: com.apple.settings.apps
+          direction: DOWN
+      - tapOn:
+          id: com.apple.settings.apps
+- runFlow:
+    when:
+      visible: Search Apps
+    commands:
+      - scrollUntilVisible:
+          element:
+            text: Settle Down
+          direction: DOWN
+      - tapOn:
+          id: com.ryan.aquino.settledown
+- runFlow:
+    when:
+      notVisible:
+        id: ALLOW_NOTIFICATIONS_ID
+    commands:
+      - scrollUntilVisible:
+          element: Notifications
+          direction: DOWN
+      - tapOn: Notifications
+- assertVisible:
+    id: ALLOW_NOTIFICATIONS_ID
+    text: '0'
+    checked: false
+- tapOn:
+    id: ALLOW_NOTIFICATIONS_ID
+    text: '0'
+    checked: false
+    point: '90%,50%'
+- assertVisible:
+    id: ALLOW_NOTIFICATIONS_ID
+    checked: true
+- takeScreenshot: enabled-in-notification-settings
+- pressKey: Home
+- launchApp:
+    stopApp: false
+    permissions:
+      camera: allow
+- assertVisible: Continue split, CI Receipt Shop
+- assertVisible:
+    id: verify-receipt-reminder
+- tapOn:
+    id: verify-read-schedule
+- assertVisible: 'Elapsed requests: 0'
+- assertVisible: 'Morning requests: 0'
+- takeScreenshot: overdue-draft-after-grant
+- tapOn:
+    id: verify-close-schedule
+- tapOn: Back
+- tapOn:
+    id: verify-import-offline
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- assertVisible: You’re offline
+- tapOn: OK
+- assertVisible: Continue split, CI Receipt Shop
+- assertVisible: Scan receipt, Receipt photo
+- tapOn:
+    id: verify-read-schedule
+- assertVisible: 'Elapsed requests: 1'
+- assertVisible: 'Elapsed: 180 minutes after save'
+- assertVisible: 'Morning requests: 1'
+- assertVisible: 'Morning: 1 receipt, day \+1 at 09:00'
+- takeScreenshot: upcoming-only

@@ -308,7 +308,14 @@ async function reconcile() {
       } else {
         await Notifications.scheduleNotificationAsync({
           identifier: reminder.identifier,
-          content,
+          // iOS stores a remaining interval. Keep its registration time in the simulator
+          // fixture so the verifier can compare the real interval to the draft's creation.
+          content:
+            Constants.expoConfig?.extra?.verifyReceiptReminders === true &&
+            Platform.OS === 'ios' &&
+            !reminder.morningDate
+              ? { ...content, data: { ...content.data, verifySubmittedAt: Date.now() } }
+              : content,
           trigger: triggerFor(reminder),
         });
       }

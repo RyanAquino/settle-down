@@ -1,5 +1,5 @@
 appId: com.ryan.aquino.settledown
-name: Tap a device reminder to scan an offline inbox photo
+name: Verify real schedules and resume a saved split through submission
 ---
 - launchApp:
     permissions:
@@ -13,12 +13,63 @@ name: Tap a device reminder to scan an offline inbox photo
 - tapOn: OK
 - assertVisible: Scan receipt, Receipt photo
 - tapOn:
+    id: verify-read-schedule
+- assertVisible: 'Elapsed requests: 1'
+- assertVisible: 'Elapsed: 180 minutes after save'
+- assertVisible: 'Morning requests: 1'
+- assertVisible: 'Morning: 1 receipt, day \+1 at 09:00'
+- assertVisible: 'Tokyo 09:00 \(00:00 UTC\)'
+- assertVisible: 'Singapore 09:00 \(01:00 UTC\)'
+- takeScreenshot: production-deadlines
+- tapOn:
+    id: verify-close-schedule
+- tapOn:
     id: verify-receipt-reminder
 - pressKey: Home
 - extendedWaitUntil:
     visible: '.*Ready to scan your saved receipt.*'
     timeout: 20000
-- takeScreenshot: photo-reminder
 - tapOn: '.*Ready to scan your saved receipt.*'
 - assertVisible: Cranberry juice
-- takeScreenshot: scanned-from-reminder
+- tapOn:
+    id: item-1-assign-ci-alex
+- scrollUntilVisible:
+    element: Save for later
+    direction: UP
+- tapOn:
+    id: paid-by-ci-alex
+- tapOn: Save for later
+- tapOn:
+    id: verify-receipt-reminder
+- pressKey: Home
+- extendedWaitUntil:
+    visible: '.*1 item left to assign on your saved receipt.*'
+    timeout: 20000
+- tapOn: '.*1 item left to assign on your saved receipt.*'
+- assertVisible: Onigiri
+- tapOn:
+    id: item-2-assign-ci-sam
+- scrollUntilVisible:
+    element: Save for later
+    direction: UP
+- tapOn: Save for later
+- tapOn:
+    id: verify-receipt-reminder
+- pressKey: Home
+- extendedWaitUntil:
+    visible: '.*Your saved split is ready to review.*'
+    timeout: 20000
+- tapOn: '.*Your saved split is ready to review.*'
+- assertVisible:
+    id: receipt-review-summary
+- takeScreenshot: split-reminder-summary
+- tapOn:
+    id: sync-transaction
+- assertVisible: Synced
+- tapOn: OK
+- assertVisible: No saved receipts
+- tapOn:
+    id: verify-read-schedule
+- assertVisible: 'Elapsed requests: 0'
+- assertVisible: 'Morning requests: 0'
+- takeScreenshot: submitted-draft-clears-schedules
