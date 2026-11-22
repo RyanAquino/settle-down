@@ -1,4 +1,5 @@
-import { apiBaseUrl } from '@/utils/api';
+import Constants from 'expo-constants';
+import { apiBaseUrl as configuredApiBaseUrl } from '@/utils/api';
 import {
   View,
   Text,
@@ -128,6 +129,12 @@ export default function ReceiptDetailsScreen() {
   return (
     <ReceiptEditor
       key={draftId || String(params.data ?? 'sample')}
+      apiBaseUrl={
+        Constants.expoConfig?.extra?.verifyMissingBackend === true &&
+        params.verifyMissingBackend === 'true'
+          ? undefined
+          : configuredApiBaseUrl
+      }
       receipt={receipt}
       draft={draft}
       photoUri={photoUri}
@@ -141,10 +148,12 @@ function inputAmount(text: string) {
 }
 
 function ReceiptEditor({
+  apiBaseUrl,
   receipt,
   draft,
   photoUri,
 }: {
+  apiBaseUrl: string | undefined;
   receipt: ReceiptData;
   draft: ReceiptDraft | null;
   photoUri: string;
@@ -265,7 +274,7 @@ function ReceiptEditor({
         if (request === requests.current.members) setIsLoadingUsers(false);
       }
     },
-    [changeEdits],
+    [apiBaseUrl, changeEdits],
   );
 
   const fetchSettleUpGroups = useCallback(
@@ -299,7 +308,7 @@ function ReceiptEditor({
         if (request === requests.current.groups) setIsLoadingGroups(false);
       }
     },
-    [changeEdits, fetchGroupUsers],
+    [apiBaseUrl, changeEdits, fetchGroupUsers],
   );
 
   useEffect(() => {
