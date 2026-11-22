@@ -31,6 +31,7 @@ import {
   groupsSchema,
   usersSchema,
   parseReceipt,
+  parseReceiptAmount,
   receiptTotals,
   splitReceipt,
   type ItemAssignment,
@@ -134,11 +135,6 @@ export default function ReceiptDetailsScreen() {
   );
 }
 
-function inputAmount(text: string) {
-  const amount = parseFloat(text);
-  return Number.isFinite(amount) ? Math.max(0, amount) : 0;
-}
-
 function ReceiptEditor({
   receipt,
   draft,
@@ -219,11 +215,11 @@ function ReceiptEditor({
         .map((item) =>
           costInputs[item.item_order] === undefined
             ? item
-            : { ...item, cost: inputAmount(costInputs[item.item_order]) },
+            : { ...item, cost: parseReceiptAmount(costInputs[item.item_order]) },
         ),
     [receipt.receipt_items, costInputs],
   );
-  const editableTaxPercentage = inputAmount(edits.tax);
+  const editableTaxPercentage = parseReceiptAmount(edits.tax);
   const shopInfo = { ...receipt, receipt_date: new Date(edits.date) };
 
   const fetchGroupUsers = useCallback(
@@ -448,6 +444,7 @@ function ReceiptEditor({
 
   // -------- derived --------
   const { subtotal, taxAmount } = receiptTotals(editableItems, editableTaxPercentage);
+  const amountsValid = Number.isFinite(subtotal) && Number.isFinite(editableTaxPercentage);
   const total = getTotal();
   const balance = reconcileReceipt(editableItems, editableTaxPercentage, total);
   const taxIncluded = balance?.taxAmount === 0 && editableTaxPercentage > 0;
@@ -805,7 +802,9 @@ function ReceiptEditor({
           </View>
           {editableItems.length > 0 && !balance && (
             <Text style={styles.balanceWarning}>
-              The items and tax must match the scanned total.
+              {amountsValid
+                ? 'The items and tax must match the scanned total.'
+                : 'Enter amounts as numbers without grouping separators.'}
             </Text>
           )}
           <View style={styles.summaryActions}>
