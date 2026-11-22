@@ -42,28 +42,18 @@ test('every applicability event classifies PR metadata with a trusted read-only 
     },
   });
   assert.deepEqual(scope.permissions, {});
-  const job = scope.jobs.applicability;
-  assert.deepEqual(job.permissions, { contents: 'read', 'pull-requests': 'read' });
+  const job = scope.jobs.gate;
+  assert.equal(job.name, 'iOS PR Verification');
   assert.equal(job.if, undefined);
-  assert.equal(job['runs-on'], 'ubuntu-latest');
-  assert.deepEqual(
-    job.steps.filter((step) => step.uses?.startsWith('actions/checkout@')).map((step) => step.with),
-    [{ ref: '${{ github.sha }}', 'persist-credentials': false }],
-  );
-  const classify = job.steps.find((step) => step.id === 'classify');
-  assert.equal(classify.if, undefined);
-  assert.match(classify.with.script, /return (?:await )?isExempt\(/);
-  assert.equal(job.outputs.exempt, '${{ steps.classify.outputs.result }}');
-
-  // A static required job name would let a skipped job satisfy the ruleset for app changes.
-  const exemption = scope.jobs.exemption;
-  assert.equal(exemption.needs, 'applicability');
-  const confirmed = "needs.applicability.outputs.exempt == 'true'";
-  assert.equal(exemption.if, confirmed);
-  assert.equal(
-    exemption.name,
-    `\${{ needs.applicability.result == 'success' && ${confirmed} && 'iOS PR Verification' || 'iOS verification exemption' }}`,
-  );
+  assert.equal(job.needs, undefined);
+  assert.deepEqual(job.permissions, {
+    contents: 'read',
+    'pull-requests': 'read',
+    actions: 'read',
+    checks: 'read',
+  });
+  assert.deepEqual(job.steps[0].with, { ref: '${{ github.sha }}', 'persist-credentials': false });
+  assert.match(job.steps[1].with.script, /await evaluateGate/);
 });
 
 test('comment admission and completion reporting use separate privilege boundaries', () => {

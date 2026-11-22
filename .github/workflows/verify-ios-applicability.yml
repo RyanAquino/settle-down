@@ -8,35 +8,22 @@ on:
 permissions: {}
 
 jobs:
-  applicability:
-    name: Determine iOS verification applicability
+  gate:
+    name: iOS PR Verification
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
-    outputs:
-      exempt: ${{ steps.classify.outputs.result }}
+      checks: read
+      actions: read
     steps:
-      # The base commit supplies the script. PR files are read as metadata only.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        id: classify
         with:
           script: |
-            const { isExempt } = await import(`${process.env.GITHUB_WORKSPACE}/tools/verify-ios/applicability.mjs`);
-            return await isExempt({ github, context, core });
-
-  exemption:
-    needs: applicability
-    # A skipped job can satisfy a required check. Reserve its name for confirmed exemptions.
-    name: ${{ needs.applicability.result == 'success' && needs.applicability.outputs.exempt == 'true' && 'iOS PR Verification' || 'iOS verification exemption' }}
-    if: needs.applicability.outputs.exempt == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Record simulator exemption
-        run: echo 'Simulator verification skipped. The changed files are outside the app, its native iOS project, and its build settings.' >> "$GITHUB_STEP_SUMMARY"
+            const { evaluateGate } = await import(`${process.env.GITHUB_WORKSPACE}/tools/verify-ios/merge-gate.mjs`);
+            await evaluateGate({ github, context, core });
