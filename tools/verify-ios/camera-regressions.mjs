@@ -67,6 +67,10 @@ name: Native camera permission recovery
 - assertVisible: Camera access
 - assertVisible: Open settings
 - tapOn: Open settings
+- extendedWaitUntil:
+    visible:
+      id: "Settings|Apps|Camera"
+    timeout: 30000
 - runFlow:
     when:
       visible:
@@ -78,14 +82,21 @@ name: Native camera permission recovery
           direction: DOWN
       - tapOn:
           id: com.apple.settings.apps
+- extendedWaitUntil:
+    visible:
+      id: "Apps|Camera"
+    timeout: 30000
 - runFlow:
     when:
-      visible: Search Apps
+      visible:
+        id: Apps
     commands:
       - scrollUntilVisible:
           element:
-            text: Settle Down
+            id: com.ryan.aquino.settledown
           direction: DOWN
+          timeout: 30000
+          visibilityPercentage: 50
       - tapOn:
           id: com.ryan.aquino.settledown
 - assertVisible:

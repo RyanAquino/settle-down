@@ -23,6 +23,11 @@ test('required camera flows cover both zoom bounds and the actual native permiss
   assert.match(cameraRegressions[1].yaml, /checked: false\n    point: "90%,50%"/);
   assert.match(cameraRegressions[1].yaml, /checked: true/);
   assert.doesNotMatch(cameraRegressions[1].yaml, /setPermissions:/);
+  assert.match(cameraRegressions[1].yaml, /extendedWaitUntil:[\s\S]*id: "Settings\|Apps\|Camera"/);
+  assert.match(
+    cameraRegressions[1].yaml,
+    /scrollUntilVisible:\s+element:\s+id: com\.ryan\.aquino\.settledown/,
+  );
 });
 
 test('verified required flows can be reused, but none may be omitted, failed, or rewritten', () => {
