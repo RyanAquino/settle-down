@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { matchesGlob } from 'node:path';
 import { parse } from 'yaml';
 
 const main = parse(
@@ -12,6 +13,20 @@ const report = parse(
     'utf8',
   ),
 );
+
+test('native smoke runs when an Expo icon or splash image changes', async () => {
+  const root = new URL('../../../', import.meta.url);
+  const native = parse(await readFile(new URL('.github/workflows/native.yml', root), 'utf8'));
+  const { expo } = JSON.parse(await readFile(new URL('app.json', root), 'utf8'));
+  const splash = expo.plugins.find((entry) => entry[0] === 'expo-splash-screen');
+  const paths = native.on.pull_request.paths;
+  for (const asset of [expo.icon, splash[1].image]) {
+    assert.ok(
+      paths.some((pattern) => matchesGlob(asset.replace(/^\.\//, ''), pattern)),
+      asset,
+    );
+  }
+});
 
 test('every applicability event classifies PR metadata with a trusted read-only checkout', async () => {
   const scope = parse(
