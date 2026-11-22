@@ -99,7 +99,8 @@ assertions and a screenshot. A standalone setPermissions tool call is not covera
 
 Use reset_scenario before each scenario. Inspect live accessibility hierarchy and
 screenshots, interact using execute_flow, and adapt navigation to what is actually
-present. You must inspect the live UI before submitting ready. Successful required
+present. Call `inspect_screen` while UI exploration is open. A ready plan requires
+a successful call recorded in this attempt's tool journal. Successful required
 regressions provide real interaction evidence; without them, execute the changed
 behavior yourself. For an additional scenario without successful required-regression evidence, before submitting it, reset_scenario with its fixture,
 then execute_flow once with that entire final YAML, including all unconditional
