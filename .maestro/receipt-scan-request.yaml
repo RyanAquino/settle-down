@@ -12,6 +12,11 @@ name: Recover an expired scan and scan explicitly selected photos
 - assertVisible: Open settings
 - tapOn:
     id: pick-receipt
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
 - tapOn:
     id: PXGGridLayout-Info
     index: 0
@@ -22,6 +27,11 @@ name: Recover an expired scan and scan explicitly selected photos
       all: allow
 - tapOn:
     id: verify-interrupted-import
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
 - tapOn:
     id: PXGGridLayout-Info
     index: 0
