@@ -7,7 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { z } from 'zod';
 import { stringify } from 'yaml';
-import { appendFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { APP_ID, PRESETS, planSchema, validatePlan, validateFlow } from './policy.mjs';
 import { run, resetScenario, cleanEnv } from './process.mjs';
@@ -222,12 +222,14 @@ tool(
     const context = await readContext();
     if (!context.sourceFiles.includes(file) || /(^|\/)\.|(^|\/)node_modules\//.test(file))
       throw new Error('Source file not allowed. Use an exact path from get_context sourceFiles.');
-    const resolved = await realpath(path.resolve(source, file));
-    if (!resolved.startsWith(`${source}${path.sep}`))
-      throw new Error('Source symlink escapes checkout');
-    const bytes = await readFile(resolved);
-    if (bytes.length > 160000 || bytes.includes(0))
-      throw new Error('Source file too large or binary');
+    const candidate = path.resolve(source, file);
+    if (!candidate.startsWith(`${source}${path.sep}`) || (await realpath(candidate)) !== candidate)
+      throw new Error('Source must be a regular file at its listed checkout path.');
+    const info = await stat(candidate);
+    if (!info.isFile() || info.size > 160000)
+      throw new Error('Expected a source file up to 160 KB.');
+    const bytes = await readFile(candidate);
+    if (bytes.includes(0)) throw new Error('Binary source file');
     return pagedText({ file }, paginateText(bytes.toString('utf8')), requested);
   },
 );
