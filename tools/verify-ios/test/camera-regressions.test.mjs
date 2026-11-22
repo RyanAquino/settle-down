@@ -33,7 +33,10 @@ test('verified required flows can be reused, but none may be omitted, failed, or
     junitVerified: true,
   }));
   const plan = { disposition: 'ready', scenarios: cameraRegressions };
-  assert.doesNotThrow(() => requireScenarioEvidence(plan, [], records));
+  assert.throws(() => requireScenarioEvidence(plan, [], records), /inspect_screen/);
+  assert.doesNotThrow(() =>
+    requireScenarioEvidence(plan, [{ tool: 'inspect_screen', ok: true }], records),
+  );
   assert.throws(
     () => requireScenarioEvidence({ ...plan, scenarios: [cameraRegressions[0]] }, [], records),
     /include required regression/,
