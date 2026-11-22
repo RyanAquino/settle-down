@@ -8,7 +8,11 @@ export default ({ config }: ConfigContext) => {
   return {
     ...config,
     owner: 'org-ryan',
-    extra: { ...config.extra, eas: { projectId }, ...(isE2E && { verifyOfflineImport: true }) },
+    extra: {
+      ...config.extra,
+      eas: { projectId },
+      ...(isE2E && { verifyOfflineImport: true, verifyMissingBackend: true }),
+    },
     updates: { url: `https://u.expo.dev/${projectId}`, ...(isE2E ? { enabled: false } : {}) },
     ...(isE2E
       ? {
