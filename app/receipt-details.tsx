@@ -1,3 +1,4 @@
+import { apiBaseUrl } from '@/utils/api';
 import {
   View,
   Text,
@@ -228,10 +229,10 @@ function ReceiptEditor({
 
   const fetchGroupUsers = useCallback(
     async (groupId: string) => {
+      if (!apiBaseUrl) return;
       const request = ++requests.current.members;
       setIsLoadingUsers(true);
       setRosterVerified(false);
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
       try {
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
         const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
@@ -269,8 +270,8 @@ function ReceiptEditor({
 
   const fetchSettleUpGroups = useCallback(
     async (isAutoRetry = false) => {
+      if (!apiBaseUrl) return;
       const request = ++requests.current.groups;
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
       setIsLoadingGroups(true);
       setGroupsError(null);
       setGroupsFetchAttempts((p) => (isAutoRetry ? p + 1 : 1));
@@ -372,7 +373,7 @@ function ReceiptEditor({
   };
 
   const syncTransaction = async () => {
-    if (posting.current || !rosterVerified) return;
+    if (!apiBaseUrl || posting.current || !rosterVerified) return;
     if (!selectedGroupId) return Alert.alert('Pick a group', 'Please select a settle-up group.');
     if (!paidByUserId) return Alert.alert('Who paid?', 'Please select who paid for this receipt.');
     const unassigned = editableItems.filter((item) => !userSelections[item.item_order]);
@@ -400,7 +401,6 @@ function ReceiptEditor({
         receipt_image_url: shopInfo.receipt_image_url,
       };
 
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
       const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
       const headers: { [key: string]: string } = {
         'ngrok-skip-browser-warning': 'true',
@@ -529,6 +529,9 @@ function ReceiptEditor({
         {/* Group — compact single-line pill card */}
         <Entrance delay={70} style={styles.groupCard}>
           <Text style={styles.eyebrow}>GROUP</Text>
+          {!apiBaseUrl && (
+            <Text style={styles.retryBtnText}>This build is missing its backend URL.</Text>
+          )}
           {groupsError && (
             <PressableScale
               style={styles.retryBtn}

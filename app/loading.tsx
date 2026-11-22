@@ -1,3 +1,4 @@
+import { apiBaseUrl } from '@/utils/api';
 import { View, Text, StyleSheet, Image, Animated, Easing, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
@@ -134,7 +135,6 @@ export default function LoadingScreen() {
       }
 
       try {
-        const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
         if (!apiBaseUrl) throw new Error('EXPO_PUBLIC_API_BASE_URL is missing from this build.');
         const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
