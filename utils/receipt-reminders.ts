@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 import { File, Paths } from 'expo-file-system';
 import * as Notifications from 'expo-notifications';
 import { AndroidImportance, IosAuthorizationStatus } from 'expo-notifications';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { z } from 'zod';
 import { listDrafts, readDraft, type ReceiptDraft } from '@/utils/receipt-inbox';
 import { nextMorningDate } from '@/utils/receipt-morning';
@@ -136,16 +136,30 @@ export function presentReceiptReminder(content: Notifications.NotificationConten
 }
 
 // Exercise the normal device delivery and tap handler in PR simulator builds.
-export async function scheduleVerificationReceiptReminder() {
+export async function scheduleVerificationReceiptReminder(
+  when: 'in-eight-seconds' | 'after-background' = 'in-eight-seconds',
+) {
   if (!native() || Constants.expoConfig?.extra?.verifyReceiptReminders !== true) return;
   const drafts = listDrafts();
   if (!drafts.length) return;
+  const content = reminderContent(drafts);
   await createChannel();
+  if (when === 'after-background') {
+    // Keep the captured IDs even if the user discards the draft before pressing Home.
+    await new Promise<void>((resolve) => {
+      const subscription = AppState.addEventListener('change', (state) => {
+        if (state === 'background') {
+          subscription.remove();
+          resolve();
+        }
+      });
+    });
+  }
   await Notifications.scheduleNotificationAsync({
-    content: reminderContent(drafts),
+    content,
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
-      date: Date.now() + 8000,
+      date: Date.now() + (when === 'after-background' ? 2000 : 8000),
       channelId,
     },
   });

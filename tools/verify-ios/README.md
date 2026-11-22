@@ -176,9 +176,10 @@ Use the `success` fixture and a fresh simulator app installation for each flow.
 The offline-import control opens the system photo picker with a seeded receipt.
 The following three Maestro flows use the commands supported by the trusted
 verifier. Each starts on the camera screen and captures its own evidence.
-Use one `tapOn` with the expected banner text after pressing Home. Maestro waits
-for the text and taps it. A separate visibility check can leave the tap aimed at
-the Home Screen as the banner disappears.
+For banner taps, open iOS Settings from the schedule inspector and set Settle
+Down’s **Notifications → Banner Style** to **Persistent**. Check the selected
+style before returning to the app. The banner then stays on the Home Screen
+while Maestro finds and taps its text.
 
 - [Reminder schedule, taps and submission](../../.maestro/receipt-reminders.yaml).
   Inspect the pending requests for a saved photo. Check the three-hour interval
@@ -191,8 +192,10 @@ the Home Screen as the banner disappears.
   acknowledgement in the editor. With two receipts, check one grouped morning
   request, tap the grouped banner to open the inbox, and verify that only the
   other receipt is presented while editing. Discard one receipt and inspect the
-  remaining schedules. Arm a final notification, discard its receipt and tap
-  the delivered banner to check the stale-receipt message and empty schedule.
+  remaining schedules. Long-press **Test reminder in 8 seconds** to capture the
+  final receipt, discard it and press Home. The simulator schedules that captured
+  notification on backgrounding. Tap its banner to check the stale-receipt
+  message and empty schedule.
 - [Denied permission and missed reminders](../../.maestro/receipt-reminders-permission.yaml).
   Leave a photo and save its split while permission is denied. Age the saved
   split by two days, open Settings from **Enable reminders**, turn on the iOS

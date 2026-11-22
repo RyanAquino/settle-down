@@ -38,10 +38,50 @@ name: Verify group delivery, active suppression and stale taps
 - assertVisible: 'Morning: 2 receipts, day \+1 at 09:00'
 - takeScreenshot: production-group
 - tapOn:
-    id: verify-close-schedule
+    id: verify-open-app-settings
+- runFlow:
+    when:
+      visible:
+        id: Settings
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: com.apple.settings.apps
+          direction: DOWN
+          speed: 100
+      - tapOn:
+          id: com.apple.settings.apps
+- runFlow:
+    when:
+      visible: Search Apps
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: com.ryan.aquino.settledown
+          direction: DOWN
+          speed: 100
+      - tapOn:
+          id: com.ryan.aquino.settledown
+- scrollUntilVisible:
+    element: Notifications
+    direction: DOWN
+- tapOn: Notifications
+- tapOn:
+    id: BANNER_STYLE_ID
+- tapOn: Persistent
+- tapOn:
+    id: BackButton
+- assertVisible: Banner Style, Persistent
+- tapOn:
+    id: breadcrumb
+- assertVisible:
+    id: verify-receipt-reminder
 - tapOn:
     id: verify-receipt-reminder
 - pressKey: Home
+- extendedWaitUntil:
+    visible: '.*2 saved receipts are waiting in your inbox.*'
+    timeout: 30000
 - tapOn: '.*2 saved receipts are waiting in your inbox.*'
 - assertVisible: Receipt inbox
 - tapOn:
@@ -56,7 +96,7 @@ name: Verify group delivery, active suppression and stale taps
 - takeScreenshot: only-other-receipt-presented
 - launchApp:
     permissions:
-      all: allow
+      camera: allow
 - tapOn:
     id: receipt-inbox
 - tapOn: Discard CI Receipt Shop
@@ -67,12 +107,15 @@ name: Verify group delivery, active suppression and stale taps
 - assertVisible: 'Morning: 1 receipt, day \+1 at 09:00'
 - tapOn:
     id: verify-close-schedule
-- tapOn:
+- longPressOn:
     id: verify-receipt-reminder
 - tapOn: Discard Receipt photo
 - tapOn: Discard
 - assertVisible: No saved receipts
 - pressKey: Home
+- extendedWaitUntil:
+    visible: '.*Ready to scan your saved receipt.*'
+    timeout: 30000
 - tapOn: '.*Ready to scan your saved receipt.*'
 - assertVisible: This receipt is no longer in your inbox.
 - takeScreenshot: stale-tap

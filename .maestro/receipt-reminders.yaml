@@ -22,10 +22,50 @@ name: Verify real schedules and resume a saved split through submission
 - assertVisible: 'Singapore 09:00 \(01:00 UTC\)'
 - takeScreenshot: production-deadlines
 - tapOn:
-    id: verify-close-schedule
+    id: verify-open-app-settings
+- runFlow:
+    when:
+      visible:
+        id: Settings
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: com.apple.settings.apps
+          direction: DOWN
+          speed: 100
+      - tapOn:
+          id: com.apple.settings.apps
+- runFlow:
+    when:
+      visible: Search Apps
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: com.ryan.aquino.settledown
+          direction: DOWN
+          speed: 100
+      - tapOn:
+          id: com.ryan.aquino.settledown
+- scrollUntilVisible:
+    element: Notifications
+    direction: DOWN
+- tapOn: Notifications
+- tapOn:
+    id: BANNER_STYLE_ID
+- tapOn: Persistent
+- tapOn:
+    id: BackButton
+- assertVisible: Banner Style, Persistent
+- tapOn:
+    id: breadcrumb
+- assertVisible:
+    id: verify-receipt-reminder
 - tapOn:
     id: verify-receipt-reminder
 - pressKey: Home
+- extendedWaitUntil:
+    visible: '.*Ready to scan your saved receipt.*'
+    timeout: 30000
 - tapOn: '.*Ready to scan your saved receipt.*'
 - assertVisible: Cranberry juice
 - tapOn:
@@ -39,6 +79,9 @@ name: Verify real schedules and resume a saved split through submission
 - tapOn:
     id: verify-receipt-reminder
 - pressKey: Home
+- extendedWaitUntil:
+    visible: '.*1 item left to assign on your saved receipt.*'
+    timeout: 30000
 - tapOn: '.*1 item left to assign on your saved receipt.*'
 - assertVisible: Onigiri
 - tapOn:
@@ -50,6 +93,9 @@ name: Verify real schedules and resume a saved split through submission
 - tapOn:
     id: verify-receipt-reminder
 - pressKey: Home
+- extendedWaitUntil:
+    visible: '.*Your saved split is ready to review.*'
+    timeout: 30000
 - tapOn: '.*Your saved split is ready to review.*'
 - assertVisible:
     id: receipt-review-summary

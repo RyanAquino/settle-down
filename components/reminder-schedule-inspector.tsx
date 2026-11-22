@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { requireOptionalNativeModule } from 'expo';
-import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PressableScale } from '@/components/motion';
 import type { ReceiptDraft } from '@/utils/receipt-inbox';
 import { theme, type } from '@/utils/theme';
@@ -43,6 +43,16 @@ export function ReminderScheduleInspector({ drafts }: { drafts: ReceiptDraft[] }
               </Text>
             ))}
           </ScrollView>
+          <PressableScale
+            testID="verify-open-app-settings"
+            style={styles.action}
+            onPress={() => {
+              setOpen(false);
+              void Linking.openSettings().catch(() => Alert.alert('Couldn’t open app settings'));
+            }}
+          >
+            <Text style={styles.link}>Open app settings</Text>
+          </PressableScale>
           <PressableScale
             testID="verify-refresh-schedule"
             style={styles.action}

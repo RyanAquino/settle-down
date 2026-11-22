@@ -2,13 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { isRunningInExpoGo, requireOptionalNativeModule, uuid } from 'expo';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { createPhotoDraft, removeDraft, saveDraft } from '@/utils/receipt-inbox';
 import {
   askForReceiptReminders,
   getReceiptReminderPermission,
   parseReceiptReminder,
   receiptReminderForPresentation,
+  scheduleVerificationReceiptReminder,
   syncReceiptReminders,
 } from '@/utils/receipt-reminders';
 import { samplePhoto, setupInboxFiles } from './support/inbox-files';
@@ -109,6 +110,30 @@ test('Expo Go schedules three elapsed hours and one month-end calendar fallback'
   pending.delete(goMorningId);
   await syncReceiptReminders();
   expect(pending.has(goMorningId)).toBe(false);
+});
+
+test('the stale-tap fixture captures the saved receipt and waits for the Home screen before scheduling', async () => {
+  Constants.expoConfig = {
+    name: 'Settle Down',
+    slug: 'settle-down',
+    extra: { verifyReceiptReminders: true },
+  };
+  const remove = jest.fn();
+  const listen = jest.spyOn(AppState, 'addEventListener').mockReturnValue({ remove });
+  const draft = await createPhotoDraft(samplePhoto().uri);
+  const scheduled = scheduleVerificationReceiptReminder('after-background');
+  await Promise.resolve();
+  const change = listen.mock.calls[0][1];
+  removeDraft(draft.id);
+  change('inactive');
+  expect(Notifications.scheduleNotificationAsync).not.toHaveBeenCalled();
+  jest.setSystemTime(+savedAt + 45_000);
+  change('background');
+  await scheduled;
+  expect(remove).toHaveBeenCalledTimes(1);
+  const [request] = [...pending.values()];
+  expect(parseReceiptReminder(request.content.data)?.draftIds).toEqual([draft.id]);
+  expect(request.trigger).toMatchObject({ type: 'date', date: Date.now() + 2000 });
 });
 
 test('simulator inspection records when the actual elapsed request was submitted without moving its deadline', async () => {

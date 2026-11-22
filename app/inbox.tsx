@@ -116,6 +116,11 @@ export default function ReceiptInboxScreen() {
           <PressableScale
             testID="verify-receipt-reminder"
             style={styles.notice}
+            onLongPress={() => {
+              void scheduleVerificationReceiptReminder('after-background').catch(() =>
+                Alert.alert('Couldn’t schedule test reminder'),
+              );
+            }}
             onPress={() => {
               void scheduleVerificationReceiptReminder().catch(() =>
                 Alert.alert('Couldn’t schedule test reminder'),
