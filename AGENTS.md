@@ -26,7 +26,7 @@ Run `npm start` for the Expo dev server, or `npm run ios` / `npm run android` fo
 
 ## Receipt flow
 
-- `app/index.tsx` mounts the camera while the home screen is focused. Preserve camera release on navigation. Capture and library selection pass a `photoUri` to `app/loading.tsx`. Library picks also set `fromLibrary`.
+- `app/index.tsx` mounts the camera while the home screen is focused. Preserve camera release on navigation. Capture, library selection, and inbox retry use `prepareScan` to pass an opaque request ID to `app/loading.tsx`. The selected photo or draft stays in memory until the loading screen claims it.
 - The upload screen treats only an explicit `isConnected === false` as offline. Save camera captures and library imports in the Receipt Inbox before upload. When offline or after upload retries are exhausted, direct users to the saved draft.
 - Append an `expo-file-system` File to the multipart field `file` and let fetch set the boundary. On success the loading screen replaces itself with `/receipt-details`, passing the serialized response in the `data` route param.
 - Keep API schemas, receipt parsing, totals, split payloads, and currency formatting in `utils/receipt.ts`. Each item's `cost` already covers its full quantity. Use `item_order` as the stable key for rendering, cost edits, and member selections. Format amounts using the selected group's currency and display plain numbers until a currency is available.

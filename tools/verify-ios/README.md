@@ -4,7 +4,15 @@ For PRs targeting `main`, the applicability workflow checks whether the diff
 affects app code, assets, native iOS files, or app build and dependency settings.
 For docs-only, GitHub-workflow-only, and test or verification-tooling changes,
 its `iOS PR Verification` job passes and records why the simulator was skipped.
-PRs that also change the app require a `/verify` run to satisfy the same check.
+For app changes, the same PR job reads the latest authorized simulator verdict.
+Until a passing or skipped verdict is available, the job fails with the reason.
+Admission and completion automatically refresh this inexpensive Linux job.
+To recover a reporting problem, rerun **iOS verification applicability** on
+the PR. This reads the existing evidence without starting a build or simulator.
+If the gate predates this workflow version, edit the PR description to start
+a new gate from the current base branch. An empty commit immediately after a
+verified commit can reuse its result when the entire Git tree and comparison
+merge base match and the new head has no verification request of its own.
 
 Post a new PR conversation comment containing exactly `/verify` (surrounding
 whitespace is fine). Repository writers, maintainers, and admins can request runs

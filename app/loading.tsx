@@ -1,3 +1,4 @@
+import { apiBaseUrl } from '@/utils/api';
 import { View, Text, StyleSheet, Image, Animated, Easing, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
@@ -16,6 +17,7 @@ import {
   saveDraft,
   type ReceiptDraft,
 } from '@/utils/receipt-inbox';
+import { pendingScan, releaseScan } from '@/utils/scan-request';
 import { retryApiCall } from '@/utils/retry';
 
 const scanSteps = [
@@ -27,15 +29,24 @@ const scanSteps = [
 type StepState = (typeof scanSteps)[number]['state'];
 
 export default function LoadingScreen() {
-  const params = useLocalSearchParams();
-  const photoUri = typeof params.photoUri === 'string' ? params.photoUri : '';
-  const draftId = typeof params.draftId === 'string' ? params.draftId : '';
+  const { scanId } = useLocalSearchParams();
+  const id = typeof scanId === 'string' ? scanId : '';
+  return <ScanReceipt key={id} id={id} />;
+}
+
+function ScanReceipt({ id }: { id: string }) {
+  const [input] = useState(() => pendingScan(id));
+  useEffect(() => releaseScan(id), [id]);
+
+  const selection = input && !('draftId' in input) ? input : null;
+  const photoUri = input?.photoUri ?? '';
+  const draftId = input && 'draftId' in input ? input.draftId : '';
   const importing = useRef<{ uri: string; result: Promise<ReceiptDraft> } | null>(null);
   const activeDraft = useRef<ReceiptDraft | null>(null);
-  const fromLibrary = params.fromLibrary === 'true';
+  const fromLibrary = selection?.fromLibrary === true;
   const verifyOfflineImport =
     Constants.expoConfig?.extra?.verifyOfflineImport === true &&
-    params.verifyOfflineImport === 'true';
+    selection?.verifyOfflineImport === true;
   const [isOffline, setIsOffline] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Reading receipt');
   const [statusDetail, setStatusDetail] = useState('Extracting items and amounts');
@@ -95,7 +106,7 @@ export default function LoadingScreen() {
         }
       } else {
         if (!photoUri) {
-          router.replace('/');
+          router.replace('/inbox');
           return;
         }
         // Keep the same import across effect replay while the large photo is copying.
@@ -134,7 +145,6 @@ export default function LoadingScreen() {
       }
 
       try {
-        const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
         if (!apiBaseUrl) throw new Error('EXPO_PUBLIC_API_BASE_URL is missing from this build.');
         const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;

@@ -19,7 +19,7 @@ jobs:
       contents: read
       pull-requests: write
       checks: write
-      actions: read
+      actions: write # Refresh the PR gate when its evidence changes.
     outputs:
       accepted: ${{ steps.request.outputs.accepted }}
       head_sha: ${{ steps.request.outputs.head_sha }}
@@ -202,8 +202,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$HOME/.maestro"
-          curl --fail --location --retry 3 https://github.com/mobile-dev-inc/Maestro/releases/download/cli-2.12.1/maestro.zip -o "$RUNNER_TEMP/maestro.zip"
-          unzip -q "$RUNNER_TEMP/maestro.zip" -d "$RUNNER_TEMP/maestro-install"
+          bash ci/tools/ci/install-maestro.sh "$RUNNER_TEMP/maestro-install"
           echo "$RUNNER_TEMP/maestro-install/maestro/bin" >> "$GITHUB_PATH"
       - name: Explore PR behavior and replay saved tests
         env:

@@ -1,3 +1,5 @@
+import Constants from 'expo-constants';
+import { apiBaseUrl as configuredApiBaseUrl } from '@/utils/api';
 import {
   View,
   Text,
@@ -18,7 +20,7 @@ import {
 import { useLocalSearchParams, usePreventRemove, router } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import { theme, shadow, type, buildUserColorMap, initialFor } from '@/utils/theme';
 import { Entrance, PressableScale } from '@/components/motion';
@@ -31,6 +33,7 @@ import {
   groupsSchema,
   usersSchema,
   parseReceipt,
+  parseReceiptAmount,
   receiptTotals,
   splitReceipt,
   type ItemAssignment,
@@ -127,6 +130,12 @@ export default function ReceiptDetailsScreen() {
   return (
     <ReceiptEditor
       key={draftId || String(params.data ?? 'sample')}
+      apiBaseUrl={
+        Constants.expoConfig?.extra?.verifyMissingBackend === true &&
+        params.verifyMissingBackend === 'true'
+          ? undefined
+          : configuredApiBaseUrl
+      }
       receipt={receipt}
       draft={draft}
       photoUri={photoUri}
@@ -134,16 +143,13 @@ export default function ReceiptDetailsScreen() {
   );
 }
 
-function inputAmount(text: string) {
-  const amount = parseFloat(text);
-  return Number.isFinite(amount) ? Math.max(0, amount) : 0;
-}
-
 function ReceiptEditor({
+  apiBaseUrl,
   receipt,
   draft,
   photoUri,
 }: {
+  apiBaseUrl: string | undefined;
   receipt: ReceiptData;
   draft: ReceiptDraft | null;
   photoUri: string;
@@ -180,7 +186,7 @@ function ReceiptEditor({
   const [isSyncing, setIsSyncing] = useState(false);
   const [showShares, setShowShares] = useState(false);
   const [showPhoto, setShowPhoto] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pendingDate, setPendingDate] = useState<Date | null>(null);
   const [assignProgress] = useState(() => new Animated.Value(0));
   usePreventRemove(isSyncing);
 
@@ -219,19 +225,19 @@ function ReceiptEditor({
         .map((item) =>
           costInputs[item.item_order] === undefined
             ? item
-            : { ...item, cost: inputAmount(costInputs[item.item_order]) },
+            : { ...item, cost: parseReceiptAmount(costInputs[item.item_order]) },
         ),
     [receipt.receipt_items, costInputs],
   );
-  const editableTaxPercentage = inputAmount(edits.tax);
+  const editableTaxPercentage = parseReceiptAmount(edits.tax);
   const shopInfo = { ...receipt, receipt_date: new Date(edits.date) };
 
   const fetchGroupUsers = useCallback(
     async (groupId: string) => {
+      if (!apiBaseUrl) return;
       const request = ++requests.current.members;
       setIsLoadingUsers(true);
       setRosterVerified(false);
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
       try {
         const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
         const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
@@ -264,13 +270,13 @@ function ReceiptEditor({
         if (request === requests.current.members) setIsLoadingUsers(false);
       }
     },
-    [changeEdits],
+    [apiBaseUrl, changeEdits],
   );
 
   const fetchSettleUpGroups = useCallback(
     async (isAutoRetry = false) => {
+      if (!apiBaseUrl) return;
       const request = ++requests.current.groups;
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
       setIsLoadingGroups(true);
       setGroupsError(null);
       setGroupsFetchAttempts((p) => (isAutoRetry ? p + 1 : 1));
@@ -298,7 +304,7 @@ function ReceiptEditor({
         if (request === requests.current.groups) setIsLoadingGroups(false);
       }
     },
-    [changeEdits, fetchGroupUsers],
+    [apiBaseUrl, changeEdits, fetchGroupUsers],
   );
 
   useEffect(() => {
@@ -345,8 +351,30 @@ function ReceiptEditor({
     changeEdits({ costs: { ...latest.current.costs, [itemOrder]: cost } });
   const getTotal = () => receipt.total_amount;
   const updateTaxPercentage = (value: string) => changeEdits({ tax: value });
-  const handleDateChange = (_: unknown, date?: Date) => {
-    if (date) changeEdits({ date: date.toISOString() });
+  const editDate = () => {
+    if (Platform.OS !== 'android') {
+      setPendingDate(shopInfo.receipt_date);
+      return;
+    }
+
+    DateTimePickerAndroid.open({
+      mode: 'date',
+      value: shopInfo.receipt_date,
+      maximumDate: new Date(),
+      onValueChange: (_, day) => {
+        DateTimePickerAndroid.open({
+          mode: 'time',
+          value: day,
+          onValueChange: (_, date) => {
+            if (date.getTime() > Date.now()) {
+              Alert.alert('Choose a past time', 'The receipt time cannot be in the future.');
+              return;
+            }
+            changeEdits({ date: date.toISOString() });
+          },
+        });
+      },
+    });
   };
   const formatDate = (d: Date) =>
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -372,7 +400,7 @@ function ReceiptEditor({
   };
 
   const syncTransaction = async () => {
-    if (posting.current || !rosterVerified) return;
+    if (!apiBaseUrl || posting.current || !rosterVerified) return;
     if (!selectedGroupId) return Alert.alert('Pick a group', 'Please select a settle-up group.');
     if (!paidByUserId) return Alert.alert('Who paid?', 'Please select who paid for this receipt.');
     const unassigned = editableItems.filter((item) => !userSelections[item.item_order]);
@@ -400,7 +428,6 @@ function ReceiptEditor({
         receipt_image_url: shopInfo.receipt_image_url,
       };
 
-      const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.242:8000';
       const authToken = process.env.EXPO_PUBLIC_AUTH_TOKEN;
       const headers: { [key: string]: string } = {
         'ngrok-skip-browser-warning': 'true',
@@ -448,6 +475,7 @@ function ReceiptEditor({
 
   // -------- derived --------
   const { subtotal, taxAmount } = receiptTotals(editableItems, editableTaxPercentage);
+  const amountsValid = Number.isFinite(subtotal) && Number.isFinite(editableTaxPercentage);
   const total = getTotal();
   const balance = reconcileReceipt(editableItems, editableTaxPercentage, total);
   const taxIncluded = balance?.taxAmount === 0 && editableTaxPercentage > 0;
@@ -511,7 +539,7 @@ function ReceiptEditor({
             testID="receipt-date"
             style={styles.dateRow}
             scaleTo={0.99}
-            onPress={() => setShowDatePicker(true)}
+            onPress={editDate}
           >
             <Text style={styles.dateText}>
               {formatDate(shopInfo.receipt_date)} · {formatTime(shopInfo.receipt_date)}
@@ -529,6 +557,9 @@ function ReceiptEditor({
         {/* Group — compact single-line pill card */}
         <Entrance delay={70} style={styles.groupCard}>
           <Text style={styles.eyebrow}>GROUP</Text>
+          {!apiBaseUrl && (
+            <Text style={styles.retryBtnText}>This build is missing its backend URL.</Text>
+          )}
           {groupsError && (
             <PressableScale
               style={styles.retryBtn}
@@ -667,6 +698,7 @@ function ReceiptEditor({
                       value={costInputs[item.item_order] ?? item.cost.toString()}
                       onChangeText={(t) => updateItemCost(item.item_order, t)}
                       keyboardType="decimal-pad"
+                      selectTextOnFocus
                       placeholder="0"
                       placeholderTextColor={theme.inkFaint}
                     />
@@ -787,6 +819,7 @@ function ReceiptEditor({
                   value={edits.tax}
                   onChangeText={updateTaxPercentage}
                   keyboardType="decimal-pad"
+                  selectTextOnFocus
                   placeholder="0"
                   placeholderTextColor={theme.inkFaint}
                 />
@@ -805,7 +838,9 @@ function ReceiptEditor({
           </View>
           {editableItems.length > 0 && !balance && (
             <Text style={styles.balanceWarning}>
-              The items and tax must match the scanned total.
+              {amountsValid
+                ? 'The items and tax must match the scanned total.'
+                : 'Enter amounts as numbers without grouping separators.'}
             </Text>
           )}
           <View style={styles.summaryActions}>
@@ -976,18 +1011,13 @@ function ReceiptEditor({
       </Modal>
 
       {/* Date picker modal */}
-      {showDatePicker && (
-        <Modal
-          transparent
-          animationType="slide"
-          visible={showDatePicker}
-          onRequestClose={() => setShowDatePicker(false)}
-        >
+      {pendingDate && (
+        <Modal transparent animationType="slide" onRequestClose={() => setPendingDate(null)}>
           <View style={styles.modalOverlay}>
             <View style={styles.datePickerModal}>
               <View style={styles.datePickerHeader}>
                 <PressableScale
-                  onPress={() => setShowDatePicker(false)}
+                  onPress={() => setPendingDate(null)}
                   haptic="light"
                   style={styles.datePickerHeaderBtn}
                 >
@@ -995,7 +1025,10 @@ function ReceiptEditor({
                 </PressableScale>
                 <Text style={styles.datePickerTitle}>Receipt date</Text>
                 <PressableScale
-                  onPress={() => setShowDatePicker(false)}
+                  onPress={() => {
+                    changeEdits({ date: pendingDate.toISOString() });
+                    setPendingDate(null);
+                  }}
                   haptic="light"
                   style={styles.datePickerHeaderBtn}
                 >
@@ -1004,10 +1037,11 @@ function ReceiptEditor({
               </View>
               <View style={styles.datePickerBody}>
                 <DateTimePicker
-                  value={shopInfo.receipt_date}
+                  testID="receipt-date-spinner"
+                  value={pendingDate}
                   mode="datetime"
                   display="spinner"
-                  onChange={handleDateChange}
+                  onValueChange={(_, date) => setPendingDate(date)}
                   maximumDate={new Date()}
                   textColor={theme.ink}
                   accentColor={theme.accent}
@@ -1246,16 +1280,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 6,
     backgroundColor: theme.surfaceAlt,
     borderRadius: theme.radiusSm,
     borderWidth: 1,
     borderColor: theme.border,
-    minWidth: 88,
+    minWidth: 132,
   },
   priceSymbol: { fontSize: 14, color: theme.inkMuted, fontWeight: '500', marginRight: 2 },
   priceInput: {
     flex: 1,
+    minHeight: 44,
     fontSize: 15,
     color: theme.ink,
     fontWeight: '600',
@@ -1329,11 +1363,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.border,
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 56,
+    minWidth: 92,
   },
   taxInput: {
     flex: 1,
+    minHeight: 44,
     fontSize: 14,
     color: theme.ink,
     fontWeight: '600',

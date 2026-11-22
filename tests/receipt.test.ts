@@ -2,6 +2,7 @@ import {
   currencySymbol,
   formatMoney,
   parseReceipt,
+  parseReceiptAmount,
   receiptTotals,
   splitReceipt,
   type ReceiptItem,
@@ -149,4 +150,17 @@ test('a quantity split allocates an edited line cost by units, including discoun
     { member_id: 'aya', cost: 3.33 },
     { member_id: 'ren', cost: 6.67 },
   ]);
+});
+
+test.each([
+  ['10,50', 10.5],
+  ['10.50', 10.5],
+  [',75', 0.75],
+  ['0.', 0],
+  ['', 0],
+  ['-5', NaN],
+  ['10.5abc', NaN],
+  ['1,50.00', NaN],
+])('reads the entire decimal amount %j', (text, amount) => {
+  expect(parseReceiptAmount(text)).toBe(amount);
 });

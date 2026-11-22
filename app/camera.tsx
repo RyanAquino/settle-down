@@ -1,3 +1,4 @@
+import { prepareScan } from '@/utils/scan-request';
 import { useCameraPermissions } from 'expo-camera';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, View, Alert, AppState, Linking } from 'react-native';
@@ -46,10 +47,7 @@ export default function CameraScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        router.push({
-          pathname: '/loading',
-          params: { photoUri: result.assets[0].uri, fromLibrary: 'true' },
-        });
+        router.push(prepareScan({ photoUri: result.assets[0].uri, fromLibrary: true }));
       }
     } catch {
       Alert.alert('Error', 'Failed to pick photo from library. Please try again.');
