@@ -1,3 +1,4 @@
+import { prepareScan } from '@/utils/scan-request';
 import { useCallback, useRef, useState } from 'react';
 import { Alert, FlatList, Image, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
@@ -28,9 +29,8 @@ export default function ReceiptInboxScreen() {
   function open(draft: ReceiptDraft) {
     if (opening.current) return;
     opening.current = true;
-    const params = { draftId: draft.id, photoUri: draftPhotoUri(draft) };
-    if (draft.receipt) router.push({ pathname: '/receipt-details', params });
-    else router.push({ pathname: '/loading', params });
+    if (draft.receipt) router.push({ pathname: '/receipt-details', params: { draftId: draft.id } });
+    else router.push(prepareScan({ draftId: draft.id, photoUri: draftPhotoUri(draft) }));
   }
 
   function discard(draft: ReceiptDraft) {

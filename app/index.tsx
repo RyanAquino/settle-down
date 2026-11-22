@@ -1,3 +1,4 @@
+import { prepareScan } from '@/utils/scan-request';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
@@ -24,14 +25,7 @@ async function importVerificationPhoto(mode: 'offline' | 'interrupted') {
         router.push('/inbox');
         return;
       }
-      router.push({
-        pathname: '/loading',
-        params: {
-          photoUri,
-          fromLibrary: 'true',
-          verifyOfflineImport: 'true',
-        },
-      });
+      router.push(prepareScan({ photoUri, fromLibrary: true, verifyOfflineImport: true }));
     }
   } catch {
     Alert.alert('Error', 'Failed to pick photo from library. Please try again.');
@@ -93,6 +87,14 @@ export default function Index() {
           </PressableScale>
           <PressableScale
             style={styles.debugButton}
+            testID="verify-expired-scan"
+            accessibilityLabel="Open expired scan"
+            onPress={() => router.push('/loading')}
+          >
+            <Text style={styles.debugButtonText}>Open expired scan</Text>
+          </PressableScale>
+          <PressableScale
+            style={styles.debugButton}
             testID="verify-interrupted-import"
             accessibilityLabel="Recover interrupted import"
             onPress={() => void importVerificationPhoto('interrupted')}
@@ -104,14 +106,13 @@ export default function Index() {
             testID="verify-missing-capture"
             accessibilityLabel="Try missing capture"
             onPress={() =>
-              router.push({
-                pathname: '/loading',
-                params: {
+              router.push(
+                prepareScan({
                   // No file is created here, so the normal draft copy fails.
                   photoUri: new File(Paths.cache, 'verify-missing-capture.jpg').uri,
-                  verifyOfflineImport: 'true',
-                },
-              })
+                  verifyOfflineImport: true,
+                }),
+              )
             }
           >
             <Text style={styles.debugButtonText}>Try missing capture</Text>
