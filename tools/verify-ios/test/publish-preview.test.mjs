@@ -27,19 +27,34 @@ function passed(workflow) {
   };
 }
 
-async function check(runs, releaseTag = '') {
+async function check(snapshots, { releaseTag = '', mainHeads = [currentMain] } = {}) {
   const errors = [];
+  const messages = [];
+  const delays = [];
+  let elapsed = 0;
+  let polls = 0;
+  const mainHead = () => mainHeads[Math.min(polls, mainHeads.length - 1)];
   const repo = { owner: 'owner', repo: 'repo' };
   await script.runInNewContext({
+    Date: { now: () => elapsed },
+    setTimeout: (resolve, ms) => {
+      assert.ok(ms > 0 && delays.length < 200, 'CI polling must be bounded');
+      delays.push(ms);
+      elapsed += ms;
+      resolve();
+    },
     context: { repo, sha: dispatchSha, payload: { inputs: { release_tag: releaseTag } } },
-    core: { setFailed: (message) => errors.push(message) },
+    core: {
+      setFailed: (message) => errors.push(message),
+      info: (message) => messages.push(message),
+    },
     github: {
       rest: {
         actions: { listWorkflowRunsForRepo: 'runs' },
         git: {
           getRef: async (params) => {
             assert.deepEqual({ ...params }, { ...repo, ref: 'heads/main' });
-            return { data: { object: { sha: currentMain } } };
+            return { data: { object: { sha: mainHead() } } };
           },
         },
       },
@@ -51,45 +66,90 @@ async function check(runs, releaseTag = '') {
             ...repo,
             branch: 'main',
             event: 'push',
-            head_sha: releaseTag ? currentMain : dispatchSha,
+            head_sha: releaseTag ? mainHead() : dispatchSha,
             per_page: 100,
           },
         );
+        const runs = snapshots[Math.min(polls, snapshots.length - 1)];
+        polls++;
         return runs;
       },
     },
   });
-  return errors;
+  return { errors, messages, delays, polls, elapsed };
 }
 
-test('releases and restores require a successful latest push run for every main workflow', async () => {
-  const green = ['quality', 'native', 'security'].map(passed);
-  assert.deepEqual(await check(green), []);
-  assert.deepEqual(await check(green, `expo-preview-${'c'.repeat(40)}`), []);
+const green = ['quality', 'native', 'security'].map(passed);
+const queued = { ...passed('additional'), status: 'queued', conclusion: null };
 
-  const failed = { ...passed('native'), run_number: 2, conclusion: 'failure' };
-  const pending = { ...passed('additional'), status: 'queued', conclusion: null };
-  const errors = await check([failed, pending, ...green]);
-  assert.equal(errors.length, 2);
-  assert.ok(
-    errors.some((error) => error.includes('native: failure') && error.includes(failed.html_url)),
-  );
-  assert.ok(
-    errors.some(
-      (error) => error.includes('additional: queued') && error.includes(pending.html_url),
-    ),
-  );
+test('green CI proceeds immediately for both a new preview and a restore', async () => {
+  for (const releaseTag of ['', 'previous-preview']) {
+    const result = await check([green], { releaseTag });
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.polls, 1);
+    assert.deepEqual(result.delays, []);
+  }
 });
 
-test('a restore reports cancelled and missing main workflows even when Quality passed', async () => {
-  const cancelled = { ...passed('native'), conclusion: 'cancelled' };
-  const errors = await check([passed('quality'), cancelled], 'previous-preview');
-  assert.equal(errors.length, 2);
-  assert.ok(errors.every((error) => error.includes(currentMain)));
-  assert.ok(errors.some((error) => error.includes('native: cancelled')));
-  assert.ok(
-    errors.some((error) => error.includes('No push run found for .github/workflows/security.yml')),
+test('CI can register late and move from queued to running to success', async () => {
+  const active = { ...queued, status: 'in_progress' };
+  const result = await check([
+    [passed('quality')],
+    [...green, queued],
+    [...green, active],
+    [...green, passed('additional')],
+  ]);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.delays, [30_000, 30_000, 30_000]);
+  assert.match(result.messages[0], /native.yml has no push run yet/);
+  assert.match(result.messages[1], /additional: queued/);
+  assert.ok(result.messages[2].includes(active.html_url));
+});
+
+test('a newer failed run stops the wait even with other CI still queued', async () => {
+  const failed = { ...passed('native'), run_number: 2, conclusion: 'failure' };
+  const result = await check([
+    [...green, queued],
+    [failed, ...green, queued],
+  ]);
+  assert.deepEqual(result.delays, [30_000]);
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /native: failure/);
+  assert.ok(result.errors[0].includes(failed.html_url));
+});
+
+test('a cancelled workflow immediately blocks a restore even when a required run is missing', async () => {
+  const result = await check(
+    [[passed('quality'), { ...passed('native'), conclusion: 'cancelled' }]],
+    { releaseTag: 'previous-preview' },
   );
+  assert.deepEqual(result.delays, []);
+  assert.ok(result.errors[0].includes(currentMain));
+  assert.match(result.errors[0], /native: cancelled/);
+});
+
+test('a restore follows current main when it changes during a wait', async () => {
+  const result = await check([[...green, queued], green], {
+    releaseTag: 'previous-preview',
+    mainHeads: [dispatchSha, currentMain],
+  });
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.delays, [30_000]);
+  assert.equal(result.polls, 2);
+});
+
+test('a timeout names missing and unfinished workflows, including a previously seen run', async () => {
+  const active = { ...passed('native'), status: 'in_progress', conclusion: null };
+  const result = await check([
+    [passed('quality'), active, queued],
+    [passed('quality'), active],
+  ]);
+  assert.equal(result.elapsed, 90 * 60_000);
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /Timed out after 90 minutes/);
+  assert.match(result.errors[0], /security.yml has no push run yet/);
+  assert.match(result.errors[0], /additional.yml has no push run yet/);
+  assert.ok(result.errors[0].includes(active.html_url));
 });
 
 test('each Expo publish and the final prerelease recheck main CI, including partial retries', () => {

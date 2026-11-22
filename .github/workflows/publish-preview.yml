@@ -25,7 +25,7 @@ jobs:
       github.actor_id == github.repository_owner_id &&
       (github.run_attempt == 1 || github.triggering_actor == github.repository_owner)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 100
     outputs:
       tag: ${{ steps.select.outputs.tag }}
       commit: ${{ steps.select.outputs.commit }}
@@ -93,35 +93,50 @@ jobs:
           fi
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Require successful main CI for the selected preview
+      - name: Wait for main CI for the selected preview
         if: steps.select.outputs.tag
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: &require-main-ci |
-            const sha = context.payload.inputs?.release_tag
-              ? (await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' })).data.object.sha
-              : context.sha;
-            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
-              ...context.repo, branch: 'main', event: 'push', head_sha: sha, per_page: 100,
-            });
-
-            // A missing required workflow must block just as a failed run would.
-            const latest = new Map([
-              ['.github/workflows/quality.yml', null],
-              ['.github/workflows/native.yml', null],
-              ['.github/workflows/security.yml', null],
-            ]);
-            for (const run of runs) {
-              const previous = latest.get(run.path);
-              if (!previous || run.run_number > previous.run_number) latest.set(run.path, run);
-            }
-            for (const [path, run] of latest) {
-              if (!run) {
-                core.setFailed(`Preview blocked for main@${sha}. No push run found for ${path}.`);
-              } else if (run.status !== 'completed' || run.conclusion !== 'success') {
-                const result = run.status === 'completed' ? run.conclusion : run.status;
-                core.setFailed(`Preview blocked for main@${sha}. ${run.name}: ${result} (${run.html_url}).`);
+            const waitMinutes = 90;
+            const deadline = Date.now() + waitMinutes * 60_000;
+            const required = ['quality.yml', 'native.yml', 'security.yml'].map(file => `.github/workflows/${file}`);
+            let lastSha;
+            let paths = required;
+            while (true) {
+              const sha = context.payload.inputs?.release_tag
+                ? (await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' })).data.object.sha
+                : context.sha;
+              const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+                ...context.repo, branch: 'main', event: 'push', head_sha: sha, per_page: 100,
+              });
+              // Keep every workflow seen for this SHA, even if a later poll omits its run.
+              const latest = new Map((sha === lastSha ? paths : required).map(path => [path, null]));
+              for (const run of runs) {
+                const previous = latest.get(run.path);
+                if (!previous || run.run_number > previous.run_number) latest.set(run.path, run);
               }
+              const waiting = [];
+              const failed = [];
+              for (const [path, run] of latest) {
+                if (!run) {
+                  waiting.push(`${path} has no push run yet`);
+                } else if (run.status !== 'completed') {
+                  waiting.push(`${run.name}: ${run.status} (${run.html_url})`);
+                } else if (run.conclusion !== 'success') {
+                  failed.push(`${run.name}: ${run.conclusion} (${run.html_url})`);
+                }
+              }
+              if (failed.length) return core.setFailed(`Preview blocked for main@${sha}. ${failed.join(', ')}`);
+              if (!waiting.length) return;
+              const remaining = deadline - Date.now();
+              if (remaining <= 0) {
+                return core.setFailed(`Timed out after ${waitMinutes} minutes waiting for main@${sha}. ${waiting.join(', ')}`);
+              }
+              core.info(`Waiting for main@${sha}. ${waiting.join(', ')}`);
+              lastSha = sha;
+              paths = [...latest.keys()];
+              await new Promise(resolve => setTimeout(resolve, Math.min(30_000, remaining)));
             }
 
   publish:
@@ -129,7 +144,7 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.tag && (github.run_attempt == 1 || github.triggering_actor == github.repository_owner)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 110
     strategy:
       fail-fast: false
       matrix:
