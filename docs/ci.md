@@ -96,10 +96,11 @@ times out, CI installs the same binary on a fresh simulator for the retry.
 An assertion failure ends the job immediately. The native evidence artifacts
 keep each attempt, and a successful retry is recorded in the job summary.
 
-It runs on app/config/dependency/CI-related PR changes, all main-branch pushes,
-a weekly schedule, and manual dispatch. macOS builds can take substantially
-longer than the Linux quality checks. The iOS runner/Xcode combination follows
-the existing verification workflow; update both together when runner images change.
+Pull requests that change app, config, dependency, or CI files run the iOS smoke
+test. Both platforms run on every push to `main` and can also be run manually.
+macOS builds can take substantially longer than the Linux quality checks.
+The iOS runner/Xcode combination follows the existing verification workflow.
+Update both together when runner images change.
 
 This smoke test does not validate physical camera capture, OCR, offline recovery,
 or a complete transaction. The existing `/verify` workflow adds PR-specific
