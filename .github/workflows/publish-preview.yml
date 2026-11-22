@@ -68,18 +68,36 @@ jobs:
           fi
           echo "commit=${tag##*-}" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Require a successful Quality run for the selected main commit
-        if: inputs.release_tag == '' && steps.select.outputs.tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          passed=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/quality.yml/runs" \
-            -f branch=main -f event=push -f head_sha="$GITHUB_SHA" -f status=success -f per_page=1 \
-            --jq '.total_count > 0')
-          if [[ "$passed" != true ]]; then
-            echo "::error::Quality must pass on main for $GITHUB_SHA before publishing."
-            exit 1
-          fi
+      - name: Require successful main CI before staging
+        if: steps.select.outputs.tag
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: &require-main-ci |
+            const sha = context.payload.inputs?.release_tag
+              ? (await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' })).data.object.sha
+              : context.sha;
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              ...context.repo, branch: 'main', event: 'push', head_sha: sha, per_page: 100,
+            });
+
+            // A missing required workflow must block just as a failed run would.
+            const latest = new Map([
+              ['.github/workflows/quality.yml', null],
+              ['.github/workflows/native.yml', null],
+              ['.github/workflows/security.yml', null],
+            ]);
+            for (const run of runs) {
+              const previous = latest.get(run.path);
+              if (!previous || run.run_number > previous.run_number) latest.set(run.path, run);
+            }
+            for (const [path, run] of latest) {
+              if (!run) {
+                core.setFailed(`Preview blocked for main@${sha}. No push run found for ${path}.`);
+              } else if (run.status !== 'completed' || run.conclusion !== 'success') {
+                const result = run.status === 'completed' ? run.conclusion : run.status;
+                core.setFailed(`Preview blocked for main@${sha}. ${run.name}: ${result} (${run.html_url}).`);
+              }
+            }
       - if: steps.select.outputs.stage == 'true'
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -104,6 +122,7 @@ jobs:
     if: needs.prepare.outputs.tag && (github.run_attempt == 1 || github.triggering_actor == github.repository_owner)
     runs-on: ubuntu-24.04
     permissions:
+      actions: read
       contents: write
     concurrency:
       group: expo-release-${{ needs.prepare.outputs.tag }}
@@ -111,6 +130,10 @@ jobs:
     outputs:
       groups: ${{ steps.release.outputs.groups }}
     steps:
+      - name: Recheck main CI before creating the prerelease
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: *require-main-ci
       - name: Publish generated notes and load the recorded update groups
         id: release
         env:
@@ -166,6 +189,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm install --global eas-cli@24.7.0
+      - name: Recheck main CI before publishing to Expo
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: *require-main-ci
       - name: Publish the recorded iOS and Android bundles to preview
         env:
           GH_TOKEN: ${{ github.token }}

@@ -140,12 +140,14 @@ npm run update:production    # Push an OTA JS update to the production channel
 
 The app lives in two EAS projects: `@ryan.aquino/settle-down` (personal, the default) and `@org-ryan/settle-down` (a copy in the `org-ryan` organization).
 `app.config.ts` picks one from the `EAS_PROJECT_OWNER` environment variable, and every script above has an `:org` variant (for example `npm run update:preview:org`) that targets the org project.
-The repository owner publishes previews by manually running **Publish Expo Go previews** on `main`. For a new preview, the workflow checks that `Quality` passed for the selected commit, then stages the iOS and Android bundles in each project's EAS `preview` environment. Before publishing to either `preview` channel, it creates a GitHub prerelease tagged `v<expo.version>-<commit SHA>` with GitHub-generated release notes. The version comes from the published commit’s `app.json`. The SHA keeps previews from the same app version individually restorable. The attached `expo-groups.json` records the original EAS update group for each project. Keep the two projects' preview environment variables in sync.
+The repository owner publishes previews by manually running **Publish Expo Go previews** on `main`. All push workflows for the selected `main` commit must succeed, including `Quality`, `Native smoke` (iOS and Android), and `Security`. A missing, unfinished, or unsuccessful run stops the release. The error identifies the blocking workflow and links to its run when available.
+
+For a new preview, the workflow stages the iOS and Android bundles in each project's EAS `preview` environment. Before publishing to either `preview` channel, it creates a GitHub prerelease tagged `v<expo.version>-<commit SHA>` with GitHub-generated release notes. The version comes from the published commit’s `app.json`. The SHA keeps previews from the same app version individually restorable. The attached `expo-groups.json` records the original EAS update group for each project. Keep the two projects' preview environment variables in sync.
 
 **Publish or restore a preview**
 
 1. Open **Actions → Publish Expo Go previews → Run workflow** as the GitHub repository owner. Select the `main` branch.
-2. Leave **release_tag** empty to publish the current `main` after its `Quality` check passes. To restore an older preview, paste its full tag from [GitHub Releases](https://github.com/RyanAquino/settle-down/releases). Older `expo-preview-<commit SHA>` tags also work.
+2. Leave **release_tag** empty to publish the current `main`. To restore an older preview, paste its full tag from [GitHub Releases](https://github.com/RyanAquino/settle-down/releases). A restore checks CI on the current tip of `main` before republishing the recorded bundles. Older `expo-preview-<commit SHA>` tags also work.
 3. Click **Run workflow**. Both projects receive the bundles recorded for that release. A restore serves clients on the release's original runtime.
 
 GitHub lets writers request runs. The workflow skips manual publishes and retries requested by anyone other than the repository owner. If one project's publish fails, the owner can choose **Re-run failed jobs**.
