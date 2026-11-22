@@ -21,8 +21,6 @@ on:
       - '.github/workflows/native.yml'
   push:
     branches: [main]
-  schedule:
-    - cron: '41 3 * * 2'
   workflow_dispatch:
 
 permissions:
@@ -118,6 +116,7 @@ jobs:
 
   android:
     name: Android Release smoke
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:

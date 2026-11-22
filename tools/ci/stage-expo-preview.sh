@@ -3,8 +3,8 @@ set -euo pipefail
 
 : "${EXPO_TOKEN:?Set the EXPO_TOKEN repository Actions secret to publish previews}"
 sha=$(git rev-parse HEAD)
-if [[ "$TAG" != "expo-preview-$sha" ]]; then
-  echo "::error::The preview tag must identify the staged commit."
+if [[ "$sha" != "$COMMIT" ]]; then
+  echo "::error::Checked-out commit does not match the selected preview."
   exit 1
 fi
 groups='{}'

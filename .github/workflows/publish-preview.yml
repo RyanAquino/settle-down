@@ -7,10 +7,6 @@ on:
         description: 'Restore a previous Expo preview release (leave blank for current main)'
         type: string
         required: false
-  workflow_run:
-    workflows: [Quality]
-    types: [completed]
-    branches: [main]
 
 permissions:
   actions: read
@@ -20,46 +16,45 @@ jobs:
   prepare:
     name: Prepare Expo preview release
     if: >-
-      (github.run_attempt == 1 || github.triggering_actor == github.repository_owner) &&
-      (
-        (github.event_name == 'workflow_dispatch' &&
-         github.ref == 'refs/heads/main' &&
-         github.actor_id == github.repository_owner_id) ||
-        (github.event_name == 'workflow_run' &&
-         github.event.workflow_run.event == 'push' &&
-         github.event.workflow_run.conclusion == 'success' &&
-         github.event.workflow_run.head_repository.full_name == github.repository &&
-         (github.event.workflow_run.run_attempt == 1 ||
-          github.event.workflow_run.triggering_actor.login == github.repository_owner))
-      )
+      github.ref == 'refs/heads/main' &&
+      github.actor_id == github.repository_owner_id &&
+      (github.run_attempt == 1 || github.triggering_actor == github.repository_owner)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       tag: ${{ steps.select.outputs.tag }}
+      commit: ${{ steps.select.outputs.commit }}
       groups: ${{ steps.stage.outputs.groups }}
     steps:
+      - if: inputs.release_tag == ''
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Select a preview release
         id: select
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED: ${{ inputs.release_tag }}
-          MAIN_COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
           RELEASE_QUERY: |
             query($owner:String!, $repo:String!, $tag:String!) {
               repository(owner:$owner, name:$repo) { release(tagName:$tag) { isDraft } }
             }
         run: |
-          tag=${REQUESTED:-expo-preview-$MAIN_COMMIT}
-          if [[ ! "$tag" =~ ^expo-preview-[0-9a-f]{40}$ ]]; then
-            echo "::error::Choose an expo-preview tag from GitHub Releases."
-            exit 1
-          fi
-          if [[ -z "$REQUESTED" ]]; then
+          tag=$REQUESTED
+          if [[ -z "$tag" ]]; then
             current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
-            if [[ "$current" != "$MAIN_COMMIT" ]]; then
-              echo "Skipping superseded main commit $MAIN_COMMIT."
+            if [[ "$current" != "$GITHUB_SHA" ]]; then
+              echo "Skipping superseded main commit $GITHUB_SHA."
               exit 0
             fi
+            version=$(jq -er '.expo.version | strings' app.json)
+            tag="v$version-$GITHUB_SHA"
+          fi
+          version_pattern='[0-9]+[.][0-9]+[.][0-9]+([-+][0-9A-Za-z.+-]+)?'
+          if [[ ! "$tag" =~ ^(v${version_pattern}|expo-preview)-[0-9a-f]{40}$ ]]; then
+            echo "::error::Expected a versioned preview tag or a legacy expo-preview tag."
+            exit 1
           fi
           state=$(gh api graphql -f owner="$GITHUB_REPOSITORY_OWNER" -f repo="${GITHUB_REPOSITORY#*/}" -f tag="$tag" \
             -f query="$RELEASE_QUERY" \
@@ -71,9 +66,10 @@ jobs:
             fi
             echo "stage=true" >> "$GITHUB_OUTPUT"
           fi
+          echo "commit=${tag##*-}" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Require a successful Quality run for the selected main commit
-        if: github.event_name == 'workflow_dispatch' && !inputs.release_tag && steps.select.outputs.tag
+        if: inputs.release_tag == '' && steps.select.outputs.tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -84,11 +80,6 @@ jobs:
             echo "::error::Quality must pass on main for $GITHUB_SHA before publishing."
             exit 1
           fi
-      - if: steps.select.outputs.stage == 'true'
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          persist-credentials: false
       - if: steps.select.outputs.stage == 'true'
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -104,6 +95,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           TAG: ${{ steps.select.outputs.tag }}
+          COMMIT: ${{ steps.select.outputs.commit }}
         run: bash tools/ci/stage-expo-preview.sh
 
   release:
@@ -125,13 +117,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare.outputs.tag }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
           NEW_GROUPS: ${{ needs.prepare.outputs.groups }}
         run: |
           if [[ -n "$NEW_GROUPS" ]]; then
             printf '%s\n' "$NEW_GROUPS" > expo-groups.json
             if ! draft=$(gh release view "$TAG" --json isDraft --jq .isDraft); then
-              gh release create "$TAG" expo-groups.json --target "${TAG#expo-preview-}" \
-                --prerelease --title "Expo Go preview ${TAG:13:12}" --generate-notes
+              gh release create "$TAG" expo-groups.json --target "$COMMIT" \
+                --prerelease --title "Expo Go preview ${TAG%-*} (${COMMIT:0:12})" --generate-notes
             elif [[ "$draft" == true ]]; then
               # Resume a release interrupted between draft creation, asset upload and publication.
               gh release upload "$TAG" expo-groups.json --clobber
@@ -140,7 +133,7 @@ jobs:
           fi
           published=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '(.isDraft | not) and .isPrerelease')
           ref=$(gh api "repos/$GH_REPO/commits/$TAG" --jq '.sha')
-          if [[ "$published" != true || "$ref" != "${TAG#expo-preview-}" ]]; then
+          if [[ "$published" != true || "$ref" != "$COMMIT" ]]; then
             echo "::error::Expected a published Expo prerelease tagged at its original commit."
             exit 1
           fi
@@ -180,15 +173,16 @@ jobs:
           EAS_PROJECT_OWNER: ${{ matrix.owner }}
           GROUP: ${{ fromJSON(needs.release.outputs.groups)[matrix.owner] }}
           TAG: ${{ needs.prepare.outputs.tag }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
           REQUESTED: ${{ inputs.release_tag }}
         run: |
-          if [[ "$(git rev-parse HEAD)" != "${TAG#expo-preview-}" ]]; then
+          if [[ "$(git rev-parse HEAD)" != "$COMMIT" ]]; then
             echo "::error::Checked-out commit does not match the preview release."
             exit 1
           fi
           if [[ -z "$REQUESTED" ]]; then
             current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
-            if [[ "$current" != "${TAG#expo-preview-}" ]]; then
+            if [[ "$current" != "$COMMIT" ]]; then
               echo "Skipping superseded release $TAG."
               exit 0
             fi
