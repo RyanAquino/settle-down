@@ -138,20 +138,20 @@ npm run update:production    # Push an OTA JS update to the production channel
 
 `runtimeVersion` follows `appVersion`, so OTA updates only reach builds with the same app version (`app.json` → `expo.version`).
 
-The app lives in two EAS projects: `@ryan.aquino/settle-down` (personal, the default) and `@org-ryan/settle-down` (a copy in the `org-ryan` organization).
-`app.config.ts` picks one from the `EAS_PROJECT_OWNER` environment variable, and every script above has an `:org` variant (for example `npm run update:preview:org`) that targets the org project.
-The repository owner publishes previews by manually running **Publish Expo Go previews** on `main`. All push workflows for the selected `main` commit must succeed, including `Quality`, `Native smoke` (iOS and Android), and `Security`. A missing, unfinished, or unsuccessful run stops the release. The error identifies the blocking workflow and links to its run when available.
+`app.config.ts` points builds and updates to [@org-ryan/settle-down](https://expo.dev/accounts/org-ryan/projects/settle-down). The existing `:org` npm commands are aliases for the commands above.
 
-For a new preview, each project publishes its iOS and Android bundles directly to its `preview` channel using the EAS `preview` environment. Once both publishes succeed, the workflow creates a GitHub prerelease tagged `v<expo.version>-<commit SHA>` with generated release notes. The attached `expo-groups.json` records the update group ID returned by each publish. Keep the two projects' preview environment variables in sync.
+The repository owner publishes previews by manually running **Publish Expo Go previews** on `main`. You can start the workflow while CI is running. It checks every 30 seconds until all push workflows for the selected `main` commit pass, including `Quality`, `Native smoke` (iOS and Android), and `Security`. Publishing proceeds automatically once CI passes. A completed failure or cancellation stops the release immediately. Each gate waits up to 90 minutes for queued, running, or missing checks and reports any blockers with run links when available.
+
+For a new preview, the workflow publishes iOS and Android to the org's `preview` channel using its EAS `preview` environment. It creates a GitHub prerelease tagged `v<expo.version>-<commit SHA>` and attaches `expo-groups.json` with the `org-ryan` update group ID.
 
 **Publish or restore a preview**
 
 1. Open **Actions → Publish Expo Go previews → Run workflow** as the GitHub repository owner. Select the `main` branch.
-2. Leave **release_tag** empty to publish the current `main`. To restore an older preview, paste its full tag from [GitHub Releases](https://github.com/RyanAquino/settle-down/releases). A restore checks CI on the current tip of `main`, then republishes each saved update group to `preview`. This works for groups originally uploaded to `expo-preview-staging` and for legacy `expo-preview-<commit SHA>` tags.
-3. Click **Run workflow**. Each project's update becomes available as soon as its publish finishes. A restore serves clients on the release's original runtime.
+2. Leave **release_tag** empty to publish the current `main`. To restore an older preview, paste its full tag from [GitHub Releases](https://github.com/RyanAquino/settle-down/releases). A restore checks CI on the current tip of `main`, then republishes the saved `org-ryan` group to `preview`. This also works for older manifests that list both projects.
+3. Click **Run workflow**. A restored update serves clients on the release's original runtime.
 
-GitHub lets writers request runs. The workflow skips manual publishes and retries requested by anyone other than the repository owner. If one project succeeds and the other fails, choose **Re-run failed jobs** to retry the failed project. GitHub Actions retains the successful project's update group ID for the release. If another preview has since been deployed, start a fresh run to update both projects together.
+The GitHub repository owner can publish and retry releases. If recording the GitHub prerelease fails after Expo accepts the update, choose **Re-run failed jobs**. The release job reuses the saved group.
 
-Set the repository Actions secret `EXPO_TOKEN` to an Expo access token with publish access to both projects. [Create an Expo access token](https://expo.dev/settings/access-tokens).
+Set the repository Actions secret `EXPO_TOKEN` to an Expo access token with publish access to the org project. [Create an Expo access token](https://expo.dev/settings/access-tokens).
 
-**Sharing with testers:** Expo Go QR links from `eas update` don't open for people who aren't members of the Expo project. Invite testers to the `org-ryan` organization and share the org project's update, or use an internal-distribution build (`build:preview`). iOS internal builds require a paid Apple Developer account to register devices.
+Invite Expo Go testers to `org-ryan` and share the org preview QR code, including with testers who previously opened a personal-project link. Standalone builds embed their project's update URL. To receive org updates, users of an older personal build need a build generated with the org configuration. iOS internal distribution requires a paid Apple Developer account to register devices.

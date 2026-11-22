@@ -25,6 +25,8 @@ open ios/SettleDown.xcworkspace
 
 If you already have a working `ios/SettleDown.xcworkspace`, open it directly. Run prebuild again when native dependencies or Expo configuration change. Adding `--clean` replaces the generated `ios/` directory, including manual Xcode edits.
 
+To move an existing renewal build to the org's Expo project, run `npx expo prebuild --platform ios` in the renewal checkout after pulling the org configuration. The next Release build will embed the org update URL. Install that build on each phone.
+
 1. Select the **SettleDown** app target in Xcode. Under **Signing & Capabilities**, enable **Automatically manage signing**, select your Personal Team for the Release configuration, and keep the bundle identifier `com.ryan.aquino.settledown`.
 2. Unlock each phone and connect it to the Mac by USB for initial pairing. Accept **Trust This Computer** and enable **Developer Mode** if prompted. In Xcode, open **Device Hub** from **Xcode → Open Developer Tool**, select the phone, and resolve any pairing prompts. A paired phone can subsequently connect over the same Wi-Fi. [Apple’s device pairing guide](https://developer.apple.com/documentation/xcode/managing-your-simulated-and-physical-devices-in-device-hub)
 3. Run `xcrun devicectl list devices` and copy each physical iPhone’s hardware **UDID**. The examples below use `ryan` for the iPhone 16 Pro and `maiphone` for the iPhone 13 mini. The aliases are local labels. You can configure both while one is away.

@@ -16,7 +16,6 @@ npm run lint           # expo lint (eslint-config-expo, flat config)
 npm run type-check     # tsc --noEmit
 npm run build:preview  # EAS internal-distribution build
 npm run update:preview # EAS OTA update to the preview channel (also :production variants)
-npm run update:preview:org # same, for the org-ryan copy of the project (every build/update script has an :org variant)
 ```
 
 Run `npm run check` for formatting, typed lint, TypeScript, Jest/RNTL app tests, verification-tool tests, and Knip. Install tooling dependencies with `npm ci --prefix tools/verify-ios --ignore-scripts --omit=dev`. See `docs/ci.md` for native checks and CI activation. Tests live in `tests/`, outside Expo Router's `app/` directory. Receipt calculations, parsing, and API schemas live in `utils/receipt.ts`; retry logic is in `utils/retry.ts`. The removed `reset-project` script referenced a nonexistent file.
@@ -50,6 +49,6 @@ API calls are made with plain `fetch` in each screen; there is no shared API cli
 ## Distribution notes
 
 - `runtimeVersion` uses the `appVersion` policy, so OTA updates only reach builds with the same `expo.version` in `app.json`.
-- There are two EAS projects: `@ryan.aquino/settle-down` (the default) and a copy, `@org-ryan/settle-down`. `app.config.ts` sets `owner`, `extra.eas.projectId` and `updates.url` from `EAS_PROJECT_OWNER`, and every other setting stays in `app.json`. Don't put the project ID back into `app.json`. The org project has `EAS_PROJECT_OWNER=org-ryan` as an EAS env var in all environments, so cloud builds resolve to it as well.
-- The two projects share nothing on EAS. Publish each update to both, and when you change an EAS env var in one project, change it in the other too.
+- Builds, updates and restores use `@org-ryan/settle-down`. Keep the owner, EAS project ID and update URL in `app.config.ts`. Configure EAS environment variables in the org project.
+- Run **Publish Expo Go previews** on `main` to publish or restore the org preview. Each GitHub prerelease records its org update group in `expo-groups.json`.
 - Expo Go QR links from `eas update` return a 403 for people who aren't members of the Expo project. To share, invite testers to the `org-ryan` org and use the org project's update, or share internal-distribution EAS builds. iOS builds need a paid Apple Developer account.
