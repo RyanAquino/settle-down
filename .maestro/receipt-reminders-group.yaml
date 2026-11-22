@@ -39,10 +39,20 @@ name: Verify group delivery, active suppression and stale taps
 - takeScreenshot: production-group
 - tapOn:
     id: verify-open-app-settings
+- extendedWaitUntil:
+    visible:
+      id: breadcrumb
+      text: Return to Settle Down
+    timeout: 30000
+- runFlow:
+    when:
+      visible: close
+    commands:
+      - tapOn: close
 - runFlow:
     when:
       visible:
-        id: Settings
+        id: 'Settings|com[.]apple[.]settings[.][a-zA-Z]+'
     commands:
       - scrollUntilVisible:
           element:
@@ -53,15 +63,18 @@ name: Verify group delivery, active suppression and stale taps
           id: com.apple.settings.apps
 - runFlow:
     when:
-      visible: Search Apps
+      visible:
+        id: 'Apps|com[.]apple[.](Settings[.]Apps[.]Hidden|Passbook|Passwords|Preview)'
     commands:
       - scrollUntilVisible:
           element:
             id: com.ryan.aquino.settledown
+            text: Settle Down
           direction: DOWN
           speed: 100
       - tapOn:
           id: com.ryan.aquino.settledown
+          text: Settle Down
 - scrollUntilVisible:
     element: Notifications
     direction: DOWN

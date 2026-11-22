@@ -21,27 +21,42 @@ name: Enable notifications in Settings and skip missed reminders
 - tapOn:
     id: verify-age-receipt
 - tapOn: Enable reminders
+- extendedWaitUntil:
+    visible:
+      id: breadcrumb
+      text: Return to Settle Down
+    timeout: 30000
+- runFlow:
+    when:
+      visible: close
+    commands:
+      - tapOn: close
 - runFlow:
     when:
       visible:
-        id: Settings
+        id: 'Settings|com[.]apple[.]settings[.][a-zA-Z]+'
     commands:
       - scrollUntilVisible:
           element:
             id: com.apple.settings.apps
           direction: DOWN
+          speed: 100
       - tapOn:
           id: com.apple.settings.apps
 - runFlow:
     when:
-      visible: Search Apps
+      visible:
+        id: 'Apps|com[.]apple[.](Settings[.]Apps[.]Hidden|Passbook|Passwords|Preview)'
     commands:
       - scrollUntilVisible:
           element:
+            id: com.ryan.aquino.settledown
             text: Settle Down
           direction: DOWN
+          speed: 100
       - tapOn:
           id: com.ryan.aquino.settledown
+          text: Settle Down
 # Settings can leave the previous installation's enabled switch on screen.
 # Reopen its notification page to read the newly installed app's permission.
 - runFlow:

@@ -179,7 +179,10 @@ verifier. Each starts on the camera screen and captures its own evidence.
 For banner taps, open iOS Settings from the schedule inspector and set Settle
 Down’s **Notifications → Banner Style** to **Persistent**. Check the selected
 style before returning to the app. The banner then stays on the Home Screen
-while Maestro finds and taps its text.
+while Maestro finds and taps its text. Settings can retain an open search
+keyboard between installs. The flows wait for **Return to Settle Down**, dismiss
+search using the accessibility label `close` when present, and locate the app
+under **Apps** before interacting with its notification preferences.
 
 - [Reminder schedule, taps and submission](../../.maestro/receipt-reminders.yaml).
   Inspect the pending requests for a saved photo. Check the three-hour interval
