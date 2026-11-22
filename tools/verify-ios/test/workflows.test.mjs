@@ -13,7 +13,7 @@ const report = parse(
   ),
 );
 
-test('the applicability workflow reads PR metadata with a trusted base checkout', async () => {
+test('every applicability event classifies PR metadata with a trusted read-only checkout', async () => {
   const scope = parse(
     await readFile(
       new URL('../../../.github/workflows/verify-ios-applicability.yml', import.meta.url),
@@ -28,11 +28,26 @@ test('the applicability workflow reads PR metadata with a trusted base checkout'
   });
   assert.deepEqual(scope.permissions, {});
   const job = scope.jobs.applicability;
-  assert.deepEqual(job.permissions, { contents: 'read', 'pull-requests': 'read', checks: 'write' });
+  assert.deepEqual(job.permissions, { contents: 'read', 'pull-requests': 'read' });
+  assert.equal(job.if, undefined);
   assert.equal(job['runs-on'], 'ubuntu-latest');
   assert.deepEqual(
     job.steps.filter((step) => step.uses?.startsWith('actions/checkout@')).map((step) => step.with),
     [{ ref: '${{ github.sha }}', 'persist-credentials': false }],
+  );
+  const classify = job.steps.find((step) => step.id === 'classify');
+  assert.equal(classify.if, undefined);
+  assert.match(classify.with.script, /return (?:await )?isExempt\(/);
+  assert.equal(job.outputs.exempt, '${{ steps.classify.outputs.result }}');
+
+  // A static required job name would let a skipped job satisfy the ruleset for app changes.
+  const exemption = scope.jobs.exemption;
+  assert.equal(exemption.needs, 'applicability');
+  const confirmed = "needs.applicability.outputs.exempt == 'true'";
+  assert.equal(exemption.if, confirmed);
+  assert.equal(
+    exemption.name,
+    `\${{ needs.applicability.result == 'success' && ${confirmed} && 'iOS PR Verification' || 'iOS verification exemption' }}`,
   );
 });
 
@@ -111,4 +126,15 @@ test('build and verification use the hosted image with the pinned iOS runtime', 
     '/Applications/Xcode_26.6.app/Contents/Developer',
   );
   assert.equal(main.jobs.verify['timeout-minutes'], 90);
+});
+
+test('only the trusted verification step receives the optional OpenRouter key', () => {
+  const step = main.jobs.verify.steps.find((step) =>
+    step.run?.startsWith('node ci/tools/verify-ios/runner.mjs '),
+  );
+  assert.equal(step.env.OPENROUTER_API_KEY, '${{ secrets.OPENROUTER_API_KEY }}');
+  assert.equal(step.env.IOS_VERIFY_OPENROUTER_MODEL, '${{ vars.IOS_VERIFY_OPENROUTER_MODEL }}');
+  assert.equal(step.env.IOS_VERIFY_PROVIDER, '${{ vars.IOS_VERIFY_PROVIDER }}');
+  assert.equal(JSON.stringify(main).split('secrets.OPENROUTER_API_KEY').length - 1, 1);
+  assert.ok(!JSON.stringify(report).includes('secrets.OPENROUTER_API_KEY'));
 });

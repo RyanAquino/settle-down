@@ -21,7 +21,7 @@ Camera / Library  →  Loading (upload + OCR)  →  Receipt details  →  Settle
 
 ### Receipt inbox and offline behavior
 
-Open **Inbox** from the camera to pick up an unfinished receipt. Camera captures and library selections are copied to app storage before scanning. If you are offline or the upload fails, open the saved photo from the inbox when you are online. Camera captures also go to your photo library when permission allows.
+Open **Inbox** from the camera to pick up an unfinished receipt. Camera captures and library selections are copied to app storage before scanning. If you are offline or the upload fails, open the saved photo from the inbox when you are online.
 
 Scanned drafts save edits, the selected group, payer, and item assignments on this device as you work. Tap **Save for later** to return to the inbox, or reopen the draft after leaving the app. A confirmed Settle Up submission or an explicit **Discard** removes the draft and its inbox photo.
 
@@ -35,7 +35,7 @@ On iOS, tapping a reminder while Expo Go is in the background returns to the sav
 
 - **Expo SDK 58**, React Native 0.88, React 19, TypeScript
 - **Expo Router**: file-based routing in `app/`, with typed routes and the React Compiler enabled
-- **expo-camera** and **expo-image-picker** for capturing receipts; **expo-media-library** for saving photos offline
+- **expo-camera** and **expo-image-picker** for capturing and selecting receipt photos
 - **@react-native-community/netinfo** to detect when the device is offline
 - **expo-haptics** and React Native's built-in `Animated` API for feedback and motion (shared helpers are in `components/motion.tsx`)
 - **EAS Build / EAS Update** for distribution
@@ -146,6 +146,16 @@ npm run update:production    # Push an OTA JS update to the production channel
 
 The app lives in two EAS projects: `@ryan.aquino/settle-down` (personal, the default) and `@org-ryan/settle-down` (a copy in the `org-ryan` organization).
 `app.config.ts` picks one from the `EAS_PROJECT_OWNER` environment variable, and every script above has an `:org` variant (for example `npm run update:preview:org`) that targets the org project.
-The two projects don't share anything, so publish each update to both, and keep their EAS environment variables in sync.
+After `Quality` passes for a push to `main`, CI stages the iOS and Android bundles in each project's EAS `preview` environment. Before publishing to either `preview` channel, it creates a GitHub prerelease tagged `expo-preview-<commit SHA>` with GitHub-generated release notes. The attached `expo-groups.json` records the original EAS update group for each project. Keep the two projects' preview environment variables in sync.
+
+**Publish or restore a preview**
+
+1. Open **Actions → Publish Expo Go previews → Run workflow** as the GitHub repository owner. Select the `main` branch.
+2. Leave **release_tag** empty to publish the current `main` after its `Quality` check passes. To restore an older preview, paste its full tag from [GitHub Releases](https://github.com/RyanAquino/settle-down/releases).
+3. Click **Run workflow**. Both projects receive the bundles recorded for that release. A restore serves clients on the release's original runtime. The next successful push to `main` publishes normally.
+
+GitHub lets writers request runs. The workflow skips manual publishes and retries requested by anyone other than the repository owner. If one project's publish fails, the owner can choose **Re-run failed jobs**.
+
+Set the repository Actions secret `EXPO_TOKEN` to an Expo access token with publish access to both projects. [Create an Expo access token](https://expo.dev/settings/access-tokens).
 
 **Sharing with testers:** Expo Go QR links from `eas update` don't open for people who aren't members of the Expo project. Invite testers to the `org-ryan` organization and share the org project's update, or use an internal-distribution build (`build:preview`). iOS internal builds require a paid Apple Developer account to register devices.

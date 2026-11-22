@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, userEvent } from '@testing-library/react-native';
+import { fireEvent, render, screen, userEvent, within } from '@testing-library/react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { Share } from 'react-native';
 import ReceiptDetailsScreen from '../app/receipt-details';
 
@@ -11,7 +12,7 @@ jest.mock('expo-router', () => ({
     const { useEffect } = jest.requireActual<typeof import('react')>('react');
     useEffect(effect, [effect]);
   },
-  useLocalSearchParams: () => ({ useMockData: 'true' }),
+  useLocalSearchParams: jest.fn(),
   usePreventRemove: jest.fn(),
   router: { back: jest.fn() },
 }));
@@ -20,13 +21,20 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 jest.mock('@react-native-community/datetimepicker', () => () => null);
 
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
 afterEach(() => {
+  jest.useRealTimers();
   jest.restoreAllMocks();
 });
 
+const response = (items: unknown[]) =>
+  ({ ok: true, json: () => Promise.resolve({ items }) }) as Response;
+
 test('the itemized preview can be shared before choosing a payer and sync rejects mismatched edits', async () => {
-  const response = (items: unknown[]) =>
-    ({ ok: true, json: () => Promise.resolve({ items }) }) as Response;
+  jest.mocked(useLocalSearchParams).mockReturnValue({ useMockData: 'true' });
   const fetch = jest
     .spyOn(globalThis, 'fetch')
     .mockResolvedValueOnce(response([{ id: 'group', name: 'Dinner', currency: 'JPY' }]))
@@ -43,6 +51,10 @@ test('the itemized preview can be shared before choosing a payer and sync reject
 
   await render(<ReceiptDetailsScreen />);
   await screen.findByTestId('paid-by-aya');
+  expect(
+    within(screen.getByTestId('receipt-item-4')).getByText('¥240 paid · ¥30 saved'),
+  ).toBeOnTheScreen();
+  expect(screen.getAllByText(/saved/)).toHaveLength(1);
   expect(screen.getByTestId('show-my-share')).toBeDisabled();
 
   await user.press(screen.getByTestId('item-1-assign-aya'));
@@ -74,4 +86,36 @@ test('the itemized preview can be shared before choosing a payer and sync reject
   expect(screen.getByTestId('sync-transaction')).toBeDisabled();
   expect(screen.getByText('The items and tax must match the scanned total.')).toBeOnTheScreen();
   expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+test('scanned savings use plain amounts without a currency and follow edits to the paid price', async () => {
+  jest.mocked(useLocalSearchParams).mockReturnValue({
+    data: JSON.stringify({
+      receipt_items: [
+        {
+          english_name: 'Rice',
+          japanese_name: '米',
+          item_order: 1,
+          cost: 600,
+          quantity: 2,
+          discount: 100,
+        },
+        { english_name: 'Tea', japanese_name: 'お茶', item_order: 2, cost: 80, quantity: 1 },
+      ],
+      en_shop_name: 'Market',
+      jp_shop_name: '市場',
+      tax_percentage: 0,
+      total_amount: 680,
+      receipt_date: '2026-11-16T00:00:00Z',
+    }),
+  });
+  jest.spyOn(globalThis, 'fetch').mockResolvedValue(response([]));
+
+  await render(<ReceiptDetailsScreen />);
+  const rice = within(screen.getByTestId('receipt-item-1'));
+  expect(rice.getByText('600 paid · 100 saved')).toBeOnTheScreen();
+  expect(within(screen.getByTestId('receipt-item-2')).queryByText(/saved/)).toBeNull();
+
+  await fireEvent.changeText(rice.getByLabelText('Cost of Rice'), '580');
+  expect(rice.getByText('580 paid · 100 saved')).toBeOnTheScreen();
 });

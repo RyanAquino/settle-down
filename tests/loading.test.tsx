@@ -2,7 +2,6 @@ import { render, screen, userEvent, waitFor } from '@testing-library/react-nativ
 import { router, useLocalSearchParams } from 'expo-router';
 import { File } from 'expo-file-system';
 import NetInfo from '@react-native-community/netinfo';
-import * as MediaLibrary from 'expo-media-library/legacy';
 import { createPhotoDraft, readDraft, saveDraft, removeDraft } from '@/utils/receipt-inbox';
 import { receiptLeftForLater, setActiveReceiptDraft } from '@/utils/receipt-reminder-lifecycle';
 import { Alert } from 'react-native';
@@ -30,11 +29,6 @@ jest.mock('@react-native-community/netinfo', () => ({
   fetch: jest.fn().mockResolvedValue({ isConnected: true, type: 'wifi' }),
 }));
 jest.mock('expo-file-system', () => ({ File: jest.fn() }));
-jest.mock('expo-media-library/legacy', () => ({
-  PermissionStatus: { GRANTED: 'granted' },
-  requestPermissionsAsync: jest.fn(),
-  saveToLibraryAsync: jest.fn(),
-}));
 jest.mock('@/utils/receipt-inbox', () => ({
   createPhotoDraft: jest.fn(),
   readDraft: jest.fn(),
@@ -128,7 +122,7 @@ test('two inconsistent scans show the original photo and let the payer retake it
 });
 
 test.each([false, true])(
-  'offline photos are queued even without Photos access (fromLibrary=%s)',
+  'an offline photo stays in the inbox and runs the reminder permission flow (fromLibrary=%s)',
   async (fromLibrary) => {
     jest
       .mocked(useLocalSearchParams)
@@ -136,16 +130,43 @@ test.each([false, true])(
     jest
       .mocked(NetInfo.fetch)
       .mockResolvedValue({ isConnected: false } as Awaited<ReturnType<typeof NetInfo.fetch>>);
-    jest
-      .mocked(MediaLibrary.requestPermissionsAsync)
-      .mockRejectedValue(new Error('Permission denied'));
     const upload = jest.spyOn(globalThis, 'fetch');
     await render(<LoadingScreen />);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/inbox'));
+    expect(createPhotoDraft).toHaveBeenCalledWith('file:///receipt.jpg');
     expect(receiptLeftForLater).toHaveBeenCalledTimes(1);
-    expect(createPhotoDraft).toHaveBeenCalledTimes(1);
-    expect(MediaLibrary.requestPermissionsAsync).toHaveBeenCalledTimes(fromLibrary ? 0 : 1);
     expect(upload).not.toHaveBeenCalled();
+  },
+);
+
+test('a failed upload leaves the captured photo in the inbox', async () => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {});
+  const upload = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+  await render(<LoadingScreen />);
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/inbox'), { timeout: 5000 });
+  expect(upload).toHaveBeenCalledTimes(3);
+  expect(receiptLeftForLater).toHaveBeenCalledTimes(1);
+  expect(removeDraft).not.toHaveBeenCalled();
+});
+
+test.each([
+  [false, 'Couldn’t save the receipt to your inbox. Please retake the photo.'],
+  [true, 'The photo is in your photo library. Select it again to scan.'],
+])(
+  'an offline inbox write failure explains how to recover (fromLibrary=%s)',
+  async (fromLibrary, error) => {
+    jest
+      .mocked(useLocalSearchParams)
+      .mockReturnValue({ photoUri: 'file:///receipt.jpg', fromLibrary: String(fromLibrary) });
+    jest.mocked(createPhotoDraft).mockRejectedValueOnce(new Error('Storage full'));
+    jest
+      .mocked(NetInfo.fetch)
+      .mockResolvedValue({ isConnected: false } as Awaited<ReturnType<typeof NetInfo.fetch>>);
+    await render(<LoadingScreen />);
+    await waitFor(() =>
+      expect(router.replace).toHaveBeenCalledWith({ pathname: '/', params: { error } }),
+    );
+    expect(receiptLeftForLater).not.toHaveBeenCalled();
   },
 );
 

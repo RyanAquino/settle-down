@@ -6,10 +6,10 @@ export const FINALIZE_MS = 2 * 60_000;
 const uiTools = new Set(['reset_scenario', 'execute_flow', 'inspect_screen', 'screenshot']);
 
 export class ExplorationBudget {
-  constructor({ deadline = Date.now() + EXPLORATION_MS, now = Date.now } = {}) {
+  constructor({ deadline = Date.now() + EXPLORATION_MS, now = Date.now, calls = 0 } = {}) {
     this.deadline = deadline;
     this.now = now;
-    this.calls = 0;
+    this.calls = calls;
     this.finalizing = false;
   }
   snapshot() {
@@ -145,11 +145,11 @@ export function requireScenarioEvidence(plan, journal, regressions = []) {
   }
 }
 
-export function agentFailureMessage(agent, journal) {
+export function agentFailureMessage(agent, journal, provider = 'copilot') {
   const failed = journal.filter((call) => !call.ok);
   const last = journal.at(-1);
   const reason = agent.timedOut
     ? 'reached its 25-minute exploration deadline before completing verification'
     : `exited ${agent.code}`;
-  return `Copilot ${reason}. Last completed tool: ${last?.tool || 'none'}. Failed tool calls: ${failed.length}${failed.length ? ` (${[...new Set(failed.map((call) => call.tool))].join(', ')})` : ''}. See agent.jsonl and tool-calls.jsonl for details.`;
+  return `${provider} ${reason}. Last completed tool: ${last?.tool || 'none'}. Failed tool calls: ${failed.length}${failed.length ? ` (${[...new Set(failed.map((call) => call.tool))].join(', ')})` : ''}. See agent.jsonl and tool-calls.jsonl for details.`;
 }

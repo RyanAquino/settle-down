@@ -12,7 +12,6 @@
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to capture high-quality photos.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select existing photos for processing.",
-        "NSPhotoLibraryAddUsageDescription": "This app saves receipt photos to your photo library when offline for later processing.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.ryan.aquino.settledown"
@@ -29,13 +28,10 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.ACCESS_MEDIA_LOCATION",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO"
+        "android.permission.READ_MEDIA_VIDEO"
       ],
       "package": "com.ryan.aquino.settledown"
     },
@@ -57,14 +53,6 @@
         "expo-image-picker",
         {
           "photosPermission": "The app accesses your photos to let you select and process receipt images."
-        }
-      ],
-      [
-        "expo-media-library",
-        {
-          "photosPermission": "Allow Settle Down to save receipt photos to your photo library when offline.",
-          "savePhotosPermission": "Allow Settle Down to save receipt photos to your photo library when offline.",
-          "isAccessMediaLocationEnabled": true
         }
       ],
       "@react-native-community/datetimepicker",

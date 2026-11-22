@@ -6,6 +6,8 @@ This repository contains the Expo Router mobile client for iOS and Android. A se
 
 Start every feature and bug fix by creating a dedicated Git worktree for it with `git worktree add`. Make changes, run checks, and commit from that worktree.
 
+Assign pull requests to `RyanAquino` when opening them.
+
 Include the fixtures, accessible controls, and assertions needed for CI `/verify` to exercise each simulator-observable change when the PR opens. The verifier runs trusted tooling from the default branch against the PR’s app build. Use capabilities already available there, or land a prerequisite tooling PR first. Document how to reach the changed behavior and what the verifier should observe.
 
 ## Local development
@@ -25,7 +27,7 @@ Run `npm start` for the Expo dev server, or `npm run ios` / `npm run android` fo
 ## Receipt flow
 
 - `app/index.tsx` mounts the camera while the home screen is focused. Preserve camera release on navigation. Capture and library selection pass a `photoUri` to `app/loading.tsx`. Library picks also set `fromLibrary`.
-- The upload screen treats only an explicit `isConnected === false` as offline. Preserve the fallback for offline or exhausted uploads. Camera captures can be saved to the photo library, and library picks already have a copy there.
+- The upload screen treats only an explicit `isConnected === false` as offline. Save camera captures and library imports in the Receipt Inbox before upload. When offline or after upload retries are exhausted, direct users to the saved draft.
 - Append an `expo-file-system` File to the multipart field `file` and let fetch set the boundary. On success the loading screen replaces itself with `/receipt-details`, passing the serialized response in the `data` route param.
 - Keep API schemas, receipt parsing, totals, split payloads, and currency formatting in `utils/receipt.ts`. Each item's `cost` already covers its full quantity. Use `item_order` as the stable key for rendering, cost edits, and member selections. Format amounts using the selected group's currency and display plain numbers until a currency is available.
 
