@@ -138,3 +138,8 @@ test('only the trusted verification step receives the optional OpenRouter key', 
   assert.equal(JSON.stringify(main).split('secrets.OPENROUTER_API_KEY').length - 1, 1);
   assert.ok(!JSON.stringify(report).includes('secrets.OPENROUTER_API_KEY'));
 });
+
+test('the verifier installs Maestro with the checksum-pinned installer from the trusted checkout', () => {
+  const install = main.jobs.verify.steps.find((step) => step.name === 'Install pinned Maestro');
+  assert.match(install.run, /^\s*bash ci\/tools\/ci\/install-maestro\.sh /m);
+});
