@@ -30,7 +30,7 @@ export default function ReceiptInboxScreen() {
     if (opening.current) return;
     opening.current = true;
     if (draft.receipt) router.push({ pathname: '/receipt-details', params: { draftId: draft.id } });
-    else router.push(prepareScan({ draftId: draft.id }));
+    else router.push(prepareScan({ draftId: draft.id, photoUri: draftPhotoUri(draft) }));
   }
 
   function discard(draft: ReceiptDraft) {

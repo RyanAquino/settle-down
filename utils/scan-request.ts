@@ -1,7 +1,8 @@
 import { uuid } from 'expo';
 
 type ScanInput =
-  { photoUri: string; fromLibrary?: boolean; verifyOfflineImport?: boolean } | { draftId: string };
+  | { photoUri: string; fromLibrary?: boolean; verifyOfflineImport?: boolean }
+  | { draftId: string; photoUri: string };
 
 const pending = new Map<string, ScanInput>();
 

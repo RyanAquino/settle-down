@@ -107,7 +107,9 @@ test('two inconsistent scans show the original photo and let the payer retake it
 
   await render(<LoadingScreen />);
   const retake = await screen.findByRole('button', { name: 'Retake photo' });
-  expect(screen.getByLabelText('Original receipt photo')).toBeOnTheScreen();
+  expect(screen.getByLabelText('Original receipt photo')).toHaveProp('source', {
+    uri: 'file:///receipt.jpg',
+  });
   expect(router.replace).not.toHaveBeenCalled();
   expect(scan).toHaveBeenCalledTimes(2);
   await user.press(retake);
@@ -186,7 +188,9 @@ test.each([true, false])(
 );
 
 test('resuming a queued photo scans its durable copy and promotes the same draft', async () => {
-  jest.mocked(useLocalSearchParams).mockReturnValue(prepareScan({ draftId: draft.id }).params);
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue(prepareScan({ draftId: draft.id, photoUri: durableUri }).params);
   jest.mocked(readDraft).mockReturnValue(draft);
   jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(scanResponse(100));
   await render(<LoadingScreen />);

@@ -37,10 +37,9 @@ function ScanReceipt({ id }: { id: string }) {
   const [input] = useState(() => pendingScan(id));
   useEffect(() => releaseScan(id), [id]);
 
-  const selection = input && 'photoUri' in input ? input : null;
-  const photoUri = selection?.photoUri ?? '';
+  const selection = input && !('draftId' in input) ? input : null;
+  const photoUri = input?.photoUri ?? '';
   const draftId = input && 'draftId' in input ? input.draftId : '';
-  const [previewUri, setPreviewUri] = useState(photoUri);
   const importing = useRef<{ uri: string; result: Promise<ReceiptDraft> } | null>(null);
   const activeDraft = useRef<ReceiptDraft | null>(null);
   const fromLibrary = selection?.fromLibrary === true;
@@ -122,7 +121,6 @@ function ScanReceipt({ id }: { id: string }) {
       if (signal.aborted) return;
       activeDraft.current = draft;
       const uri = draft ? draftPhotoUri(draft) : photoUri;
-      setPreviewUri(uri);
       const details = (data: string) =>
         router.replace({
           pathname: '/receipt-details',
@@ -221,7 +219,7 @@ function ScanReceipt({ id }: { id: string }) {
         <View style={[styles.content, styles.retakeContent]}>
           <Image
             accessibilityLabel="Original receipt photo"
-            source={{ uri: previewUri }}
+            source={{ uri: photoUri }}
             style={styles.retakePhoto}
             resizeMode="contain"
           />
@@ -258,8 +256,8 @@ function ScanReceipt({ id }: { id: string }) {
       <View style={styles.content}>
         {/* Photo card — polaroid style with scan beam */}
         <Entrance distance={18} style={[styles.photoCard, { height: PHOTO_H }]}>
-          {previewUri ? (
-            <Image source={{ uri: previewUri }} style={styles.photo} resizeMode="cover" />
+          {photoUri ? (
+            <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
           ) : (
             <View style={[styles.photo, styles.photoPlaceholder]} />
           )}

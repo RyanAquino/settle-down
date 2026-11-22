@@ -52,7 +52,10 @@ test('opening a queued receipt prepares a scan for its saved draft', async () =>
   const target = jest.mocked(router.push).mock.calls[0][0];
   expect(target).toHaveProperty('pathname', '/loading');
   if (typeof target === 'string') throw new Error('Expected a route with a scan ID');
-  expect(pendingScan(String(target.params?.scanId))).toEqual({ draftId: photo.id });
+  expect(pendingScan(String(target.params?.scanId))).toEqual({
+    draftId: photo.id,
+    photoUri: 'file:///' + photo.id,
+  });
 });
 
 test('opening an edited receipt routes straight to its saved split', async () => {
