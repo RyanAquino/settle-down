@@ -3,23 +3,31 @@ import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
-import { File, Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import CameraScreen from './camera';
+import { createPhotoDraft } from '@/utils/receipt-inbox';
 import { Entrance, PressableScale } from '@/components/motion';
 
-// The verifier can set connectivity for one import while keeping its local backend online.
-async function importOfflinePhoto() {
+async function importVerificationPhoto(mode: 'offline' | 'interrupted') {
   try {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 1,
     });
     if (!result.canceled) {
+      const photoUri = result.assets[0].uri;
+      if (mode === 'interrupted') {
+        // Recreate the disk state immediately before a completed import is published.
+        const draft = await createPhotoDraft(photoUri);
+        new Directory(Paths.document, 'receipt-inbox', draft.id).rename('import-' + draft.id);
+        router.push('/inbox');
+        return;
+      }
       router.push({
         pathname: '/loading',
         params: {
-          photoUri: result.assets[0].uri,
+          photoUri,
           fromLibrary: 'true',
           verifyOfflineImport: 'true',
         },
@@ -64,9 +72,17 @@ export default function Index() {
             style={styles.debugButton}
             testID="verify-import-offline"
             accessibilityLabel="Import offline photo"
-            onPress={() => void importOfflinePhoto()}
+            onPress={() => void importVerificationPhoto('offline')}
           >
             <Text style={styles.debugButtonText}>Import offline photo</Text>
+          </PressableScale>
+          <PressableScale
+            style={styles.debugButton}
+            testID="verify-interrupted-import"
+            accessibilityLabel="Recover interrupted import"
+            onPress={() => void importVerificationPhoto('interrupted')}
+          >
+            <Text style={styles.debugButtonText}>Recover interrupted import</Text>
           </PressableScale>
           <PressableScale
             style={styles.debugButton}
