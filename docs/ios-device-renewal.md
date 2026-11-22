@@ -42,6 +42,8 @@ Install the [renewal helper](../tools/ios-renewal/renew.py) with your actual tea
 
 After a phone is due and reachable, the helper fetches the `main` branch from the saved origin into its own Git repository and creates a detached worktree at the fetched commit under `~/Library/Caches/SettleDownRenewal/worktree`. It copies the saved environment files there, runs `npm ci --include=dev`, and runs `NODE_ENV=production npx expo prebuild --platform ios --clean`. Xcode then builds the generated workspace in Release for that phone, with `CODE_SIGN_STYLE=Automatic` and the saved `DEVELOPMENT_TEAM`.
 
+The clean prebuild picks up the org Expo project configuration from `main`. A phone running a build from the personal Expo project switches to the org update URL when its next renewal installs successfully.
+
 Before installing, the helper checks the app’s bundle ID and verifies that the embedded profile matches the team, covers the destination UDID, and has a sufficiently late expiration. Each successful install records the Git commit and expiration. The helper removes the worktree after the attempt. Each phone gets its own fetch and prebuild, even when both are due in the same hourly check. A fetch or build failure leaves the install pending for the next check.
 
 ## 3. Install and trust the app on each iPhone
