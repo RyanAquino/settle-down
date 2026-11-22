@@ -56,8 +56,7 @@ Jest uses the Expo SDK 58 preset and RNTL 14. Read the installed RNTL documentat
 before changing component tests; rendering and interactions are asynchronous.
 The receipt suite covers line-total arithmetic, tax, stable item identity,
 member/shared allocations, currencies, and invalid receipt input. Retry tests
-cover backoff and exhaustion. The component test covers accessible activation
-and the disabled button state.
+cover backoff and exhaustion. Component tests exercise receipt edits, assignments, sharing, inbox recovery, and submission outcomes.
 
 Coverage includes untested app screens so the report does not suggest that the
 whole app is covered. Only `utils/receipt.ts` currently has blocking thresholds
@@ -96,8 +95,9 @@ times out, CI installs the same binary on a fresh simulator for the retry.
 An assertion failure ends the job immediately. The native evidence artifacts
 keep each attempt, and a successful retry is recorded in the job summary.
 
-Pull requests that change app, config, dependency, or CI files run the iOS smoke
-test. Both platforms run on every push to `main` and can also be run manually.
+Pull requests that change app code, bundled assets, native modules, the iOS project,
+build configuration, dependencies, or smoke tooling run the iOS smoke test.
+Both platforms run on every push to `main` and can also be run manually.
 macOS builds can take substantially longer than the Linux quality checks.
 The iOS runner/Xcode combination follows the existing verification workflow.
 Update both together when runner images change.
@@ -132,20 +132,11 @@ archives have fixed checksums. Update versions and checksums together from the
 maintainers' official releases. PR jobs have no application secrets or publishing
 credentials; privileged iOS reporting remains separate from executing PR code.
 
-## Activation and release implications
+## Merge checks and release implications
 
-Push the changes and inspect the first hosted runs. After `Quality gate` has
-reported successfully, add it to the main branch's required checks/ruleset.
-The dependency graph and Dependabot alerts must be enabled for dependency review.
-Repository settings are not modified by these files. Enable/review GitHub code
-scanning alerts as appropriate. Weekly workflows activate after merging their
-configuration onto the default branch.
+The main branch requires `Quality gate` and `iOS PR Verification`. For changes that affect the app, request the latter with a `/verify` comment on the PR. The applicability workflow records exemptions for changes outside the app and its build settings.
 
-This change aligns SDK 58 native patch dependencies and removes unused native
-packages. Create fresh native builds for testing/distribution. Before publishing
-an OTA update, change the app version/runtime consistently with the native
-binary: the current `appVersion` policy does not automatically detect native
-incompatibility. Do not publish these changes to an older binary's runtime.
+Create fresh native builds when native dependencies change. The `appVersion` runtime policy uses the app version for OTA compatibility. Bump it when a new update requires a different native runtime so existing binaries keep receiving compatible updates.
 
 Public Expo environment values are embedded in the application. The existing
 `EXPO_PUBLIC_AUTH_TOKEN` must not contain a private service credential; CI uses

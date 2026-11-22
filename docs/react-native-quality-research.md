@@ -4,7 +4,9 @@ Researched November 16, 2026, using official framework documentation and tool-ma
 
 The recommended starting stack is **strict TypeScript + Expo ESLint with typed rules + Prettier + Expo Doctor + Jest/React Native Testing Library + Maestro**, with GitHub Actions running the fast checks automatically. Add Knip and security scanning after establishing that baseline. Keep the existing iOS exploration workflow as supplemental coverage.
 
-**What is already here**
+**Repository snapshot on November 16, 2026**
+
+The table records the baseline used for this research. For the checks in use today, see [CI checks](ci.md).
 
 | Area                | Repository evidence                                                                                                                                          | Assessment                                                                                                                    |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |

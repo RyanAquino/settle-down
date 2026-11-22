@@ -24,6 +24,7 @@ const storedDraft = z.object({
 });
 export type ReceiptDraft = z.output<typeof storedDraft> & { id: string };
 
+const activeImports = new Set<string>();
 const root = () => new Directory(Paths.document, 'receipt-inbox');
 const directory = (id: string) => new Directory(root(), z.uuid().parse(id));
 export const draftPhotoUri = (draft: ReceiptDraft) =>
@@ -54,6 +55,7 @@ export async function createPhotoDraft(uri: string): Promise<ReceiptDraft> {
   const id = uuid.v4();
   const dir = new Directory(root(), 'import-' + id);
   dir.create({ intermediates: true });
+  activeImports.add(id);
   try {
     const source = new File(uri);
     const extension = source.extension.toLowerCase();
@@ -75,6 +77,8 @@ export async function createPhotoDraft(uri: string): Promise<ReceiptDraft> {
   } catch (error) {
     if (dir.exists) dir.delete();
     throw error;
+  } finally {
+    activeImports.delete(id);
   }
 }
 
@@ -94,13 +98,33 @@ export function readDraft(id: string): ReceiptDraft | null {
   return null;
 }
 
+function readInboxEntry(dir: Directory) {
+  const staged = /^(import|removed)-(.+)$/.exec(dir.name);
+  if (!staged) return readDraft(dir.name);
+  const [, operation, id] = staged;
+  if (!z.uuid().safeParse(id).success || activeImports.has(id)) return null;
+
+  // A stopped app can leave a photo behind either side of the final rename.
+  // draft.json is committed only after the asynchronous copy has completed.
+  try {
+    if (operation === 'import' && new File(dir, 'draft.json').exists && !directory(id).exists) {
+      dir.rename(id);
+      return readDraft(id);
+    }
+    dir.delete();
+  } catch {
+    // A later visit retries cleanup without blocking access to other receipts.
+  }
+  return null;
+}
+
 export function listDrafts() {
   const inbox = root();
   if (!inbox.exists) return [];
   return inbox
     .list()
     .filter((entry) => entry instanceof Directory)
-    .map((dir) => readDraft(dir.name))
+    .map(readInboxEntry)
     .filter((draft) => draft !== null)
     .sort((a, b) => b.createdAt - a.createdAt);
 }

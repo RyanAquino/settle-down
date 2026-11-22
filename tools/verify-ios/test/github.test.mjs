@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
-import { isExempt } from '../applicability.mjs';
+import { needsVerification } from '../applicability.mjs';
 import path from 'node:path';
 import {
   isCommand,
@@ -150,7 +150,7 @@ test('docs, workflows, and verifier-only changes remain exempt after a PR title 
     'tools/verify-ios/github.mjs',
   );
 
-  assert.equal(await isExempt(h), true);
+  assert.equal(await needsVerification(h.github, h.context.repo, h.pr), false);
   assert.deepEqual(h.writes, []);
 });
 
@@ -169,7 +169,11 @@ test('any app, asset, native, or build change retains verification', async () =>
     const h = harness();
     h.context.payload = { pull_request: h.pr };
     h.setFiles('docs/ci.md', '.github/workflows/native.yml', file);
-    assert.equal(await isExempt(h), false, JSON.stringify(file));
+    assert.equal(
+      await needsVerification(h.github, h.context.repo, h.pr),
+      true,
+      JSON.stringify(file),
+    );
   }
 });
 
@@ -179,7 +183,7 @@ test('an incomplete file list or a changed PR head cannot grant an exemption', a
     h.setFiles('README.md');
     h.pr.changed_files = changedCount;
     h.context.payload = { pull_request: h.pr };
-    assert.equal(await isExempt(h), false);
+    assert.equal(await needsVerification(h.github, h.context.repo, h.pr), true);
   }
 
   const h = harness();
@@ -190,7 +194,7 @@ test('an incomplete file list or a changed PR head cannot grant an exemption', a
     });
     return [{ filename: 'README.md' }];
   };
-  assert.equal(await isExempt(h), false);
+  assert.equal(await needsVerification(h.github, h.context.repo, h.pr), null);
 });
 
 test('a /verify comment on an exempt PR does not start a simulator build', async () => {

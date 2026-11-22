@@ -11,7 +11,11 @@ export default ({ config }: ConfigContext) => {
     extra: {
       ...config.extra,
       eas: { projectId },
-      ...(isE2E && { verifyOfflineImport: true, verifyReceiptReminders: true }),
+      ...(isE2E && {
+        verifyOfflineImport: true,
+        verifyMissingBackend: true,
+        verifyReceiptReminders: true,
+      }),
     },
     updates: { url: `https://u.expo.dev/${projectId}`, ...(isE2E ? { enabled: false } : {}) },
     ...(isE2E

@@ -4,7 +4,15 @@ For PRs targeting `main`, the applicability workflow checks whether the diff
 affects app code, assets, native iOS files, or app build and dependency settings.
 For docs-only, GitHub-workflow-only, and test or verification-tooling changes,
 its `iOS PR Verification` job passes and records why the simulator was skipped.
-PRs that also change the app require a `/verify` run to satisfy the same check.
+For app changes, the same PR job reads the latest authorized simulator verdict.
+Until a passing or skipped verdict is available, the job fails with the reason.
+Admission and completion automatically refresh this inexpensive Linux job.
+To recover a reporting problem, rerun **iOS verification applicability** on
+the PR. This reads the existing evidence without starting a build or simulator.
+If the gate predates this workflow version, edit the PR description to start
+a new gate from the current base branch. An empty commit immediately after a
+verified commit can reuse its result when the entire Git tree and comparison
+merge base match and the new head has no verification request of its own.
 
 Post a new PR conversation comment containing exactly `/verify` (surrounding
 whitespace is fine). Repository writers, maintainers, and admins can request runs
@@ -176,13 +184,13 @@ Use the `success` fixture and a fresh simulator app installation for each flow.
 The offline-import control opens the system photo picker with a seeded receipt.
 The following three Maestro flows use the commands supported by the trusted
 verifier. Each starts on the camera screen and captures its own evidence.
-For banner taps, open iOS Settings from the schedule inspector and set Settle
+For banner taps, open notification settings from the schedule inspector and set Settle
 Down’s **Notifications → Banner Style** to **Persistent**. Check the selected
 style before returning to the app. The banner then stays on the Home Screen
 while Maestro finds and taps its text. Settings can retain an open search
 keyboard between installs. The flows wait for **Return to Settle Down**, dismiss
-search using the accessibility label `close` when present, and locate the app
-under **Apps** before interacting with its notification preferences.
+search using the accessibility label `close` when present, and navigate through
+**Apps** if iOS opens the Settings root or app list.
 
 - [Reminder schedule, taps and submission](../../.maestro/receipt-reminders.yaml).
   Inspect the pending requests for a saved photo. Check the three-hour interval
@@ -203,7 +211,8 @@ under **Apps** before interacting with its notification preferences.
   Leave a photo and save its split while permission is denied. Age the saved
   split by two days, open Settings from **Enable reminders**, turn on the iOS
   **Allow Notifications** switch and resume the app. Check that neither missed
-  request appears. Add a fresh photo and verify that only its upcoming requests
+  request appears. Open the saved split and confirm its foreground reminder
+  is suppressed. Add a fresh photo and verify that only its upcoming requests
   are pending.
 
 In a CI build, **Inspect reminder schedule** reads iOS’s pending notification

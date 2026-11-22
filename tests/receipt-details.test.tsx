@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, userEvent, within } from '@testing-library/react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Share } from 'react-native';
+import * as api from '@/utils/api';
 import ReceiptDetailsScreen from '../app/receipt-details';
 
 jest.mock('@/utils/receipt-reminder-lifecycle', () => ({
@@ -85,6 +86,16 @@ test('the itemized preview can be shared before choosing a payer and sync reject
   await fireEvent.changeText(screen.getByTestId('item-cost-1'), '100');
   expect(screen.getByTestId('sync-transaction')).toBeDisabled();
   expect(screen.getByText('The items and tax must match the scanned total.')).toBeOnTheScreen();
+  await fireEvent.changeText(screen.getByTestId('item-cost-1'), '172,50');
+  await fireEvent.changeText(screen.getByTestId('item-cost-2'), '158,50');
+  expect(screen.getByTestId('sync-transaction')).toBeEnabled();
+  await fireEvent.changeText(screen.getByTestId('receipt-tax'), '8junk');
+  expect(screen.getByTestId('sync-transaction')).toBeDisabled();
+  expect(
+    screen.getByText('Enter amounts as numbers without grouping separators.'),
+  ).toBeOnTheScreen();
+  await fireEvent.changeText(screen.getByTestId('receipt-tax'), '8,0');
+  expect(screen.getByTestId('sync-transaction')).toBeEnabled();
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 
@@ -118,4 +129,16 @@ test('scanned savings use plain amounts without a currency and follow edits to t
 
   await fireEvent.changeText(rice.getByLabelText('Cost of Rice'), '580');
   expect(rice.getByText('580 paid · 100 saved')).toBeOnTheScreen();
+});
+
+test('a build without a backend URL keeps receipt details local', async () => {
+  jest.replaceProperty(api, 'apiBaseUrl', undefined);
+  jest.mocked(useLocalSearchParams).mockReturnValue({ useMockData: 'true' });
+  const fetch = jest.spyOn(globalThis, 'fetch').mockResolvedValue(response([]));
+
+  await render(<ReceiptDetailsScreen />);
+
+  expect(screen.getByText('This build is missing its backend URL.')).toBeOnTheScreen();
+  expect(screen.getByTestId('sync-transaction')).toBeDisabled();
+  expect(fetch).not.toHaveBeenCalled();
 });

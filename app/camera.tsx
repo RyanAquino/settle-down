@@ -1,3 +1,4 @@
+import { prepareScan } from '@/utils/scan-request';
 import { useCameraPermissions } from 'expo-camera';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { StyleSheet, Text, View, Alert, AppState, Linking } from 'react-native';
@@ -34,6 +35,27 @@ export default function CameraScreen() {
     if (params.error) Alert.alert('Error', params.error as string);
   }, [params.message, params.error]);
 
+  const pickFromLibrary = async () => {
+    if (pickingFromLibrary.current) return;
+    pickingFromLibrary.current = true;
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 1,
+        selectionLimit: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        router.push(prepareScan({ photoUri: result.assets[0].uri, fromLibrary: true }));
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to pick photo from library. Please try again.');
+    } finally {
+      pickingFromLibrary.current = false;
+    }
+  };
+
   if (!permission) return <View style={styles.container} />;
 
   if (!permission.granted) {
@@ -43,7 +65,9 @@ export default function CameraScreen() {
           <Text style={styles.permissionTitle}>Camera access</Text>
         </Entrance>
         <Entrance delay={80} distance={16}>
-          <Text style={styles.permissionBody}>Settle Down needs your camera to read receipts.</Text>
+          <Text style={styles.permissionBody}>
+            Allow camera access to take a receipt photo, or choose one from your library.
+          </Text>
         </Entrance>
         <Entrance delay={160} distance={16}>
           <PressableScale
@@ -65,47 +89,17 @@ export default function CameraScreen() {
             </Text>
           </PressableScale>
         </Entrance>
+        <PressableScale
+          testID="pick-receipt"
+          accessibilityLabel="Pick from library"
+          style={styles.libraryButton}
+          onPress={() => void pickFromLibrary()}
+        >
+          <Text style={styles.libraryButtonText}>Pick from library</Text>
+        </PressableScale>
       </View>
     );
   }
-
-  const pickFromLibrary = async () => {
-    if (pickingFromLibrary.current) return;
-    pickingFromLibrary.current = true;
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (permissionResult.status !== ImagePicker.PermissionStatus.GRANTED) {
-        Alert.alert('Permission required', 'Settle Down needs access to your photo library.', [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Open settings',
-            onPress: () => {
-              void Linking.openSettings();
-            },
-          },
-        ]);
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: false,
-        quality: 1,
-        selectionLimit: 1,
-      });
-
-      if (!result.canceled && result.assets && result.assets[0]) {
-        router.push({
-          pathname: '/loading',
-          params: { photoUri: result.assets[0].uri, fromLibrary: 'true' },
-        });
-      }
-    } catch {
-      Alert.alert('Error', 'Failed to pick photo from library. Please try again.');
-    } finally {
-      pickingFromLibrary.current = false;
-    }
-  };
 
   return (
     <View style={styles.container}>
@@ -136,6 +130,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     lineHeight: 22,
   },
+  libraryButton: { paddingHorizontal: 20, paddingVertical: 14 },
+  libraryButtonText: { color: theme.ink, fontSize: 15, fontWeight: '600' },
   permissionBtn: {
     paddingHorizontal: 20,
     paddingVertical: 12,

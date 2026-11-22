@@ -1,0 +1,21 @@
+appId: com.ryan.aquino.settledown
+name: An unconfigured receipt stays local
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: verify-missing-backend
+- assertVisible: 'This build is missing its backend URL.'
+- assertVisible:
+    id: receipt-group
+    enabled: false
+- assertNotVisible: 'CI Japan'
+- scrollUntilVisible:
+    element:
+      id: sync-transaction
+    direction: DOWN
+- assertVisible:
+    id: sync-transaction
+    enabled: false
+- takeScreenshot: receipt-without-backend

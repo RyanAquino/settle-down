@@ -19,6 +19,7 @@ import {
   subscribeReminderPermission,
 } from '@/utils/receipt-reminder-lifecycle';
 import { scheduleVerificationReceiptReminder } from '@/utils/receipt-reminders';
+import { prepareScan } from '@/utils/scan-request';
 import { theme, type } from '@/utils/theme';
 
 export default function ReceiptInboxScreen() {
@@ -56,9 +57,8 @@ export default function ReceiptInboxScreen() {
   function open(draft: ReceiptDraft) {
     if (opening.current) return;
     opening.current = true;
-    const params = { draftId: draft.id, photoUri: draftPhotoUri(draft) };
-    if (draft.receipt) router.push({ pathname: '/receipt-details', params });
-    else router.push({ pathname: '/loading', params });
+    if (draft.receipt) router.push({ pathname: '/receipt-details', params: { draftId: draft.id } });
+    else router.push(prepareScan({ draftId: draft.id, photoUri: draftPhotoUri(draft) }));
   }
 
   function discard(draft: ReceiptDraft) {

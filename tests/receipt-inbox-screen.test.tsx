@@ -1,5 +1,6 @@
 import { act, render, screen, userEvent } from '@testing-library/react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { pendingScan } from '@/utils/scan-request';
 import { Alert } from 'react-native';
 import ReceiptInboxScreen from '@/app/inbox';
 import { listDrafts, removeDraft, type ReceiptDraft } from '@/utils/receipt-inbox';
@@ -58,16 +59,26 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test.each([
-  ['Scan receipt, Receipt photo', '/loading', photo.id],
-  ['Continue split, Dinner', '/receipt-details', split.id],
-])('opening %s routes to its saved draft', async (name, pathname, id) => {
+test('opening a queued receipt prepares a scan for its saved draft', async () => {
   const user = userEvent.setup();
   await render(<ReceiptInboxScreen />);
-  await user.press(screen.getByRole('button', { name }));
+  await user.press(screen.getByRole('button', { name: 'Scan receipt, Receipt photo' }));
+  const target = jest.mocked(router.push).mock.calls[0][0];
+  expect(target).toHaveProperty('pathname', '/loading');
+  if (typeof target === 'string') throw new Error('Expected a route with a scan ID');
+  expect(pendingScan(String(target.params?.scanId))).toEqual({
+    draftId: photo.id,
+    photoUri: 'file:///' + photo.id,
+  });
+});
+
+test('opening an edited receipt routes straight to its saved split', async () => {
+  const user = userEvent.setup();
+  await render(<ReceiptInboxScreen />);
+  await user.press(screen.getByRole('button', { name: 'Continue split, Dinner' }));
   expect(router.push).toHaveBeenCalledWith({
-    pathname,
-    params: { draftId: id, photoUri: 'file:///' + id },
+    pathname: '/receipt-details',
+    params: { draftId: split.id },
   });
 });
 

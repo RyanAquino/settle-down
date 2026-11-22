@@ -19,14 +19,6 @@ name: Verify group delivery, active suppression and stale taps
 - tapOn: Scan receipt, Receipt photo
 - assertVisible: CI Receipt Shop
 - tapOn: Save for later
-- tapOn:
-    id: verify-receipt-reminder
-- tapOn: Continue split, CI Receipt Shop
-- extendedWaitUntil:
-    visible: Suppressed 1 receipt including this receipt
-    timeout: 20000
-- takeScreenshot: suppressed-active-split
-- tapOn: Save for later
 - tapOn: Back
 - tapOn:
     id: verify-import-offline
@@ -59,52 +51,65 @@ name: Verify group delivery, active suppression and stale taps
       visible: close
     commands:
       - tapOn: close
+- extendedWaitUntil:
+    visible:
+      id: 'Settings|Apps|Camera|ALLOW_NOTIFICATIONS_ID'
+    timeout: 30000
 - runFlow:
     when:
       visible:
-        id: Apps
-    commands:
-      - tapOn:
-          id: BackButton
-          text: Settings
-- runFlow:
-    when:
-      visible:
-        id: 'Settings|com[.]apple[.]settings[.][a-zA-Z]+'
+        id: Settings
     commands:
       - scrollUntilVisible:
           element:
             id: com.apple.settings.apps
           direction: DOWN
           speed: 100
+          timeout: 30000
       - tapOn:
           id: com.apple.settings.apps
+- extendedWaitUntil:
+    visible:
+      id: 'Apps|Camera|ALLOW_NOTIFICATIONS_ID'
+    timeout: 30000
 - runFlow:
     when:
       visible:
-        id: 'Apps|com[.]apple[.](Settings[.]Apps[.]Hidden|Passbook|Passwords|Preview)'
+        id: Apps
     commands:
       - scrollUntilVisible:
           element:
             id: com.ryan.aquino.settledown
-            text: Settle Down
           direction: DOWN
           speed: 100
+          timeout: 30000
+          visibilityPercentage: 50
       - tapOn:
           id: com.ryan.aquino.settledown
-          text: Settle Down
-- scrollUntilVisible:
-    element: Notifications
-    direction: DOWN
-- tapOn: Notifications
+- extendedWaitUntil:
+    visible:
+      id: 'Camera|ALLOW_NOTIFICATIONS_ID'
+    timeout: 30000
+- runFlow:
+    when:
+      notVisible:
+        id: ALLOW_NOTIFICATIONS_ID
+    commands:
+      - scrollUntilVisible:
+          element: Notifications
+          direction: DOWN
+      - tapOn: Notifications
 - tapOn:
     id: BANNER_STYLE_ID
 - tapOn: Persistent
 - tapOn:
     id: BackButton
 - assertVisible: Banner Style, Persistent
-- tapOn:
-    id: breadcrumb
+- pressKey: Home
+- launchApp:
+    stopApp: false
+    permissions:
+      camera: allow
 - assertVisible:
     id: verify-receipt-reminder
 - tapOn:

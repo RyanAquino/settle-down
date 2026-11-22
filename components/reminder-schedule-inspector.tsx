@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { requireOptionalNativeModule } from 'expo';
-import { Alert, Linking, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PressableScale } from '@/components/motion';
 import type { ReceiptDraft } from '@/utils/receipt-inbox';
+import { openReminderSettings } from '@/utils/receipt-reminder-lifecycle';
 import { theme, type } from '@/utils/theme';
 
 type Inspector = {
@@ -48,7 +49,7 @@ export function ReminderScheduleInspector({ drafts }: { drafts: ReceiptDraft[] }
             style={styles.action}
             onPress={() => {
               setOpen(false);
-              void Linking.openSettings().catch(() => Alert.alert('Couldn’t open app settings'));
+              void openReminderSettings().catch(() => Alert.alert('Couldn’t open app settings'));
             }}
           >
             <Text style={styles.link}>Open app settings</Text>

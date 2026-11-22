@@ -15,8 +15,9 @@ Camera / Library  →  Loading (upload + OCR)  →  Receipt details  →  Settle
 2. **Read** (`app/loading.tsx`): the photo is uploaded to the backend, which extracts the shop name, date, items, tax and total. The upload makes up to 3 attempts with exponential backoff.
 3. **Assign** (`app/receipt-details.tsx`):
    - choose a Settle Up group and who paid
-   - assign each item to a group member or mark it **Shared**
+   - assign an item to one member, mark it **Shared** across the group, or use **Split…** to divide it among selected members equally or by quantity
    - correct item costs, the tax %, or the receipt date if needed
+   - review paid amounts and scanned discounts, then use **Show my share** to see and share the breakdown after the assignments and totals balance
 4. **Sync**: the split is sent to Settle Up as a transaction.
 
 ### Receipt inbox and offline behavior
@@ -47,6 +48,7 @@ app/
   _layout.tsx          Root stack (no headers, slide transitions)
   index.tsx            Home: hosts the camera, plus an optional debug "Skip to Receipt" button
   camera.tsx           Camera view, shutter, library picker, permission prompt
+  inbox.tsx            Reopen and discard saved receipt drafts
   loading.tsx          Connectivity check, upload with retries, offline fallbacks
   receipt-details.tsx  Item editing, member assignment, Settle Up sync
 components/
@@ -80,7 +82,7 @@ If `EXPO_PUBLIC_AUTH_TOKEN` is set, every request includes it as `Authorization:
 
 ```bash
 nvm use
-npm install
+npm ci
 cp .env.sample .env
 ```
 
@@ -89,7 +91,7 @@ Then edit `.env`:
 | Variable                             | Description                                                                                                                            |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `EXPO_PUBLIC_API_BASE_URL`           | The backend's base URL, e.g. `http://192.168.0.242:8000` or an ngrok URL                                                               |
-| `EXPO_PUBLIC_AUTH_TOKEN`             | Optional bearer token for the backend                                                                                                  |
+| `EXPO_PUBLIC_AUTH_TOKEN`             | Optional public client token. Anyone with the app can read it. Keep private service credentials on the backend.                        |
 | `EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON` | `true` shows a "Skip to Receipt" button that opens the details screen with mock data, so you can work on that screen without a backend |
 
 > `EXPO_PUBLIC_*` values are inlined when the app is bundled. `.env` is gitignored, so EAS builds run in the cloud don't see it. Set these variables as EAS environment variables for the `preview` and `production` environments.
@@ -117,8 +119,7 @@ See [CI checks, local commands, coverage, and activation](docs/ci.md).
 
 ## PR verification
 
-After the CI setup is merged to `main`, repository writers can comment `/verify`
-on an open, same-repository PR. Copilot explores the changed iOS behavior, saves
+Repository writers can comment `/verify` on an open, same-repository PR targeting `main`. App and dependency changes require this check. The applicability workflow automatically passes it for documentation, workflow, and verifier-only changes. Copilot explores the changed iOS behavior, saves
 Maestro tests, and CI replays them against a synthetic local backend. The PR gets
 a separate final verdict comment identifying working, failing, or untestable
 behavior, with the captured commit and links to video, screenshots, test flows, and logs.

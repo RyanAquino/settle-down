@@ -1,4 +1,5 @@
 import { AppState, Linking, Platform } from 'react-native';
+import type { Href } from 'expo-router';
 import { isRunningInExpoGo } from 'expo';
 import * as Notifications from 'expo-notifications';
 import {
@@ -6,6 +7,7 @@ import {
   subscribeToVerifiedDeliveries,
 } from '@/utils/verify-reminder-presentation';
 import { draftPhotoUri, readDraft } from '@/utils/receipt-inbox';
+import { pendingScan } from '@/utils/scan-request';
 import {
   parseReceiptReminder,
   presentReceiptReminder,
@@ -118,12 +120,24 @@ test.each([
     >);
   jest.mocked(draftPhotoUri).mockReturnValue('file:///photo');
   getLast.mockReturnValue(response);
-  const navigate = jest.fn();
+  const navigate = jest.fn<void, [Href]>();
   startReceiptReminders(navigate)?.();
-  expect(navigate).toHaveBeenCalledWith({
-    pathname,
-    params: { draftId: 'a', photoUri: 'file:///photo', reminder: 'morning-123' },
-  });
+  if (scanned) {
+    expect(navigate).toHaveBeenCalledWith({
+      pathname,
+      params: { draftId: 'a', reminder: 'morning-123' },
+    });
+  } else {
+    const [target] = navigate.mock.calls[0];
+    if (typeof target === 'string') throw new Error('Expected a route with a scan ID');
+    const scanId = target.params?.scanId;
+    expect(target).toEqual({ pathname, params: { scanId } });
+    expect(pendingScan(String(scanId))).toEqual({
+      draftId: 'a',
+      photoUri: 'file:///photo',
+      reminder: 'morning-123',
+    });
+  }
 });
 
 test('a stale single tap opens the inbox with a new notice', () => {

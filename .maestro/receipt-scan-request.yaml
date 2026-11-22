@@ -1,0 +1,31 @@
+appId: com.ryan.aquino.settledown
+name: Recover an expired scan and scan explicitly selected photos
+---
+- launchApp:
+    permissions:
+      all: deny
+- tapOn:
+    id: verify-expired-scan
+- assertVisible: No saved receipts
+- takeScreenshot: expired-scan-opens-inbox
+- tapOn: Back
+- assertVisible: Open settings
+- tapOn:
+    id: pick-receipt
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- assertVisible: CI Receipt Shop
+- takeScreenshot: selected-photo-scanned
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: verify-interrupted-import
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- assertVisible: Scan receipt, Receipt photo
+- tapOn: Scan receipt, Receipt photo
+- assertVisible: CI Receipt Shop
+- takeScreenshot: recovered-inbox-photo-scanned

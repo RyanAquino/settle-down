@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import type { Href } from 'expo-router';
 import { observeReminderPresentation } from '@/utils/verify-reminder-presentation';
 import { draftPhotoUri, readDraft, subscribeToInbox } from '@/utils/receipt-inbox';
+import { prepareScan } from '@/utils/scan-request';
 import {
   askForReceiptReminders,
   getReceiptReminderPermission,
@@ -144,13 +145,17 @@ export function startReceiptReminders(navigate: (href: Href) => void) {
       navigate('/inbox');
     } else {
       const draft = readDraft(reminder.draftIds[0]);
-      if (draft) {
+      if (!draft) {
+        navigate({ pathname: '/inbox', params: { missingReceipt: token } });
+      } else if (draft.receipt) {
         navigate({
-          pathname: draft.receipt ? '/receipt-details' : '/loading',
-          params: { draftId: draft.id, photoUri: draftPhotoUri(draft), reminder: token },
+          pathname: '/receipt-details',
+          params: { draftId: draft.id, reminder: token },
         });
       } else {
-        navigate({ pathname: '/inbox', params: { missingReceipt: token } });
+        navigate(
+          prepareScan({ draftId: draft.id, photoUri: draftPhotoUri(draft), reminder: token }),
+        );
       }
     }
     Notifications.clearLastNotificationResponse();
