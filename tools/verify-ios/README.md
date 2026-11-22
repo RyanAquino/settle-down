@@ -181,7 +181,10 @@ explicit. The full archive remains available alongside the inline previews.
 ### Receipt reminders
 
 Use the `success` fixture and a fresh simulator app installation for each flow.
-The offline-import control opens the system photo picker with a seeded receipt.
+**Save offline reminder photo** downloads the seeded `/receipt.png` from the
+local fixture server into the CI app’s cache. The loading screen copies it into
+the inbox and handles the offline save exactly as it would for a captured photo.
+The separate offline-import scenario exercises the system photo picker.
 The following three Maestro flows use the commands supported by the trusted
 verifier. Each starts on the camera screen and captures its own evidence.
 For banner taps, open notification settings from the schedule inspector and set Settle

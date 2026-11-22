@@ -5,15 +5,7 @@ name: Verify group delivery, active suppression and stale taps
     permissions:
       all: allow
 - tapOn:
-    id: verify-import-offline
-- extendedWaitUntil:
-    visible:
-      id: PXGGridLayout-Info
-      index: 0
-    timeout: 30000
-- tapOn:
-    id: PXGGridLayout-Info
-    index: 0
+    id: verify-offline-reminder-photo
 - assertVisible: 'You.re offline'
 - tapOn: OK
 - tapOn: Scan receipt, Receipt photo
@@ -21,15 +13,7 @@ name: Verify group delivery, active suppression and stale taps
 - tapOn: Save for later
 - tapOn: Back
 - tapOn:
-    id: verify-import-offline
-- extendedWaitUntil:
-    visible:
-      id: PXGGridLayout-Info
-      index: 0
-    timeout: 30000
-- tapOn:
-    id: PXGGridLayout-Info
-    index: 0
+    id: verify-offline-reminder-photo
 - assertVisible: 'You.re offline'
 - tapOn: OK
 - assertVisible: Scan receipt, Receipt photo
