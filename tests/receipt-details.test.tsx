@@ -78,6 +78,16 @@ test('the itemized preview can be shared before choosing a payer and sync reject
   await fireEvent.changeText(screen.getByTestId('item-cost-1'), '100');
   expect(screen.getByTestId('sync-transaction')).toBeDisabled();
   expect(screen.getByText('The items and tax must match the scanned total.')).toBeOnTheScreen();
+  await fireEvent.changeText(screen.getByTestId('item-cost-1'), '172,50');
+  await fireEvent.changeText(screen.getByTestId('item-cost-2'), '158,50');
+  expect(screen.getByTestId('sync-transaction')).toBeEnabled();
+  await fireEvent.changeText(screen.getByTestId('receipt-tax'), '8junk');
+  expect(screen.getByTestId('sync-transaction')).toBeDisabled();
+  expect(
+    screen.getByText('Enter amounts as numbers without grouping separators.'),
+  ).toBeOnTheScreen();
+  await fireEvent.changeText(screen.getByTestId('receipt-tax'), '8,0');
+  expect(screen.getByTestId('sync-transaction')).toBeEnabled();
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 

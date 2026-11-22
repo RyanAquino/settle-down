@@ -33,6 +33,7 @@ import {
   groupsSchema,
   usersSchema,
   parseReceipt,
+  parseReceiptAmount,
   receiptTotals,
   splitReceipt,
   type ItemAssignment,
@@ -142,11 +143,6 @@ export default function ReceiptDetailsScreen() {
   );
 }
 
-function inputAmount(text: string) {
-  const amount = parseFloat(text);
-  return Number.isFinite(amount) ? Math.max(0, amount) : 0;
-}
-
 function ReceiptEditor({
   apiBaseUrl,
   receipt,
@@ -229,11 +225,11 @@ function ReceiptEditor({
         .map((item) =>
           costInputs[item.item_order] === undefined
             ? item
-            : { ...item, cost: inputAmount(costInputs[item.item_order]) },
+            : { ...item, cost: parseReceiptAmount(costInputs[item.item_order]) },
         ),
     [receipt.receipt_items, costInputs],
   );
-  const editableTaxPercentage = inputAmount(edits.tax);
+  const editableTaxPercentage = parseReceiptAmount(edits.tax);
   const shopInfo = { ...receipt, receipt_date: new Date(edits.date) };
 
   const fetchGroupUsers = useCallback(
@@ -479,6 +475,7 @@ function ReceiptEditor({
 
   // -------- derived --------
   const { subtotal, taxAmount } = receiptTotals(editableItems, editableTaxPercentage);
+  const amountsValid = Number.isFinite(subtotal) && Number.isFinite(editableTaxPercentage);
   const total = getTotal();
   const balance = reconcileReceipt(editableItems, editableTaxPercentage, total);
   const taxIncluded = balance?.taxAmount === 0 && editableTaxPercentage > 0;
@@ -701,6 +698,7 @@ function ReceiptEditor({
                       value={costInputs[item.item_order] ?? item.cost.toString()}
                       onChangeText={(t) => updateItemCost(item.item_order, t)}
                       keyboardType="decimal-pad"
+                      selectTextOnFocus
                       placeholder="0"
                       placeholderTextColor={theme.inkFaint}
                     />
@@ -821,6 +819,7 @@ function ReceiptEditor({
                   value={edits.tax}
                   onChangeText={updateTaxPercentage}
                   keyboardType="decimal-pad"
+                  selectTextOnFocus
                   placeholder="0"
                   placeholderTextColor={theme.inkFaint}
                 />
@@ -839,7 +838,9 @@ function ReceiptEditor({
           </View>
           {editableItems.length > 0 && !balance && (
             <Text style={styles.balanceWarning}>
-              The items and tax must match the scanned total.
+              {amountsValid
+                ? 'The items and tax must match the scanned total.'
+                : 'Enter amounts as numbers without grouping separators.'}
             </Text>
           )}
           <View style={styles.summaryActions}>
@@ -1279,16 +1280,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 6,
     backgroundColor: theme.surfaceAlt,
     borderRadius: theme.radiusSm,
     borderWidth: 1,
     borderColor: theme.border,
-    minWidth: 88,
+    minWidth: 132,
   },
   priceSymbol: { fontSize: 14, color: theme.inkMuted, fontWeight: '500', marginRight: 2 },
   priceInput: {
     flex: 1,
+    minHeight: 44,
     fontSize: 15,
     color: theme.ink,
     fontWeight: '600',
@@ -1362,11 +1363,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.border,
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 56,
+    minWidth: 92,
   },
   taxInput: {
     flex: 1,
+    minHeight: 44,
     fontSize: 14,
     color: theme.ink,
     fontWeight: '600',

@@ -47,6 +47,15 @@ export function parseReceipt(value: string | string[] | undefined): ReceiptData 
   }
 }
 
+// A receipt field is an ungrouped decimal. Preserve the zero placeholder for an
+// empty field and reject partially parsed pasted values.
+export function parseReceiptAmount(text: string) {
+  const normalized = text.trim().replace(',', '.');
+  if (!normalized) return 0;
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return NaN;
+  return Number(normalized);
+}
+
 export function receiptTotals(items: ReceiptItem[], taxPercentage: number) {
   // API costs are line totals and already include quantity.
   const subtotal = items.reduce((sum, item) => sum + item.cost, 0);
@@ -141,6 +150,7 @@ export function splitReceipt(
 // are whole even though ISO gives it 2 decimals); other amounts use the
 // currency's own decimals. With no currency it's a plain number.
 export const formatMoney = (n: number, currency: string | null) => {
+  if (!Number.isFinite(n)) return '—';
   const base: Intl.NumberFormatOptions = currency
     ? { style: 'currency', currency }
     : { maximumFractionDigits: 2 };

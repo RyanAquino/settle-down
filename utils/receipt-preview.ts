@@ -18,6 +18,8 @@ export function reconcileReceipt(
 ): ReceiptBalance | null {
   const { subtotal, taxAmount } = receiptTotals(items, taxPercentage);
   if (
+    !Number.isFinite(subtotal) ||
+    !Number.isFinite(taxPercentage) ||
     subtotal <= 0 ||
     total <= 0 ||
     taxPercentage < 0 ||
