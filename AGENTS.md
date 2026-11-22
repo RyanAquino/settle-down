@@ -6,6 +6,8 @@ This repository contains the Expo Router mobile client for iOS and Android. A se
 
 Start every feature and bug fix by creating a dedicated Git worktree for it with `git worktree add`. Make changes, run checks, and commit from that worktree.
 
+Assign pull requests to `RyanAquino` when opening them.
+
 Include the fixtures, accessible controls, and assertions needed for CI `/verify` to exercise each simulator-observable change when the PR opens. The verifier runs trusted tooling from the default branch against the PR’s app build. Use capabilities already available there, or land a prerequisite tooling PR first. Document how to reach the changed behavior and what the verifier should observe.
 
 ## Local development
