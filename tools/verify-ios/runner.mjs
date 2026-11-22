@@ -10,7 +10,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
-import { APP_ID, PRESETS, validatePlan, validateFlow, verdict } from './policy.mjs';
+import {
+  APP_ID,
+  PRESETS,
+  flowFilePattern,
+  validatePlan,
+  validateFlow,
+  verdict,
+} from './policy.mjs';
 import { startFixtures, receipt, groups, members } from './fixtures.mjs';
 import { receiptPng } from './receipt-image.mjs';
 import { cleanEnv, run as runCommand, resetScenario, stopProcess } from './process.mjs';
@@ -173,9 +180,13 @@ async function main() {
       });
       diffBudget -= text.length;
     }
-    const sourceFiles = (await git(['ls-files', '-z'])).output
-      .split('\0')
-      .filter((f) => /\.(tsx?|jsx?|json|md)$/.test(f) && !/(^|\/)\.|(^|\/)node_modules\//.test(f));
+    const trackedFiles = (await git(['ls-files', '-z'])).output.split('\0');
+    const flowFiles = changedFiles.filter(
+      (file) => flowFilePattern.test(file) && trackedFiles.includes(file),
+    );
+    const sourceFiles = trackedFiles.filter(
+      (f) => /\.(tsx?|jsx?|json|md)$/.test(f) && !/(^|\/)\.|(^|\/)node_modules\//.test(f),
+    );
     await writeFile(
       `${evidence}/context.json`,
       JSON.stringify(
@@ -185,6 +196,7 @@ async function main() {
           mergeBase,
           changedFiles,
           sourceFiles,
+          flowFiles,
           diffs,
           diffTruncated: diffs.some((d) => d.truncated),
           fixtures: {

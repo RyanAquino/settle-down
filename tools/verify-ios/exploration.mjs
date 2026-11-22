@@ -3,6 +3,10 @@ import { validateFlow } from './policy.mjs';
 
 export const EXPLORATION_MS = 25 * 60_000;
 export const FINALIZE_MS = 2 * 60_000;
+export const MAESTRO_CONNECT_MS = 120_000;
+const FLOW_MS = 6 * 60_000;
+// Copilot waits for the adapter to connect to Maestro, execute the flow, and save its evidence.
+export const ADAPTER_TIMEOUT_MS = MAESTRO_CONNECT_MS + FLOW_MS + 30_000;
 const uiTools = new Set(['reset_scenario', 'execute_flow', 'inspect_screen', 'screenshot']);
 
 export class ExplorationBudget {
@@ -44,6 +48,11 @@ export class ExplorationBudget {
   uiTimeout(maximum) {
     this.check('inspect_screen');
     return Math.max(1, Math.min(maximum, this.deadline - this.now() - FINALIZE_MS));
+  }
+  maestroTimeout(name, firstConnection) {
+    if (name === 'run') return this.uiTimeout(FLOW_MS);
+    // Maestro installs its driver on the first UI call.
+    return this.uiTimeout(firstConnection ? 300_000 : 180_000);
   }
 }
 

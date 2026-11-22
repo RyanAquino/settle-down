@@ -45,14 +45,17 @@ test('call exhaustion still permits submitting a blocked plan', () => {
   assert.equal(budget.snapshot().callsRemaining, 0);
 });
 
-test('slow driver calls can use startup time without consuming the finalization reserve', () => {
+test('complete flows can run longer than screen inspection while preserving finalization time', () => {
   let now = 0;
   const budget = new ExplorationBudget({ deadline: EXPLORATION_MS, now: () => now });
-  assert.equal(budget.uiTimeout(300000), 300000);
+  assert.equal(budget.maestroTimeout('run', true), 360_000);
+  assert.equal(budget.maestroTimeout('run', false), 360_000);
+  assert.equal(budget.maestroTimeout('inspect_screen', true), 300_000);
+  assert.equal(budget.maestroTimeout('inspect_screen', false), 180_000);
   now = EXPLORATION_MS - FINALIZE_MS - 150000;
-  assert.equal(budget.uiTimeout(300000), 150000);
+  assert.equal(budget.maestroTimeout('run', false), 150000);
   now += 150000;
-  assert.throws(() => budget.uiTimeout(180000), /reserve time/);
+  assert.throws(() => budget.maestroTimeout('run', false), /reserve time/);
   assert.doesNotThrow(() => budget.enter('submit_plan'));
 });
 
