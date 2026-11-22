@@ -1,0 +1,17 @@
+appId: com.ryan.aquino.settledown
+name: Recover a complete photo from an interrupted inbox import
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: verify-interrupted-import
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- assertVisible: Receipt inbox
+- assertVisible: Scan receipt, Receipt photo
+- takeScreenshot: recovered-inbox-photo
+- tapOn: Scan receipt, Receipt photo
+- assertVisible: CI Receipt Shop
+- takeScreenshot: scanned-recovered-photo

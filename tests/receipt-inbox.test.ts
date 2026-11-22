@@ -8,7 +8,7 @@ import {
   removeDraft,
   saveDraft,
 } from '@/utils/receipt-inbox';
-import { File, Paths, samplePhoto, setupInboxFiles } from './support/inbox-files';
+import { Directory, File, Paths, samplePhoto, setupInboxFiles } from './support/inbox-files';
 
 jest.mock('expo-file-system', () =>
   jest.requireActual<typeof import('./support/inbox-files')>('./support/inbox-files'),
@@ -56,4 +56,36 @@ test('an interrupted snapshot replacement reopens the last complete draft', asyn
 test('failed imports leave no visible draft', async () => {
   await expect(createPhotoDraft(new File(Paths.document, 'missing.jpg').uri)).rejects.toThrow();
   expect(listDrafts()).toEqual([]);
+});
+
+test('revisiting the inbox finishes an interrupted discard and removes unfinished photo copies', async () => {
+  const inbox = new Directory(Paths.document, 'receipt-inbox');
+  const draft = await createPhotoDraft(samplePhoto().uri);
+  const discarded = new Directory(inbox, draft.id);
+  discarded.rename('removed-' + draft.id);
+  const interrupted = new Directory(inbox, 'import-' + randomUUID());
+  interrupted.create();
+  new File(interrupted, 'photo.jpg').writeSync('partial photo');
+  const unrelated = new Directory(inbox, 'import-other');
+  unrelated.create();
+
+  expect(listDrafts()).toEqual([]);
+  expect(discarded.exists).toBe(false);
+  expect(interrupted.exists).toBe(false);
+  expect(unrelated.exists).toBe(true);
+});
+
+test('a staged receipt with a committed snapshot is recovered after restart', async () => {
+  const draft = await createPhotoDraft(samplePhoto().uri);
+  new Directory(Paths.document, 'receipt-inbox', draft.id).rename('import-' + draft.id);
+  expect(listDrafts()).toEqual([draft]);
+  expect(new File(draftPhotoUri(draft)).textSync()).toBe('receipt photo');
+  expect(listDrafts()).toEqual([draft]);
+});
+
+test('opening the inbox during an active import leaves its photo copy alone', async () => {
+  const pending = createPhotoDraft(samplePhoto().uri);
+  expect(listDrafts()).toEqual([]);
+  const draft = await pending;
+  expect(listDrafts()).toEqual([draft]);
 });
