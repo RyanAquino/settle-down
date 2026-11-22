@@ -329,6 +329,13 @@ a blocked checkpoint after the first complete scenario. Timeouts remain BLOCKED;
 no partial exploration is promoted to PASS. Failure reports name recent tools
 instead of suggesting that every timeout is an authentication/quota problem.
 
+For a Maestro scenario added or edited in the PR, `get_context.flowFiles` lists the
+tracked YAML paths directly under `.maestro/`. After reading its diff and resetting
+the fixture, pass `flowFile` to `execute_flow` and to the matching `submit_plan`
+scenario. The adapter resolves the file from the captured checkout, validates its
+literal commands and records the exact YAML for comparison and replay. A full
+Maestro flow can use up to six minutes within the exploration deadline.
+
 A ready plan must reference complete flows that succeeded as the first flow after
 `reset_scenario` with the same fixture. Action/assertion changes invalidate that
 evidence, and a later failed attempt invalidates prior success. The adapter and

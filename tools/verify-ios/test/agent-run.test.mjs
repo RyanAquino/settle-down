@@ -66,6 +66,7 @@ test('Copilot quota restarts exploration once with isolated evidence and the sam
   const run = async (command, args, launch) => {
     const argument = (name) => args[args.indexOf(name) + 1];
     const config = JSON.parse(await readFile(argument('--additional-mcp-config').slice(1), 'utf8'));
+    assert.equal(config.mcpServers.verify.timeout, (2 + 6) * 60_000 + 30_000);
     const adapter = config.mcpServers.verify.env;
     const childEnv = { ...launch.env, ...adapter };
     assert.ok(!childEnv.GITHUB_TOKEN);

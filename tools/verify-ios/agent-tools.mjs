@@ -1,5 +1,10 @@
 import { Buffer } from 'node:buffer';
-import { ExplorationBudget, ScenarioEvidence, requireScenarioEvidence } from './exploration.mjs';
+import {
+  ExplorationBudget,
+  MAESTRO_CONNECT_MS,
+  ScenarioEvidence,
+  requireScenarioEvidence,
+} from './exploration.mjs';
 import { fixtureControl } from './fixture-control.mjs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -9,7 +14,14 @@ import { z } from 'zod';
 import { stringify } from 'yaml';
 import { appendFile, mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { APP_ID, PRESETS, planSchema, validatePlan, validateFlow } from './policy.mjs';
+import {
+  APP_ID,
+  PRESETS,
+  flowFilePattern,
+  planSchema,
+  validatePlan,
+  validateFlow,
+} from './policy.mjs';
 import { run, resetScenario, cleanEnv } from './process.mjs';
 import {
   PAGE_BYTES,
@@ -70,30 +82,32 @@ async function maestroCall(name, args) {
       stderr: 'pipe',
     });
     transport.stderr?.on('data', (data) => process.stderr.write(data));
-    await maestroClient.connect(transport, { timeout: budget.uiTimeout(120000) });
+    await maestroClient.connect(transport, { timeout: budget.uiTimeout(MAESTRO_CONNECT_MS) });
   }
-  // The MCP server installs its own driver on the first UI call. Keep startup
-  // inside the exploration deadline while preserving the finalization reserve.
   return maestroClient.callTool({ name, arguments: { device_id: udid, ...args } }, undefined, {
-    timeout: budget.uiTimeout(firstConnection ? 300000 : 180000),
+    timeout: budget.maestroTimeout(name, firstConnection),
   });
 }
 
-function tool(name, description, inputSchema, action) {
+function tool(name, description, inputSchema, action, resolveArgs) {
   server.registerTool(name, { description, inputSchema }, async (args) => {
     const index = ++calls;
     const toolStarted = Date.now();
     try {
       budget.enter(name);
+      const perform = async () => {
+        if (resolveArgs) args = await resolveArgs(args);
+        return action(args, index);
+      };
       const { scenarioEvidence: proof, ...result } = await ([
         'reset_scenario',
         'execute_flow',
       ].includes(name)
         ? serialized(() => {
             budget.check(name);
-            return action(args, index);
+            return perform();
           })
-        : action(args, index));
+        : perform());
       if (result.isError) throw new Error(JSON.stringify(result.content));
       result.content.push({
         type: 'text',
@@ -124,6 +138,35 @@ function tool(name, description, inputSchema, action) {
 
 const readContext = async () => JSON.parse(await readFile(`${evidence}/context.json`, 'utf8'));
 const page = z.number().int().min(1).max(1000).optional();
+
+async function readRegularSource(file, maxBytes) {
+  const candidate = path.resolve(source, file);
+  if (!candidate.startsWith(`${source}${path.sep}`) || (await realpath(candidate)) !== candidate)
+    throw new Error('Source must be a regular file at its listed checkout path.');
+  const info = await stat(candidate);
+  if (!info.isFile() || info.size > maxBytes)
+    throw new Error(`Expected a source file up to ${maxBytes} bytes.`);
+  const bytes = await readFile(candidate);
+  if (bytes.includes(0)) throw new Error('Binary source file');
+  return bytes;
+}
+
+const flowSource = {
+  yaml: z.string().max(32000).optional(),
+  flowFile: z.string().max(250).regex(flowFilePattern).optional(),
+};
+
+async function resolveFlow({ flowFile, yaml, ...fields }) {
+  if ((flowFile === undefined) === (yaml === undefined))
+    throw new Error('Supply exactly one of yaml or flowFile.');
+  if (flowFile !== undefined) {
+    const context = await readContext();
+    if (!context.flowFiles?.includes(flowFile))
+      throw new Error('Choose a flowFile listed by get_context.');
+    yaml = (await readRegularSource(flowFile, 32000)).toString('utf8');
+  }
+  return { ...fields, yaml };
+}
 
 // Large text goes in its own block so JSON escaping does not inflate it.
 const pagedText = (header, pages, requested = 1) => {
@@ -174,6 +217,7 @@ tool(
         };
       }),
       sourceFiles: context.sourceFiles,
+      flowFiles: context.flowFiles || [],
       fixtures: context.fixtures,
       regressions: context.regressions || [],
       reading: `Results are paged to stay under ${PAGE_BYTES} bytes. Call get_diff with a changed file (and page) for its diff, and read_source with an exact sourceFiles path (and page) for its contents. Only listed paths are readable.`,
@@ -222,14 +266,7 @@ tool(
     const context = await readContext();
     if (!context.sourceFiles.includes(file) || /(^|\/)\.|(^|\/)node_modules\//.test(file))
       throw new Error('Source file not allowed. Use an exact path from get_context sourceFiles.');
-    const candidate = path.resolve(source, file);
-    if (!candidate.startsWith(`${source}${path.sep}`) || (await realpath(candidate)) !== candidate)
-      throw new Error('Source must be a regular file at its listed checkout path.');
-    const info = await stat(candidate);
-    if (!info.isFile() || info.size > 160000)
-      throw new Error('Expected a source file up to 160 KB.');
-    const bytes = await readFile(candidate);
-    if (bytes.includes(0)) throw new Error('Binary source file');
+    const bytes = await readRegularSource(file, 160000);
     return pagedText({ file }, paginateText(bytes.toString('utf8')), requested);
   },
 );
@@ -302,10 +339,8 @@ tool(
 
 tool(
   'execute_flow',
-  'Operate the live UI with a short literal Maestro YAML flow. Header appId is required. Only one-level inline runFlow visibility branches containing navigation are allowed. No scripts, expressions, URLs, file subflows, conditional assertions, or optional steps.',
-  {
-    yaml: z.string().max(32000),
-  },
+  'Operate the live UI with a listed flowFile or literal Maestro yaml. Prefer flowFile for a matching committed scenario. Header appId is required. Only one-level inline runFlow visibility branches containing navigation are allowed. No scripts, expressions, URLs, file subflows, conditional assertions, or optional steps.',
+  flowSource,
   async ({ yaml }, index) => {
     const fixture = scenarioEvidence.beginFlow();
     const validated = validateFlow(yaml);
@@ -344,6 +379,7 @@ tool(
       scenarioEvidence: proof,
     };
   },
+  resolveFlow,
 );
 
 tool(
@@ -366,9 +402,13 @@ tool(
 tool(
   'submit_plan',
   'Save final PR coverage and at most three complete replayable scenarios. Put changes that only a physical device can verify in deviceOnly; they do not block. Use manualChecks only for the predefined pinch and native camera-failure injection exclusions. Submit ready when all other simulator-verifiable changes are covered; blocked only with simulator-side limitations (unverifiable in the simulator for other reasons, or unresolved failures); skipped when nothing is verifiable in the simulator. For camera permission gaps, first attempt launchApp with explicit camera: deny and inspect the UI; a granted session alone does not establish a blocker. Ready also requires each exact complete flow to have succeeded immediately after reset_scenario with its fixture. Do not combine fragments. This does not declare PASS.',
-  planSchema.shape,
+  {
+    ...planSchema.shape,
+    scenarios: z.array(planSchema.shape.scenarios.element.extend(flowSource)).max(3),
+  },
   async (input) => {
-    const plan = validatePlan(input);
+    const scenarios = await Promise.all(input.scenarios.map(resolveFlow));
+    const plan = validatePlan({ ...input, scenarios });
     const journal = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8').catch(() => ''))
       .trim()
       .split('\n')

@@ -14,7 +14,21 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
   const directory = await mkdtemp(path.join(os.tmpdir(), 'verify-mcp-'));
   const source = `${directory}/source`,
     evidence = `${directory}/evidence`;
-  await mkdir(source);
+  await mkdir(`${source}/.maestro`, { recursive: true });
+  const flowFile = '.maestro/receipt.yaml';
+  const flowYaml = [
+    'appId: ${APP_ID}',
+    '---',
+    '- launchApp',
+    '- assertVisible: “Receipt”',
+    '- takeScreenshot: receipt',
+  ].join('\n');
+  await writeFile(`${source}/${flowFile}`, flowYaml);
+  const invalidFile = '.maestro/invalid.yaml',
+    linkedFile = '.maestro/alias.yaml';
+  await writeFile(`${source}/${invalidFile}`, 'appId: ${APP_ID}\n---\n- unsupportedStep: true');
+  await symlink('receipt.yaml', `${source}/${linkedFile}`);
+  const flowFiles = [flowFile, invalidFile, linkedFile];
   await mkdir(`${evidence}/exploration`, { recursive: true });
   await writeFile(`${source}/screen.tsx`, 'export const label = "Synthetic screen";');
   await symlink('screen.tsx', `${source}/alias.tsx`);
@@ -39,6 +53,7 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
       request: { pr: 7, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40) },
       pr: { title: 'Synthetic', body: 'x'.repeat(30000) },
       sourceFiles,
+      flowFiles,
       changedFiles: ['screen.tsx', 'large.tsx'],
       diffs: [
         {
@@ -89,6 +104,7 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
   assert.ok(bytes(context) <= RESULT_LIMIT_BYTES);
   const summary = JSON.parse(context.content[0].text);
   assert.deepEqual(summary.sourceFiles, sourceFiles);
+  assert.deepEqual(summary.flowFiles, flowFiles);
   assert.equal(summary.pr.bodyTruncated, true);
   const large = summary.changedFiles.find((f) => f.file === 'large.tsx');
   assert.ok(large.diffPages > 1);
@@ -154,11 +170,51 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
   );
   const plan = JSON.parse(await readFile(`${evidence}/plan.json`, 'utf8'));
   assert.equal(plan.disposition, 'skipped');
+  for (const [args, expected] of [
+    [{ flowFile: '.maestro/missing.yaml' }, /listed by get_context/],
+    [{ flowFile: linkedFile }, /regular file/],
+    [{ flowFile: invalidFile }, /Forbidden command/],
+    [{ flowFile, yaml: flowYaml }, /exactly one/],
+    [{}, /exactly one/],
+  ]) {
+    const result = await call('execute_flow', args);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, expected);
+  }
+  const scenario = {
+    id: 'receipt',
+    name: 'Receipt',
+    coverage: 'Receipt label',
+    fixture: 'success',
+    flowFile,
+  };
+  const proposed = {
+    disposition: 'ready',
+    rationale: 'Check the receipt screen after a fresh install.',
+    limitations: [],
+    scenarios: [scenario],
+  };
+  const unproven = await call('submit_plan', proposed);
+  assert.equal(unproven.isError, true);
+  assert.match(unproven.content[0].text, /has not succeeded/);
+  const checkpoint = await call('submit_plan', {
+    ...proposed,
+    disposition: 'blocked',
+    limitations: ['The receipt flow has not run.'],
+  });
+  assert.notEqual(checkpoint.isError, true);
+  assert.equal(await readFile(`${evidence}/generated/receipt.yaml`, 'utf8'), flowYaml);
+  const saved = JSON.parse(await readFile(`${evidence}/plan.json`, 'utf8'));
+  assert.equal(saved.scenarios[0].yaml, flowYaml);
+  assert.equal(saved.scenarios[0].flowFile, undefined);
   const log = (await readFile(`${evidence}/tool-calls.jsonl`, 'utf8'))
     .trim()
     .split('\n')
     .map(JSON.parse);
-  assert.equal(log.filter((c) => !c.ok).length, 9);
+  assert.ok(
+    log.some((c) => c.tool === 'execute_flow' && !c.ok && c.args.yaml?.includes('unsupportedStep')),
+  );
+  assert.equal(log.filter((c) => !c.ok).length, 15);
 });
 
 test('subprocess environment does not contain GitHub, Copilot, or fixture credentials', () => {

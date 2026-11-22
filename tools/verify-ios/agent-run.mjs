@@ -1,5 +1,5 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { EXPLORATION_MS, agentFailureMessage } from './exploration.mjs';
+import { ADAPTER_TIMEOUT_MS, EXPLORATION_MS, agentFailureMessage } from './exploration.mjs';
 import { cleanEnv } from './process.mjs';
 import { initialProvider, isCopilotQuotaExhausted, providerConfig } from './provider.mjs';
 
@@ -69,6 +69,7 @@ export async function runExploration({
             command: process.execPath,
             args: [`${toolRoot}/agent-tools.mjs`],
             tools: ['*'],
+            timeout: ADAPTER_TIMEOUT_MS,
             env: {
               GITHUB_TOKEN: '',
               GH_TOKEN: '',

@@ -16,6 +16,14 @@ slow simulator. Save a blocked checkpoint plan after your first complete scenari
 A checkpoint is not the final result: continue while the budget phase is explore,
 and replace it with ready once the full changed scope has verified coverage.
 
+get_context also lists changed, tracked Maestro files in flowFiles. Read their
+get_diff entries to assess the assertions and fixture. When one covers changed
+behavior, reset_scenario with that fixture and pass its exact path as flowFile to
+execute_flow. Use flowFile again in the corresponding submit_plan scenario,
+including checkpoints. Do not transcribe the YAML. Await each reset and full flow
+before starting the next. The same validation, fresh-reset proof, live inspection,
+and independent CLI replay apply to file-backed and inline scenarios.
+
 get_context lists required regression results when camera files change. Read those
 scenarios with get_regression early. They have already run as complete, fresh-reset
 CLI tests before your exploration clock. Read the diff and source, inspect the live

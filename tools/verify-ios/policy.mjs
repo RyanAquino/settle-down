@@ -3,6 +3,7 @@ import { parseAllDocuments, visit, isAlias } from 'yaml';
 import { z } from 'zod';
 
 export const APP_ID = 'com.ryan.aquino.settledown';
+export const flowFilePattern = /^\.maestro\/[a-zA-Z0-9][a-zA-Z0-9_-]*\.ya?ml$/;
 export const PRESETS = [
   'success',
   'missing-discount',
