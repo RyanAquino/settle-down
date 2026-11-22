@@ -19,7 +19,7 @@ jobs:
       contents: read
       pull-requests: write
       checks: write
-      actions: read
+      actions: write # Refresh the PR gate when its evidence changes.
     outputs:
       accepted: ${{ steps.request.outputs.accepted }}
       head_sha: ${{ steps.request.outputs.head_sha }}
