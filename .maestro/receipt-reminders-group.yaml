@@ -6,10 +6,15 @@ name: Verify group delivery, active suppression and stale taps
       all: allow
 - tapOn:
     id: verify-import-offline
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
 - tapOn:
     id: PXGGridLayout-Info
     index: 0
-- assertVisible: You’re offline
+- assertVisible: 'You.re offline'
 - tapOn: OK
 - tapOn: Scan receipt, Receipt photo
 - assertVisible: CI Receipt Shop
@@ -25,17 +30,22 @@ name: Verify group delivery, active suppression and stale taps
 - tapOn: Back
 - tapOn:
     id: verify-import-offline
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
 - tapOn:
     id: PXGGridLayout-Info
     index: 0
-- assertVisible: You’re offline
+- assertVisible: 'You.re offline'
 - tapOn: OK
 - assertVisible: Scan receipt, Receipt photo
 - tapOn:
     id: verify-read-schedule
 - assertVisible: 'Elapsed requests: 2'
 - assertVisible: 'Morning requests: 1'
-- assertVisible: 'Morning: 2 receipts, day \+1 at 09:00'
+- assertVisible: 'Morning: 2 receipts, day [+]1 at 09:00'
 - takeScreenshot: production-group
 - tapOn:
     id: verify-open-app-settings
@@ -49,6 +59,14 @@ name: Verify group delivery, active suppression and stale taps
       visible: close
     commands:
       - tapOn: close
+- runFlow:
+    when:
+      visible:
+        id: Apps
+    commands:
+      - tapOn:
+          id: BackButton
+          text: Settings
 - runFlow:
     when:
       visible:
@@ -117,7 +135,7 @@ name: Verify group delivery, active suppression and stale taps
 - tapOn:
     id: verify-read-schedule
 - assertVisible: 'Elapsed requests: 1'
-- assertVisible: 'Morning: 1 receipt, day \+1 at 09:00'
+- assertVisible: 'Morning: 1 receipt, day [+]1 at 09:00'
 - tapOn:
     id: verify-close-schedule
 - longPressOn:

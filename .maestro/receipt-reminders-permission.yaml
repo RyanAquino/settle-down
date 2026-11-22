@@ -7,10 +7,15 @@ name: Enable notifications in Settings and skip missed reminders
       camera: allow
 - tapOn:
     id: verify-import-offline
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
 - tapOn:
     id: PXGGridLayout-Info
     index: 0
-- assertVisible: You’re offline
+- assertVisible: 'You.re offline'
 - tapOn: OK
 - assertVisible: Enable reminders
 - tapOn: Scan receipt, Receipt photo
@@ -108,10 +113,15 @@ name: Enable notifications in Settings and skip missed reminders
 - tapOn: Back
 - tapOn:
     id: verify-import-offline
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
 - tapOn:
     id: PXGGridLayout-Info
     index: 0
-- assertVisible: You’re offline
+- assertVisible: 'You.re offline'
 - tapOn: OK
 - assertVisible: Continue split, CI Receipt Shop
 - assertVisible: Scan receipt, Receipt photo
@@ -120,5 +130,5 @@ name: Enable notifications in Settings and skip missed reminders
 - assertVisible: 'Elapsed requests: 1'
 - assertVisible: 'Elapsed: 180 minutes after save'
 - assertVisible: 'Morning requests: 1'
-- assertVisible: 'Morning: 1 receipt, day \+1 at 09:00'
+- assertVisible: 'Morning: 1 receipt, day [+]1 at 09:00'
 - takeScreenshot: upcoming-only

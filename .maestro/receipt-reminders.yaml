@@ -6,10 +6,15 @@ name: Verify real schedules and resume a saved split through submission
       all: allow
 - tapOn:
     id: verify-import-offline
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
 - tapOn:
     id: PXGGridLayout-Info
     index: 0
-- assertVisible: You’re offline
+- assertVisible: 'You.re offline'
 - tapOn: OK
 - assertVisible: Scan receipt, Receipt photo
 - tapOn:
@@ -17,9 +22,9 @@ name: Verify real schedules and resume a saved split through submission
 - assertVisible: 'Elapsed requests: 1'
 - assertVisible: 'Elapsed: 180 minutes after save'
 - assertVisible: 'Morning requests: 1'
-- assertVisible: 'Morning: 1 receipt, day \+1 at 09:00'
-- assertVisible: 'Tokyo 09:00 \(00:00 UTC\)'
-- assertVisible: 'Singapore 09:00 \(01:00 UTC\)'
+- assertVisible: 'Morning: 1 receipt, day [+]1 at 09:00'
+- assertVisible: 'Tokyo 09:00 [(]00:00 UTC[)]'
+- assertVisible: 'Singapore 09:00 [(]01:00 UTC[)]'
 - takeScreenshot: production-deadlines
 - tapOn:
     id: verify-open-app-settings
@@ -33,6 +38,14 @@ name: Verify real schedules and resume a saved split through submission
       visible: close
     commands:
       - tapOn: close
+- runFlow:
+    when:
+      visible:
+        id: Apps
+    commands:
+      - tapOn:
+          id: BackButton
+          text: Settings
 - runFlow:
     when:
       visible:
