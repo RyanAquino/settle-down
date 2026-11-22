@@ -4,7 +4,15 @@ import { Share } from 'react-native';
 import * as api from '@/utils/api';
 import ReceiptDetailsScreen from '../app/receipt-details';
 
+jest.mock('@/utils/receipt-reminder-lifecycle', () => ({
+  setActiveReceiptDraft: jest.fn(),
+  receiptLeftForLater: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('expo-router', () => ({
+  useFocusEffect: (effect: () => void) => {
+    const { useEffect } = jest.requireActual<typeof import('react')>('react');
+    useEffect(effect, [effect]);
+  },
   useLocalSearchParams: jest.fn(),
   usePreventRemove: jest.fn(),
   router: { back: jest.fn() },

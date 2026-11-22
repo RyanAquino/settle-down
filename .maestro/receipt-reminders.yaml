@@ -1,0 +1,143 @@
+appId: com.ryan.aquino.settledown
+name: Verify real schedules and resume a saved split through submission
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: verify-offline-reminder-photo
+- assertVisible: 'You.re offline'
+- tapOn: OK
+- assertVisible: Scan receipt, Receipt photo
+- tapOn:
+    id: verify-read-schedule
+- assertVisible: 'Elapsed requests: 1'
+- assertVisible: 'Elapsed: 180 minutes after save'
+- assertVisible: 'Morning requests: 1'
+- assertVisible: 'Morning: 1 receipt, day [+]1 at 09:00'
+- assertVisible: 'Tokyo 09:00 [(]00:00 UTC[)]'
+- assertVisible: 'Singapore 09:00 [(]01:00 UTC[)]'
+- takeScreenshot: production-deadlines
+- tapOn:
+    id: verify-open-app-settings
+- extendedWaitUntil:
+    visible:
+      id: breadcrumb
+      text: Return to Settle Down
+    timeout: 30000
+- runFlow:
+    when:
+      visible: close
+    commands:
+      - tapOn: close
+- extendedWaitUntil:
+    visible:
+      id: 'Settings|Apps|Camera|ALLOW_NOTIFICATIONS_ID'
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: Settings
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: com.apple.settings.apps
+          direction: DOWN
+          speed: 100
+          timeout: 30000
+      - tapOn:
+          id: com.apple.settings.apps
+- extendedWaitUntil:
+    visible:
+      id: 'Apps|Camera|ALLOW_NOTIFICATIONS_ID'
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: Apps
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: com.ryan.aquino.settledown
+          direction: DOWN
+          speed: 100
+          timeout: 30000
+          visibilityPercentage: 50
+      - tapOn:
+          id: com.ryan.aquino.settledown
+- extendedWaitUntil:
+    visible:
+      id: 'Camera|ALLOW_NOTIFICATIONS_ID'
+    timeout: 30000
+- runFlow:
+    when:
+      notVisible:
+        id: ALLOW_NOTIFICATIONS_ID
+    commands:
+      - scrollUntilVisible:
+          element: Notifications
+          direction: DOWN
+      - tapOn: Notifications
+- tapOn:
+    id: BANNER_STYLE_ID
+- tapOn: Persistent
+- tapOn:
+    id: BackButton
+- assertVisible: Banner Style, Persistent
+- pressKey: Home
+- launchApp:
+    stopApp: false
+    permissions:
+      camera: allow
+- assertVisible:
+    id: verify-receipt-reminder
+- tapOn:
+    id: verify-receipt-reminder
+- pressKey: Home
+- extendedWaitUntil:
+    visible: '.*Ready to scan your saved receipt.*'
+    timeout: 30000
+- tapOn: '.*Ready to scan your saved receipt.*'
+- assertVisible: Cranberry juice
+- tapOn:
+    id: item-1-assign-ci-alex
+- scrollUntilVisible:
+    element: Save for later
+    direction: UP
+- tapOn:
+    id: paid-by-ci-alex
+- tapOn: Save for later
+- tapOn:
+    id: verify-receipt-reminder
+- pressKey: Home
+- extendedWaitUntil:
+    visible: '.*1 item left to assign on your saved receipt.*'
+    timeout: 30000
+- tapOn: '.*1 item left to assign on your saved receipt.*'
+- assertVisible: Onigiri
+- tapOn:
+    id: item-2-assign-ci-sam
+- scrollUntilVisible:
+    element: Save for later
+    direction: UP
+- tapOn: Save for later
+- tapOn:
+    id: verify-receipt-reminder
+- pressKey: Home
+- extendedWaitUntil:
+    visible: '.*Your saved split is ready to review.*'
+    timeout: 30000
+- tapOn: '.*Your saved split is ready to review.*'
+- assertVisible:
+    id: receipt-review-summary
+- takeScreenshot: split-reminder-summary
+- tapOn:
+    id: sync-transaction
+- assertVisible: Synced
+- tapOn: OK
+- assertVisible: No saved receipts
+- tapOn:
+    id: verify-read-schedule
+- assertVisible: 'Elapsed requests: 0'
+- assertVisible: 'Morning requests: 0'
+- takeScreenshot: submitted-draft-clears-schedules

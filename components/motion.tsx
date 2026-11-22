@@ -79,6 +79,7 @@ function fireHaptic(kind: HapticKind) {
 export function PressableScale({
   children,
   onPress,
+  onLongPress,
   style,
   disabled = false,
   haptic = 'selection',
@@ -89,6 +90,7 @@ export function PressableScale({
 }: {
   children: ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
   haptic?: HapticKind;
@@ -114,6 +116,7 @@ export function PressableScale({
       testID={testID}
       hitSlop={hitSlop}
       disabled={disabled}
+      onLongPress={onLongPress}
       onPressIn={() => spring(disabled ? 1 : scaleTo).start()}
       onPressOut={() => spring(1).start()}
       onPress={() => {

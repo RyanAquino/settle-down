@@ -178,6 +178,52 @@ screenshots, replay JUnit/logs, agent/tool-call logs, backend requests, PR conte
 and tool versions. Build logs are a separate artifact. Missing evidence remains
 explicit. The full archive remains available alongside the inline previews.
 
+### Receipt reminders
+
+Use the `success` fixture and a fresh simulator app installation for each flow.
+**Save offline reminder photo** downloads the seeded `/receipt.png` from the
+local fixture server into the CI app’s cache. The loading screen copies it into
+the inbox and handles the offline save exactly as it would for a captured photo.
+The separate offline-import scenario exercises the system photo picker.
+The following three Maestro flows use the commands supported by the trusted
+verifier. Each starts on the camera screen and captures its own evidence.
+For banner taps, open notification settings from the schedule inspector and set Settle
+Down’s **Notifications → Banner Style** to **Persistent**. Check the selected
+style before returning to the app. The banner then stays on the Home Screen
+while Maestro finds and taps its text. Settings can retain an open search
+keyboard between installs. The flows wait for **Return to Settle Down**, dismiss
+search using the accessibility label `close` when present, and navigate through
+**Apps** if iOS opens the Settings root or app list.
+
+- [Reminder schedule, taps and submission](../../.maestro/receipt-reminders.yaml).
+  Inspect the pending requests for a saved photo. Check the three-hour interval
+  and the next day’s 09:00 trigger, including its equivalent UTC times in Tokyo
+  and Singapore. Tap the actual iOS banners for a photo, a partially assigned
+  split and a fully assigned split. Submit the transaction and check that both
+  pending requests disappear.
+- [Grouped and active receipts](../../.maestro/receipt-reminders-group.yaml).
+  Open the split before delivery and observe the native foreground handler’s
+  acknowledgement in the editor. With two receipts, check one grouped morning
+  request, tap the grouped banner to open the inbox, and verify that only the
+  other receipt is presented while editing. Discard one receipt and inspect the
+  remaining schedules. Long-press **Test reminder in 8 seconds** to capture the
+  final receipt, discard it and press Home. The simulator schedules that captured
+  notification on backgrounding. Tap its banner to check the stale-receipt
+  message and empty schedule.
+- [Denied permission and missed reminders](../../.maestro/receipt-reminders-permission.yaml).
+  Leave a photo and save its split while permission is denied. Age the saved
+  split by two days, open Settings from **Enable reminders**, turn on the iOS
+  **Allow Notifications** switch and resume the app. Check that neither missed
+  request appears. Open the saved split and confirm its foreground reminder
+  is suppressed. Add a fresh photo and verify that only its upcoming requests
+  are pending.
+
+In a CI build, **Inspect reminder schedule** reads iOS’s pending notification
+requests. The time-zone rows resolve the stored calendar trigger in each named
+zone. **Test reminder in 8 seconds** sends a separate local notification through
+normal delivery and tap handling. **Move receipt to two days ago** updates the
+only draft’s saved date and morning deadline, which triggers normal scheduling.
+
 ### Inline screenshots and replay clips
 
 The trusted report job selects up to four captured screenshots per scenario plus

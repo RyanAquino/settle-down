@@ -1,15 +1,43 @@
-import { prepareScan } from '@/utils/scan-request';
-import { useCallback, useRef, useState } from 'react';
-import { Alert, FlatList, Image, StyleSheet, Text, View } from 'react-native';
-import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Alert, FlatList, Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PressableScale } from '@/components/motion';
-import { draftPhotoUri, listDrafts, removeDraft, type ReceiptDraft } from '@/utils/receipt-inbox';
+import { ReminderScheduleInspector } from '@/components/reminder-schedule-inspector';
+import { nextMorningDate } from '@/utils/receipt-morning';
+import {
+  draftPhotoUri,
+  listDrafts,
+  removeDraft,
+  saveDraft,
+  type ReceiptDraft,
+} from '@/utils/receipt-inbox';
+import {
+  getReminderPermissionSnapshot,
+  openReminderSettings,
+  subscribeReminderPermission,
+} from '@/utils/receipt-reminder-lifecycle';
+import { scheduleVerificationReceiptReminder } from '@/utils/receipt-reminders';
+import { prepareScan } from '@/utils/scan-request';
 import { theme, type } from '@/utils/theme';
 
 export default function ReceiptInboxScreen() {
   const [drafts, setDrafts] = useState<ReceiptDraft[]>([]);
   const [failed, setFailed] = useState(false);
+  const { missingReceipt } = useLocalSearchParams<{ missingReceipt?: string }>();
+  const [dismissedNotice, setDismissedNotice] = useState<string>();
+  const permission = useSyncExternalStore(
+    subscribeReminderPermission,
+    getReminderPermissionSnapshot,
+    getReminderPermissionSnapshot,
+  );
+  useEffect(() => {
+    if (!missingReceipt) return;
+    const timeout = setTimeout(() => setDismissedNotice(missingReceipt), 4500);
+    return () => clearTimeout(timeout);
+  }, [missingReceipt]);
+
   const opening = useRef(false);
   const reload = useCallback(() => {
     try {
@@ -69,7 +97,63 @@ export default function ReceiptInboxScreen() {
           <Text style={styles.backText}>←</Text>
         </PressableScale>
         <Text style={styles.title}>Receipt inbox</Text>
+        {permission === 'denied' && (
+          <PressableScale
+            style={styles.settings}
+            onPress={() => {
+              void openReminderSettings().catch(() =>
+                Alert.alert('Couldn’t open notification settings', 'Please try again.'),
+              );
+            }}
+          >
+            <Text style={styles.action}>Enable reminders</Text>
+          </PressableScale>
+        )}
       </View>
+      {Constants.expoConfig?.extra?.verifyReceiptReminders === true &&
+        drafts.length > 0 &&
+        permission === 'enabled' && (
+          <PressableScale
+            testID="verify-receipt-reminder"
+            style={styles.notice}
+            onLongPress={() => {
+              void scheduleVerificationReceiptReminder('after-background').catch(() =>
+                Alert.alert('Couldn’t schedule test reminder'),
+              );
+            }}
+            onPress={() => {
+              void scheduleVerificationReceiptReminder().catch(() =>
+                Alert.alert('Couldn’t schedule test reminder'),
+              );
+            }}
+          >
+            <Text style={styles.action}>Test reminder in 8 seconds</Text>
+          </PressableScale>
+        )}
+      {Platform.OS === 'ios' && Constants.expoConfig?.extra?.verifyReceiptReminders === true && (
+        <>
+          <ReminderScheduleInspector drafts={drafts} />
+          {drafts.length === 1 && (
+            <PressableScale
+              testID="verify-age-receipt"
+              onPress={() => {
+                // Exercise missed deadlines through the normal inbox change listener.
+                const createdAt = Date.now() - 48 * 60 * 60 * 1000;
+                saveDraft({ ...drafts[0], createdAt, morningDate: nextMorningDate(createdAt) });
+                reload();
+              }}
+              style={styles.fixtureControl}
+            >
+              <Text style={styles.action}>Move receipt to two days ago</Text>
+            </PressableScale>
+          )}
+        </>
+      )}
+      {missingReceipt && missingReceipt !== dismissedNotice && (
+        <Text accessibilityRole="alert" style={styles.missingNotice}>
+          This receipt is no longer in your inbox.
+        </Text>
+      )}
       <FlatList
         contentContainerStyle={styles.list}
         data={drafts}
@@ -132,7 +216,9 @@ const styles = StyleSheet.create({
     gap: 14,
     alignItems: 'center',
   },
-  title: { ...type.title, color: theme.ink },
+  title: { ...type.title, color: theme.ink, flexShrink: 1 },
+  settings: { marginLeft: 'auto', minHeight: 44, justifyContent: 'center', flexShrink: 1 },
+  missingNotice: { ...type.body, color: theme.ink, marginHorizontal: 16, marginBottom: 8 },
   back: {
     width: 44,
     height: 44,
@@ -142,6 +228,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backText: { ...type.title, color: theme.ink },
+  fixtureControl: { paddingHorizontal: 16, paddingVertical: 8 },
   list: { padding: 16, gap: 12 },
   card: {
     borderRadius: theme.radius,

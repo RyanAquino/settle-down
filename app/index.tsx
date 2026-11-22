@@ -7,6 +7,7 @@ import Constants from 'expo-constants';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import CameraScreen from './camera';
+import { apiBaseUrl } from '@/utils/api';
 import { createPhotoDraft } from '@/utils/receipt-inbox';
 import { Entrance, PressableScale } from '@/components/motion';
 
@@ -29,6 +30,19 @@ async function importVerificationPhoto(mode: 'offline' | 'interrupted') {
     }
   } catch {
     Alert.alert('Error', 'Failed to pick photo from library. Please try again.');
+  }
+}
+
+async function openOfflineReminderFixture() {
+  try {
+    const photo = await File.downloadFileAsync(
+      new URL('/receipt.png', apiBaseUrl).href,
+      new File(Paths.cache, 'verify-reminder-receipt.png'),
+      { idempotent: true },
+    );
+    router.push(prepareScan({ photoUri: photo.uri, verifyOfflineImport: true }));
+  } catch {
+    Alert.alert('Couldn’t load the reminder test photo');
   }
 }
 
@@ -62,6 +76,16 @@ export default function Index() {
       </View>
       {Constants.expoConfig?.extra?.verifyOfflineImport === true && (
         <View style={[styles.inboxOverlay, styles.verificationControls, { top: insets.top + 56 }]}>
+          {Constants.expoConfig?.extra?.verifyReceiptReminders === true && (
+            <PressableScale
+              style={styles.debugButton}
+              testID="verify-offline-reminder-photo"
+              accessibilityLabel="Save offline reminder photo"
+              onPress={() => void openOfflineReminderFixture()}
+            >
+              <Text style={styles.debugButtonText}>Save offline reminder photo</Text>
+            </PressableScale>
+          )}
           {Constants.expoConfig?.extra?.verifyMissingBackend === true && (
             <PressableScale
               style={styles.debugButton}

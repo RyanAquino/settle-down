@@ -1,0 +1,146 @@
+appId: com.ryan.aquino.settledown
+name: Verify group delivery, active suppression and stale taps
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: verify-offline-reminder-photo
+- assertVisible: 'You.re offline'
+- tapOn: OK
+- tapOn: Scan receipt, Receipt photo
+- assertVisible: CI Receipt Shop
+- tapOn: Save for later
+- tapOn: Back
+- tapOn:
+    id: verify-offline-reminder-photo
+- assertVisible: 'You.re offline'
+- tapOn: OK
+- assertVisible: Scan receipt, Receipt photo
+- tapOn:
+    id: verify-read-schedule
+- assertVisible: 'Elapsed requests: 2'
+- assertVisible: 'Morning requests: 1'
+- assertVisible: 'Morning: 2 receipts, day [+]1 at 09:00'
+- takeScreenshot: production-group
+- tapOn:
+    id: verify-open-app-settings
+- extendedWaitUntil:
+    visible:
+      id: breadcrumb
+      text: Return to Settle Down
+    timeout: 30000
+- runFlow:
+    when:
+      visible: close
+    commands:
+      - tapOn: close
+- extendedWaitUntil:
+    visible:
+      id: 'Settings|Apps|Camera|ALLOW_NOTIFICATIONS_ID'
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: Settings
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: com.apple.settings.apps
+          direction: DOWN
+          speed: 100
+          timeout: 30000
+      - tapOn:
+          id: com.apple.settings.apps
+- extendedWaitUntil:
+    visible:
+      id: 'Apps|Camera|ALLOW_NOTIFICATIONS_ID'
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: Apps
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: com.ryan.aquino.settledown
+          direction: DOWN
+          speed: 100
+          timeout: 30000
+          visibilityPercentage: 50
+      - tapOn:
+          id: com.ryan.aquino.settledown
+- extendedWaitUntil:
+    visible:
+      id: 'Camera|ALLOW_NOTIFICATIONS_ID'
+    timeout: 30000
+- runFlow:
+    when:
+      notVisible:
+        id: ALLOW_NOTIFICATIONS_ID
+    commands:
+      - scrollUntilVisible:
+          element: Notifications
+          direction: DOWN
+      - tapOn: Notifications
+- tapOn:
+    id: BANNER_STYLE_ID
+- tapOn: Persistent
+- tapOn:
+    id: BackButton
+- assertVisible: Banner Style, Persistent
+- pressKey: Home
+- launchApp:
+    stopApp: false
+    permissions:
+      camera: allow
+- assertVisible:
+    id: verify-receipt-reminder
+- tapOn:
+    id: verify-receipt-reminder
+- pressKey: Home
+- extendedWaitUntil:
+    visible: '.*2 saved receipts are waiting in your inbox.*'
+    timeout: 30000
+- tapOn: '.*2 saved receipts are waiting in your inbox.*'
+- assertVisible: Receipt inbox
+- tapOn:
+    id: verify-receipt-reminder
+- tapOn: Continue split, CI Receipt Shop
+- extendedWaitUntil:
+    visible: Suppressed 2 receipts including this receipt
+    timeout: 20000
+- extendedWaitUntil:
+    visible: Presented 1 receipt excluding this receipt
+    timeout: 20000
+- takeScreenshot: only-other-receipt-presented
+- launchApp:
+    permissions:
+      camera: allow
+- tapOn:
+    id: receipt-inbox
+- tapOn: Discard CI Receipt Shop
+- tapOn: Discard
+- tapOn:
+    id: verify-read-schedule
+- assertVisible: 'Elapsed requests: 1'
+- assertVisible: 'Morning: 1 receipt, day [+]1 at 09:00'
+- tapOn:
+    id: verify-close-schedule
+- longPressOn:
+    id: verify-receipt-reminder
+- tapOn: Discard Receipt photo
+- tapOn: Discard
+- assertVisible: No saved receipts
+- pressKey: Home
+- extendedWaitUntil:
+    visible: '.*Ready to scan your saved receipt.*'
+    timeout: 30000
+- tapOn: '.*Ready to scan your saved receipt.*'
+- assertVisible: This receipt is no longer in your inbox.
+- takeScreenshot: stale-tap
+- tapOn:
+    id: verify-read-schedule
+- assertVisible: 'Elapsed requests: 0'
+- assertVisible: 'Morning requests: 0'
+- takeScreenshot: discarded-drafts-clear-schedules

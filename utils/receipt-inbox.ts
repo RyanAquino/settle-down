@@ -1,6 +1,7 @@
 import { uuid } from 'expo';
 import { Directory, File, Paths } from 'expo-file-system';
 import { z } from 'zod';
+import { nextMorningDate } from '@/utils/receipt-morning';
 import { groupSchema, groupUserSchema, itemAssignmentSchema, receiptSchema } from '@/utils/receipt';
 
 const editorSchema = z.object({
@@ -16,6 +17,7 @@ export type ReceiptEdits = z.output<typeof editorSchema>;
 
 const storedDraft = z.object({
   createdAt: z.number(),
+  morningDate: z.iso.date().optional(),
   photoName: z.string().regex(/^photo\.[a-z0-9]{1,10}$/),
   receipt: receiptSchema.nullable(),
   edits: editorSchema.nullable(),
@@ -27,6 +29,17 @@ const root = () => new Directory(Paths.document, 'receipt-inbox');
 const directory = (id: string) => new Directory(root(), z.uuid().parse(id));
 export const draftPhotoUri = (draft: ReceiptDraft) =>
   new File(directory(draft.id), draft.photoName).uri;
+
+const listeners = new Set<() => void>();
+
+export function subscribeToInbox(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function inboxChanged() {
+  for (const listener of listeners) listener();
+}
 
 function writeSnapshot(dir: Directory, draft: ReceiptDraft) {
   const next = new File(dir, 'next.json');
@@ -47,10 +60,19 @@ export async function createPhotoDraft(uri: string): Promise<ReceiptDraft> {
     const source = new File(uri);
     const extension = source.extension.toLowerCase();
     const photoName = 'photo' + (/^\.[a-z0-9]{1,10}$/.test(extension) ? extension : '.jpg');
-    const draft = { id, photoName, createdAt: Date.now(), receipt: null, edits: null };
+    const createdAt = Date.now();
+    const draft = {
+      id,
+      photoName,
+      createdAt,
+      morningDate: nextMorningDate(createdAt),
+      receipt: null,
+      edits: null,
+    };
     await source.copy(new File(dir, photoName));
     writeSnapshot(dir, draft);
     dir.rename(id);
+    inboxChanged();
     return draft;
   } catch (error) {
     if (dir.exists) dir.delete();
@@ -110,6 +132,7 @@ export function listDrafts() {
 export function saveDraft(draft: ReceiptDraft) {
   // Never recreate a discarded or submitted draft from a late callback.
   writeSnapshot(directory(draft.id), draft);
+  inboxChanged();
 }
 
 export function removeDraft(id: string) {
@@ -117,5 +140,6 @@ export function removeDraft(id: string) {
   if (!dir.exists) return;
   // Remove from the inbox before deleting the large photo and the snapshots.
   dir.rename('removed-' + id);
+  inboxChanged();
   dir.delete();
 }

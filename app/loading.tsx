@@ -17,6 +17,8 @@ import {
   saveDraft,
   type ReceiptDraft,
 } from '@/utils/receipt-inbox';
+import { receiptLeftForLater } from '@/utils/receipt-reminder-lifecycle';
+import { useActiveReceiptDraft } from '@/utils/use-active-receipt-draft';
 import { pendingScan, releaseScan } from '@/utils/scan-request';
 import { retryApiCall } from '@/utils/retry';
 
@@ -39,10 +41,13 @@ function ScanReceipt({ id }: { id: string }) {
   useEffect(() => releaseScan(id), [id]);
 
   const selection = input && !('draftId' in input) ? input : null;
+  const savedSelection = input && 'draftId' in input ? input : null;
   const photoUri = input?.photoUri ?? '';
-  const draftId = input && 'draftId' in input ? input.draftId : '';
+  const draftId = savedSelection?.draftId ?? '';
+  const reminder = savedSelection?.reminder;
   const importing = useRef<{ uri: string; result: Promise<ReceiptDraft> } | null>(null);
-  const activeDraft = useRef<ReceiptDraft | null>(null);
+  const [activeDraft, setActiveDraft] = useState<ReceiptDraft | null>(null);
+  useActiveReceiptDraft(draftId || activeDraft?.id);
   const fromLibrary = selection?.fromLibrary === true;
   const verifyOfflineImport =
     Constants.expoConfig?.extra?.verifyOfflineImport === true &&
@@ -80,10 +85,11 @@ function ScanReceipt({ id }: { id: string }) {
     const controller = new AbortController();
     const { signal } = controller;
 
-    function returnToInbox(draft: ReceiptDraft | null, offline: boolean) {
+    async function returnToInbox(draft: ReceiptDraft | null, offline: boolean) {
       if (draft) {
-        if (draftId && router.canGoBack()) router.back();
+        if (draftId && !reminder && router.canGoBack()) router.back();
         else router.replace('/inbox');
+        await receiptLeftForLater();
         Alert.alert(
           offline ? 'You’re offline' : 'Couldn’t scan receipt',
           'Your photo is in the receipt inbox. Open it when you’re ready to scan.',
@@ -101,7 +107,9 @@ function ScanReceipt({ id }: { id: string }) {
       if (draftId) {
         draft = readDraft(draftId);
         if (!draft) {
-          router.replace('/inbox');
+          router.replace(
+            reminder ? { pathname: '/inbox', params: { missingReceipt: reminder } } : '/inbox',
+          );
           return;
         }
       } else {
@@ -120,12 +128,17 @@ function ScanReceipt({ id }: { id: string }) {
         }
       }
       if (signal.aborted) return;
-      activeDraft.current = draft;
+      setActiveDraft(draft);
       const uri = draft ? draftPhotoUri(draft) : photoUri;
       const details = (data: string) =>
         router.replace({
           pathname: '/receipt-details',
-          params: { data, photoUri: uri, ...(draft && { draftId: draft.id }) },
+          params: {
+            data,
+            photoUri: uri,
+            ...(draft && { draftId: draft.id }),
+            ...(reminder && { reminder }),
+          },
         });
       if (draft?.receipt) {
         details(JSON.stringify(draft.receipt));
@@ -140,7 +153,7 @@ function ScanReceipt({ id }: { id: string }) {
         setIsOffline(true);
         setStatusMessage('You’re offline');
         setStatusDetail('Saving your receipt for later.');
-        returnToInbox(draft, true);
+        await returnToInbox(draft, true);
         return;
       }
 
@@ -195,7 +208,7 @@ function ScanReceipt({ id }: { id: string }) {
       } catch (error) {
         if (signal.aborted) return;
         console.warn('[upload] Could not scan receipt', error);
-        returnToInbox(draft, false);
+        await returnToInbox(draft, false);
       }
     }
 
@@ -206,7 +219,7 @@ function ScanReceipt({ id }: { id: string }) {
       else router.replace('/');
     });
     return () => controller.abort();
-  }, [verifyOfflineImport, photoUri, fromLibrary, draftId]);
+  }, [verifyOfflineImport, photoUri, fromLibrary, draftId, reminder]);
 
   // beam translateY: 0 → photoHeight, within the card
   const PHOTO_H = 260;
@@ -231,9 +244,9 @@ function ScanReceipt({ id }: { id: string }) {
             style={styles.retakeButton}
             testID="retake-receipt-photo"
             onPress={() => {
-              if (activeDraft.current) {
+              if (activeDraft) {
                 try {
-                  removeDraft(activeDraft.current.id);
+                  removeDraft(activeDraft.id);
                 } catch {
                   Alert.alert('Couldn’t discard the photo', 'Please try again.');
                   return;
