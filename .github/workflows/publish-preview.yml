@@ -12,6 +12,11 @@ permissions:
   actions: read
   contents: read
 
+# Keep a new publish and a restore from interleaving across the two Expo projects.
+concurrency:
+  group: expo-previews-${{ github.ref }}-${{ github.actor }}-${{ github.triggering_actor }}
+  cancel-in-progress: false
+
 jobs:
   prepare:
     name: Prepare Expo preview release
@@ -24,7 +29,8 @@ jobs:
     outputs:
       tag: ${{ steps.select.outputs.tag }}
       commit: ${{ steps.select.outputs.commit }}
-      groups: ${{ steps.stage.outputs.groups }}
+      mode: ${{ steps.select.outputs.mode }}
+      groups: ${{ steps.select.outputs.groups }}
     steps:
       - if: inputs.release_tag == ''
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -37,8 +43,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REQUESTED: ${{ inputs.release_tag }}
           RELEASE_QUERY: |
-            query($owner:String!, $repo:String!, $tag:String!) {
-              repository(owner:$owner, name:$repo) { release(tagName:$tag) { isDraft } }
+            query($owner:String!, $repo:String!, $tag:String!, $ref:String!) {
+              repository(owner:$owner, name:$repo) {
+                release(tagName:$tag) { isDraft isPrerelease }
+                ref(qualifiedName:$ref) { id }
+              }
             }
         run: |
           tag=$REQUESTED
@@ -56,96 +65,69 @@ jobs:
             echo "::error::Expected a versioned preview tag or a legacy expo-preview tag."
             exit 1
           fi
-          state=$(gh api graphql -f owner="$GITHUB_REPOSITORY_OWNER" -f repo="${GITHUB_REPOSITORY#*/}" -f tag="$tag" \
-            -f query="$RELEASE_QUERY" \
-            --jq 'if .data.repository.release == null then "missing" elif .data.repository.release.isDraft then "draft" else "published" end')
-          if [[ "$state" != published ]]; then
-            if [[ -n "$REQUESTED" ]]; then
-              echo "::error::Choose a published preview release from GitHub Releases."
+          commit=${tag##*-}
+          metadata=$(gh api graphql -f owner="$GITHUB_REPOSITORY_OWNER" -f repo="${GITHUB_REPOSITORY#*/}" \
+            -f tag="$tag" -f ref="refs/tags/$tag" -f query="$RELEASE_QUERY" --jq '.data.repository')
+          if jq -e '.ref != null' <<< "$metadata" > /dev/null; then
+            ref=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq '.sha')
+            if [[ "$ref" != "$commit" ]]; then
+              echo "::error::Preview tag $tag points to $ref instead of $commit."
               exit 1
             fi
-            echo "stage=true" >> "$GITHUB_OUTPUT"
           fi
-          echo "commit=${tag##*-}" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Require a successful Quality run for the selected main commit
-        if: inputs.release_tag == '' && steps.select.outputs.tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          passed=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/quality.yml/runs" \
-            -f branch=main -f event=push -f head_sha="$GITHUB_SHA" -f status=success -f per_page=1 \
-            --jq '.total_count > 0')
-          if [[ "$passed" != true ]]; then
-            echo "::error::Quality must pass on main for $GITHUB_SHA before publishing."
-            exit 1
-          fi
-      - if: steps.select.outputs.stage == 'true'
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - if: steps.select.outputs.stage == 'true'
-        run: npm ci
-      - if: steps.select.outputs.stage == 'true'
-        run: npm install --global eas-cli@24.7.0
-      - name: Stage the original bundles for both Expo projects
-        if: steps.select.outputs.stage == 'true'
-        id: stage
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          TAG: ${{ steps.select.outputs.tag }}
-          COMMIT: ${{ steps.select.outputs.commit }}
-        run: bash tools/ci/stage-expo-preview.sh
-
-  release:
-    name: Create or reuse the GitHub prerelease
-    needs: prepare
-    if: needs.prepare.outputs.tag && (github.run_attempt == 1 || github.triggering_actor == github.repository_owner)
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    concurrency:
-      group: expo-release-${{ needs.prepare.outputs.tag }}
-      cancel-in-progress: false
-    outputs:
-      groups: ${{ steps.release.outputs.groups }}
-    steps:
-      - name: Publish generated notes and load the recorded update groups
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-          COMMIT: ${{ needs.prepare.outputs.commit }}
-          NEW_GROUPS: ${{ needs.prepare.outputs.groups }}
-        run: |
-          if [[ -n "$NEW_GROUPS" ]]; then
-            printf '%s\n' "$NEW_GROUPS" > expo-groups.json
-            if ! draft=$(gh release view "$TAG" --json isDraft --jq .isDraft); then
-              gh release create "$TAG" expo-groups.json --target "$COMMIT" \
-                --prerelease --title "Expo Go preview ${TAG%-*} (${COMMIT:0:12})" --generate-notes
-            elif [[ "$draft" == true ]]; then
-              # Resume a release interrupted between draft creation, asset upload and publication.
-              gh release upload "$TAG" expo-groups.json --clobber
-              gh release edit "$TAG" --draft=false
+          if jq -e '.release != null and (.release.isDraft | not)' <<< "$metadata" > /dev/null; then
+            if ! jq -e '.release.isPrerelease and .ref != null' <<< "$metadata" > /dev/null; then
+              echo "::error::Expected a tagged Expo prerelease."
+              exit 1
             fi
-          fi
-          published=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '(.isDraft | not) and .isPrerelease')
-          ref=$(gh api "repos/$GH_REPO/commits/$TAG" --jq '.sha')
-          if [[ "$published" != true || "$ref" != "$COMMIT" ]]; then
-            echo "::error::Expected a published Expo prerelease tagged at its original commit."
+            saved=$(gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern expo-groups.json --output -)
+            groups=$(jq -ce 'select(keys == ["org-ryan","ryan.aquino"]) |
+              select(all(.[]; type == "string" and test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")))' <<< "$saved")
+            echo "groups=$groups" >> "$GITHUB_OUTPUT"
+            echo "mode=restore" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$REQUESTED" ]]; then
+            echo "::error::Choose a published preview release from GitHub Releases."
             exit 1
+          else
+            echo "mode=publish" >> "$GITHUB_OUTPUT"
           fi
-          groups=$(gh release download "$TAG" --pattern expo-groups.json --output - |
-            jq -ce 'select(keys == ["org-ryan","ryan.aquino"]) |
-              select(all(.[]; type == "string" and test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")))')
-          echo "groups=$groups" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Require successful main CI for the selected preview
+        if: steps.select.outputs.tag
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: &require-main-ci |
+            const sha = context.payload.inputs?.release_tag
+              ? (await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' })).data.object.sha
+              : context.sha;
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              ...context.repo, branch: 'main', event: 'push', head_sha: sha, per_page: 100,
+            });
+
+            // A missing required workflow must block just as a failed run would.
+            const latest = new Map([
+              ['.github/workflows/quality.yml', null],
+              ['.github/workflows/native.yml', null],
+              ['.github/workflows/security.yml', null],
+            ]);
+            for (const run of runs) {
+              const previous = latest.get(run.path);
+              if (!previous || run.run_number > previous.run_number) latest.set(run.path, run);
+            }
+            for (const [path, run] of latest) {
+              if (!run) {
+                core.setFailed(`Preview blocked for main@${sha}. No push run found for ${path}.`);
+              } else if (run.status !== 'completed' || run.conclusion !== 'success') {
+                const result = run.status === 'completed' ? run.conclusion : run.status;
+                core.setFailed(`Preview blocked for main@${sha}. ${run.name}: ${result} (${run.html_url}).`);
+              }
+            }
 
   publish:
     name: Publish preview (${{ matrix.owner }})
-    needs: [prepare, release]
-    if: github.run_attempt == 1 || github.triggering_actor == github.repository_owner
+    needs: prepare
+    if: needs.prepare.outputs.tag && (github.run_attempt == 1 || github.triggering_actor == github.repository_owner)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -158,7 +140,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: refs/tags/${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -166,12 +148,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm install --global eas-cli@24.7.0
-      - name: Publish the recorded iOS and Android bundles to preview
+      - name: Recheck main CI before publishing to Expo
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: *require-main-ci
+      - name: Publish or restore iOS and Android on preview
+        id: update
         env:
           GH_TOKEN: ${{ github.token }}
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EAS_PROJECT_OWNER: ${{ matrix.owner }}
-          GROUP: ${{ fromJSON(needs.release.outputs.groups)[matrix.owner] }}
+          MODE: ${{ needs.prepare.outputs.mode }}
+          GROUP: ${{ fromJSON(needs.prepare.outputs.groups || '{}')[matrix.owner] }}
           TAG: ${{ needs.prepare.outputs.tag }}
           COMMIT: ${{ needs.prepare.outputs.commit }}
           REQUESTED: ${{ inputs.release_tag }}
@@ -183,9 +171,82 @@ jobs:
           if [[ -z "$REQUESTED" ]]; then
             current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
             if [[ "$current" != "$COMMIT" ]]; then
-              echo "Skipping superseded release $TAG."
-              exit 0
+              echo "::error::Main moved to $current. Start a new preview for that commit."
+              exit 1
             fi
           fi
-          eas update:republish --group "$GROUP" --destination-channel preview \
-            --platform all --non-interactive --message "$TAG"
+          if [[ "$MODE" == restore ]]; then
+            if [[ -z "$GROUP" ]]; then
+              echo "::error::Release $TAG is missing the update group for $EAS_PROJECT_OWNER."
+              exit 1
+            fi
+            eas update:republish --group "$GROUP" --destination-channel preview \
+              --platform all --non-interactive --message "$TAG"
+          elif [[ "$MODE" == publish && -z "$REQUESTED" ]]; then
+            updates=$(eas update --channel preview --environment preview --platform all \
+              --message "$TAG" --non-interactive --json)
+            if ! jq -e --arg sha "$COMMIT" --arg owner "$EAS_PROJECT_OWNER" '
+              select(map(.platform) | sort == ["android","ios"]) |
+              select(all(.[]; .gitCommitHash == $sha)) |
+              map(.group) | unique | select(length == 1) | .[0] |
+              select(type == "string" and test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")) |
+              {($owner): .}
+            ' <<< "$updates" > "$RUNNER_TEMP/$EAS_PROJECT_OWNER.json"; then
+              echo "::error::Expo did not return one iOS and Android update group for $EAS_PROJECT_OWNER at $COMMIT."
+              exit 1
+            fi
+          else
+            echo "::error::No publish or restore operation was selected for $TAG."
+            exit 1
+          fi
+      - name: Save the published update group
+        if: needs.prepare.outputs.mode == 'publish'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: preview-group-${{ matrix.owner }}
+          path: ${{ runner.temp }}/${{ matrix.owner }}.json
+          if-no-files-found: error
+          overwrite: true
+
+  release:
+    name: Record the published Expo preview
+    needs: [prepare, publish]
+    if: needs.prepare.outputs.mode == 'publish' && (github.run_attempt == 1 || github.triggering_actor == github.repository_owner)
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: preview-group-*
+          merge-multiple: true
+          path: groups
+      - name: Recheck main CI before creating the prerelease
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: *require-main-ci
+      - name: Attach both original update group IDs to the tagged prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: |
+          jq -es 'add | select(keys == ["org-ryan","ryan.aquino"]) |
+            select(all(.[]; type == "string" and test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")))' \
+            groups/org-ryan.json groups/ryan.aquino.json > expo-groups.json
+          if ! draft=$(gh release view "$TAG" --json isDraft --jq .isDraft); then
+            gh release create "$TAG" expo-groups.json --target "$COMMIT" \
+              --prerelease --title "Expo Go preview ${TAG%-*} (${COMMIT:0:12})" --generate-notes
+          elif [[ "$draft" == true ]]; then
+            gh release upload "$TAG" expo-groups.json --clobber
+            gh release edit "$TAG" --target "$COMMIT" --draft=false --prerelease
+          fi
+          published=$(gh release view "$TAG" --json isDraft,isPrerelease --jq '(.isDraft | not) and .isPrerelease')
+          ref=$(gh api "repos/$GH_REPO/commits/$TAG" --jq '.sha')
+          recorded=$(gh release download "$TAG" --pattern expo-groups.json --output -)
+          if [[ "$published" != true || "$ref" != "$COMMIT" ]] || ! jq -e --argjson saved "$recorded" '. == $saved' expo-groups.json > /dev/null; then
+            echo "::error::Release $TAG does not match the published commit and update groups."
+            exit 1
+          fi
