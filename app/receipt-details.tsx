@@ -18,7 +18,7 @@ import {
 import { useLocalSearchParams, usePreventRemove, router } from 'expo-router';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import { theme, shadow, type, buildUserColorMap, initialFor } from '@/utils/theme';
 import { Entrance, PressableScale } from '@/components/motion';
@@ -180,7 +180,7 @@ function ReceiptEditor({
   const [isSyncing, setIsSyncing] = useState(false);
   const [showShares, setShowShares] = useState(false);
   const [showPhoto, setShowPhoto] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pendingDate, setPendingDate] = useState<Date | null>(null);
   const [assignProgress] = useState(() => new Animated.Value(0));
   usePreventRemove(isSyncing);
 
@@ -345,8 +345,30 @@ function ReceiptEditor({
     changeEdits({ costs: { ...latest.current.costs, [itemOrder]: cost } });
   const getTotal = () => receipt.total_amount;
   const updateTaxPercentage = (value: string) => changeEdits({ tax: value });
-  const handleDateChange = (_: unknown, date?: Date) => {
-    if (date) changeEdits({ date: date.toISOString() });
+  const editDate = () => {
+    if (Platform.OS !== 'android') {
+      setPendingDate(shopInfo.receipt_date);
+      return;
+    }
+
+    DateTimePickerAndroid.open({
+      mode: 'date',
+      value: shopInfo.receipt_date,
+      maximumDate: new Date(),
+      onValueChange: (_, day) => {
+        DateTimePickerAndroid.open({
+          mode: 'time',
+          value: day,
+          onValueChange: (_, date) => {
+            if (date.getTime() > Date.now()) {
+              Alert.alert('Choose a past time', 'The receipt time cannot be in the future.');
+              return;
+            }
+            changeEdits({ date: date.toISOString() });
+          },
+        });
+      },
+    });
   };
   const formatDate = (d: Date) =>
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -511,7 +533,7 @@ function ReceiptEditor({
             testID="receipt-date"
             style={styles.dateRow}
             scaleTo={0.99}
-            onPress={() => setShowDatePicker(true)}
+            onPress={editDate}
           >
             <Text style={styles.dateText}>
               {formatDate(shopInfo.receipt_date)} · {formatTime(shopInfo.receipt_date)}
@@ -976,18 +998,13 @@ function ReceiptEditor({
       </Modal>
 
       {/* Date picker modal */}
-      {showDatePicker && (
-        <Modal
-          transparent
-          animationType="slide"
-          visible={showDatePicker}
-          onRequestClose={() => setShowDatePicker(false)}
-        >
+      {pendingDate && (
+        <Modal transparent animationType="slide" onRequestClose={() => setPendingDate(null)}>
           <View style={styles.modalOverlay}>
             <View style={styles.datePickerModal}>
               <View style={styles.datePickerHeader}>
                 <PressableScale
-                  onPress={() => setShowDatePicker(false)}
+                  onPress={() => setPendingDate(null)}
                   haptic="light"
                   style={styles.datePickerHeaderBtn}
                 >
@@ -995,7 +1012,10 @@ function ReceiptEditor({
                 </PressableScale>
                 <Text style={styles.datePickerTitle}>Receipt date</Text>
                 <PressableScale
-                  onPress={() => setShowDatePicker(false)}
+                  onPress={() => {
+                    changeEdits({ date: pendingDate.toISOString() });
+                    setPendingDate(null);
+                  }}
                   haptic="light"
                   style={styles.datePickerHeaderBtn}
                 >
@@ -1004,10 +1024,11 @@ function ReceiptEditor({
               </View>
               <View style={styles.datePickerBody}>
                 <DateTimePicker
-                  value={shopInfo.receipt_date}
+                  testID="receipt-date-spinner"
+                  value={pendingDate}
                   mode="datetime"
                   display="spinner"
-                  onChange={handleDateChange}
+                  onValueChange={(_, date) => setPendingDate(date)}
                   maximumDate={new Date()}
                   textColor={theme.ink}
                   accentColor={theme.accent}
