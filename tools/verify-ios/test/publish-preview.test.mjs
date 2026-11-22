@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -171,7 +171,7 @@ test('each Expo publish and the final prerelease recheck main CI, including part
 
 const update = publish.steps.find((step) => step.id === 'update');
 const cli = `
-  git() { echo "$COMMIT"; }
+  git() { echo "$CHECKOUT_SHA"; }
   gh() { echo "$MAIN_SHA"; }
   eas() {
     echo "$*" >> "$RUNNER_TEMP/calls"
@@ -180,6 +180,54 @@ const cli = `
 `;
 const tag = `v2.0.0-${dispatchSha}`;
 const group = '7bd724a0-312a-4b81-9fc5-a0a7e4f36045';
+
+test('published releases select the org group from current and legacy manifests', async (t) => {
+  const select = prepare.steps.find((step) => step.id === 'select');
+  const dir = await mkdtemp(join(tmpdir(), 'select-preview-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const output = join(dir, 'output');
+  const personal = { 'ryan.aquino': 'b1a5e609-b24a-40a6-9646-db3c32fef062' };
+  const gh = `
+    gh() {
+      case "$1 $2" in
+        'api graphql') echo '{"release":{"isDraft":false,"isPrerelease":true},"ref":{"id":"tag"}}' ;;
+        'api repos/owner/repo/commits/'*) echo "$COMMIT" ;;
+        'release download') echo "$MANIFEST" ;;
+        *) return 1 ;;
+      esac
+    }
+  `;
+  for (const [manifest, expectedGroup] of [
+    [{ 'org-ryan': group }, group],
+    [{ ...personal, 'org-ryan': group }, group],
+    [personal, null],
+    [{ ...personal, 'org-ryan': 'invalid' }, null],
+  ]) {
+    await writeFile(output, '');
+    const result = spawnSync('bash', ['-eo', 'pipefail', '-c', gh + select.run], {
+      cwd: dir,
+      encoding: 'utf8',
+      env: {
+        PATH: process.env.PATH,
+        COMMIT: dispatchSha,
+        GITHUB_REPOSITORY: 'owner/repo',
+        GITHUB_OUTPUT: output,
+        MANIFEST: JSON.stringify(manifest),
+        REQUESTED: `expo-preview-${dispatchSha}`,
+      },
+    });
+    if (expectedGroup) {
+      assert.equal(result.status, 0, result.stderr);
+      assert.ok((await readFile(output, 'utf8')).split('\n').includes(`group=${expectedGroup}`));
+    } else {
+      assert.notEqual(result.status, 0);
+      assert.match(result.stdout, /missing a valid org-ryan update group/);
+      assert.equal(await readFile(output, 'utf8'), '');
+    }
+  }
+  assert.equal(prepare.outputs.group, '${{ steps.select.outputs.group }}');
+  assert.equal(update.env.GROUP, '${{ needs.prepare.outputs.group }}');
+});
 
 async function publishPreview(t, overrides = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'publish-preview-'));
@@ -195,10 +243,10 @@ async function publishPreview(t, overrides = {}) {
     env: {
       PATH: process.env.PATH,
       COMMIT: dispatchSha,
+      CHECKOUT_SHA: dispatchSha,
       MAIN_SHA: dispatchSha,
       TAG: tag,
       MODE: 'publish',
-      EAS_PROJECT_OWNER: 'org-ryan',
       RUNNER_TEMP: dir,
       UPDATES: JSON.stringify(updates),
       ...overrides,
@@ -207,37 +255,45 @@ async function publishPreview(t, overrides = {}) {
   return { ...result, dir };
 }
 
-test('a new preview uploads directly once and saves the returned group for that project', async (t) => {
+test('a new preview uploads directly once and records only the org group', async (t) => {
   const { dir, status, stderr } = await publishPreview(t);
   assert.equal(status, 0, stderr);
   assert.equal(
     await readFile(join(dir, 'calls'), 'utf8'),
     `update --channel preview --environment preview --platform all --message ${tag} --non-interactive --json\n`,
   );
-  assert.deepEqual(JSON.parse(await readFile(join(dir, 'org-ryan.json'), 'utf8')), {
+  assert.equal(publish.strategy, undefined);
+  assert.deepEqual(JSON.parse(await readFile(join(dir, 'expo-groups.json'), 'utf8')), {
     'org-ryan': group,
   });
   const receipt = publish.steps.find((step) => step.uses?.startsWith('actions/upload-artifact@'));
   assert.equal(receipt.if, "needs.prepare.outputs.mode == 'publish'");
-  assert.equal(receipt.with.name, 'preview-group-${{ matrix.owner }}');
+  assert.equal(receipt.with.path, '${{ runner.temp }}/expo-groups.json');
+  const download = release.steps.find((step) =>
+    step.uses?.startsWith('actions/download-artifact@'),
+  );
+  assert.equal(download.with.name, receipt.with.name);
   assert.ok(release.if.includes("needs.prepare.outputs.mode == 'publish'"));
 });
 
 test('a restore republishes the recorded group without rebuilding or replacing the release manifest', async (t) => {
   const legacyTag = `expo-preview-${dispatchSha}`;
+  const checkout = publish.steps.find((step) => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(checkout.with.ref, '${{ github.sha }}');
   const { dir, status, stderr } = await publishPreview(t, {
     MODE: 'restore',
     GROUP: group,
     REQUESTED: legacyTag,
     TAG: legacyTag,
     MAIN_SHA: currentMain,
+    CHECKOUT_SHA: currentMain,
   });
   assert.equal(status, 0, stderr);
   assert.equal(
     await readFile(join(dir, 'calls'), 'utf8'),
     `update:republish --group ${group} --destination-channel preview --platform all --non-interactive --message ${legacyTag}\n`,
   );
-  await assert.rejects(readFile(join(dir, 'org-ryan.json')), { code: 'ENOENT' });
+  await assert.rejects(readFile(join(dir, 'expo-groups.json')), { code: 'ENOENT' });
 });
 
 test('missing restore data and a superseded fresh commit stop before contacting Expo', async (t) => {
@@ -256,10 +312,9 @@ test('a partial platform response fails the project publish', async (t) => {
   assert.match(stdout, /::error::Expo did not return one iOS and Android update group/);
 });
 
-test('the release combines both project receipts and can retry without another upload to Expo', async (t) => {
+test('the release attaches the org manifest and can retry without another upload to Expo', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'preview-release-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  await mkdir(join(dir, 'groups'));
   const record = release.steps.find((step) => step.run?.includes('gh release create'));
   const gh = `
     gh() {
@@ -280,20 +335,14 @@ test('the release combines both project receipts and can retry without another u
       encoding: 'utf8',
       env: { PATH: process.env.PATH, COMMIT: dispatchSha, TAG: tag, GH_REPO: 'owner/repo' },
     });
-  const personal = 'b1a5e609-b24a-40a6-9646-db3c32fef062';
-  await writeFile(join(dir, 'groups/org-ryan.json'), JSON.stringify({ 'org-ryan': group }));
   assert.notEqual(run().status, 0);
   await assert.rejects(readFile(join(dir, 'recorded.json')), { code: 'ENOENT' });
-  await writeFile(
-    join(dir, 'groups/ryan.aquino.json'),
-    JSON.stringify({ 'ryan.aquino': personal }),
-  );
+  await writeFile(join(dir, 'expo-groups.json'), JSON.stringify({ 'org-ryan': group }));
   for (let attempt = 0; attempt < 2; attempt++) {
     const result = run();
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(await readFile(join(dir, 'recorded.json'), 'utf8')), {
       'org-ryan': group,
-      'ryan.aquino': personal,
     });
   }
 });

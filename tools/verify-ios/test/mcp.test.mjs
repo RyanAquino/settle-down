@@ -17,6 +17,9 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
   await mkdir(source);
   await mkdir(`${evidence}/exploration`, { recursive: true });
   await writeFile(`${source}/screen.tsx`, 'export const label = "Synthetic screen";');
+  await symlink('screen.tsx', `${source}/alias.tsx`);
+  await writeFile(`${source}/oversized.md`, 'x'.repeat(160001));
+  const sourceFiles = ['screen.tsx', 'escape.ts', 'large.tsx', 'alias.tsx', 'oversized.md'];
   await writeFile(`${directory}/outside.ts`, 'Do not read');
   await symlink(`${directory}/outside.ts`, `${source}/escape.ts`);
   // Large enough that one unpaged result would exceed Copilot's 20,480-byte
@@ -35,7 +38,7 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
     JSON.stringify({
       request: { pr: 7, headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40) },
       pr: { title: 'Synthetic', body: 'x'.repeat(30000) },
-      sourceFiles: ['screen.tsx', 'escape.ts', 'large.tsx'],
+      sourceFiles,
       changedFiles: ['screen.tsx', 'large.tsx'],
       diffs: [
         {
@@ -85,7 +88,7 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
   const context = await call('get_context');
   assert.ok(bytes(context) <= RESULT_LIMIT_BYTES);
   const summary = JSON.parse(context.content[0].text);
-  assert.deepEqual(summary.sourceFiles, ['screen.tsx', 'escape.ts', 'large.tsx']);
+  assert.deepEqual(summary.sourceFiles, sourceFiles);
   assert.equal(summary.pr.bodyTruncated, true);
   const large = summary.changedFiles.find((f) => f.file === 'large.tsx');
   assert.ok(large.diffPages > 1);
@@ -120,6 +123,9 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
   assert.equal((await call('get_diff', { file: 'missing.tsx' })).isError, true);
   assert.equal((await call('read_source', { file: '../outside.ts' })).isError, true);
   assert.equal((await call('read_source', { file: 'escape.ts' })).isError, true);
+  for (const file of ['alias.tsx', 'oversized.md']) {
+    assert.equal((await call('read_source', { file })).isError, true);
+  }
   assert.equal(
     (await call('execute_flow', { yaml: 'appId: ${APP_ID}\n---\n- runScript: evil.js' })).isError,
     true,
@@ -152,7 +158,7 @@ test('the MCP adapter confines source reads and writes and rejects unsafe action
     .trim()
     .split('\n')
     .map(JSON.parse);
-  assert.equal(log.filter((c) => !c.ok).length, 7);
+  assert.equal(log.filter((c) => !c.ok).length, 9);
 });
 
 test('subprocess environment does not contain GitHub, Copilot, or fixture credentials', () => {

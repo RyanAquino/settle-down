@@ -72,7 +72,8 @@ test('only the first complete successful flow after a successful reset earns evi
 });
 
 test('ready plans cannot assemble fragments or change fixtures/assertions after execution', () => {
-  assert.doesNotThrow(() => requireScenarioEvidence(plan, [reset, passed]));
+  const inspected = { tool: 'inspect_screen', ok: true };
+  assert.doesNotThrow(() => requireScenarioEvidence(plan, [reset, passed, inspected]));
   for (const journal of [
     [],
     [reset],
@@ -80,7 +81,7 @@ test('ready plans cannot assemble fragments or change fixtures/assertions after 
     [reset, { ...passed, scenarioEvidence: undefined }],
     [reset, passed, { ...passed, ok: false }],
   ])
-    assert.throws(() => requireScenarioEvidence(plan, journal), /complete flow/);
+    assert.throws(() => requireScenarioEvidence(plan, [inspected, ...journal]), /complete flow/);
   for (const change of [
     { fixture: 'upload-error' },
     { yaml: yaml.replace('Ready', 'Other') },
@@ -88,6 +89,7 @@ test('ready plans cannot assemble fragments or change fixtures/assertions after 
   ]) {
     assert.throws(() =>
       requireScenarioEvidence({ ...plan, scenarios: [{ ...scenario, ...change }] }, [
+        inspected,
         reset,
         passed,
       ]),
@@ -98,6 +100,15 @@ test('ready plans cannot assemble fragments or change fixtures/assertions after 
     passed.scenarioEvidence,
   );
   assert.doesNotThrow(() => requireScenarioEvidence({ ...plan, disposition: 'blocked' }, []));
+});
+
+test('a ready plan with proven flows can be resubmitted after inspecting the live screen', () => {
+  const journal = [reset, passed];
+  assert.throws(() => requireScenarioEvidence(plan, journal), /inspect_screen/);
+  journal.push({ tool: 'screenshot', ok: true }, { tool: 'inspect_screen', ok: false });
+  assert.throws(() => requireScenarioEvidence(plan, journal), /inspect_screen/);
+  journal.push({ tool: 'inspect_screen', ok: true });
+  assert.doesNotThrow(() => requireScenarioEvidence(plan, journal));
 });
 
 test('the untouched initial install can be reused once, but not after a flow', () => {

@@ -62,6 +62,21 @@ export default function Index() {
       </View>
       {Constants.expoConfig?.extra?.verifyOfflineImport === true && (
         <View style={[styles.inboxOverlay, styles.verificationControls, { top: insets.top + 56 }]}>
+          {Constants.expoConfig?.extra?.verifyMissingBackend === true && (
+            <PressableScale
+              style={styles.debugButton}
+              testID="verify-missing-backend"
+              accessibilityLabel="Open receipt without backend"
+              onPress={() =>
+                router.push({
+                  pathname: '/receipt-details',
+                  params: { useMockData: 'true', verifyMissingBackend: 'true' },
+                })
+              }
+            >
+              <Text style={styles.debugButtonText}>Open receipt without backend</Text>
+            </PressableScale>
+          )}
           <PressableScale
             style={styles.debugButton}
             testID="verify-import-offline"

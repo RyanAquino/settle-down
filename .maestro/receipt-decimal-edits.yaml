@@ -1,0 +1,83 @@
+appId: com.ryan.aquino.settledown
+name: Replace receipt prices and tax with decimal amounts
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: pick-receipt
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- extendedWaitUntil:
+    visible: CI Receipt Shop
+    timeout: 30000
+- tapOn:
+    id: receipt-group
+- tapOn:
+    id: group-ci-twd
+- assertVisible: '.*CI Taiwan.*'
+- tapOn:
+    id: paid-by-ci-alex
+- scrollUntilVisible:
+    element:
+      id: item-1-assign-ci-alex
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-1-assign-ci-alex
+- tapOn:
+    id: item-cost-1
+- inputText: '100,50'
+- tapOn: Cranberry juice
+- scrollUntilVisible:
+    element:
+      id: item-2-assign-ci-sam
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-2-assign-ci-sam
+- tapOn:
+    id: item-cost-2
+- inputText: '199.50'
+- tapOn: Onigiri
+- assertVisible: 'NT\$199\.50 paid · NT\$30 saved'
+- assertVisible: 'Ready to sync\.'
+- scrollUntilVisible:
+    element:
+      id: show-my-share
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: show-my-share
+- tapOn:
+    id: share-member-ci-sam
+- assertVisible: 'NT\$199\.50'
+- tapOn: Close
+- scrollUntilVisible:
+    element:
+      id: receipt-tax
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: receipt-tax
+- inputText: '10..2'
+- tapOn: Subtotal
+- assertVisible: 'Enter amounts as numbers without grouping separators\.'
+- assertVisible:
+    id: sync-transaction
+    enabled: false
+- tapOn:
+    id: receipt-tax
+- inputText: '10,0'
+- tapOn: Subtotal
+- assertVisible: 'Ready to sync\.'
+- assertVisible:
+    id: sync-transaction
+    enabled: true
+- takeScreenshot: corrected-decimal-receipt

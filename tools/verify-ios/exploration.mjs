@@ -143,6 +143,10 @@ export function requireScenarioEvidence(plan, journal, regressions = []) {
       );
     }
   }
+  if (!journal.some((call) => call.tool === 'inspect_screen' && call.ok === true))
+    throw new Error(
+      'Call inspect_screen to inspect the live accessibility hierarchy, then resubmit the ready plan. If exploration has closed, submit blocked and list the missing inspection.',
+    );
 }
 
 export function agentFailureMessage(agent, journal, provider = 'copilot') {

@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, userEvent, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, userEvent, waitFor } from '@testing-library/react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { uuid } from 'expo';
 import { randomUUID } from 'node:crypto';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
+import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import ReceiptDetailsScreen from '@/app/receipt-details';
 import { createPhotoDraft, readDraft, saveDraft } from '@/utils/receipt-inbox';
 import { samplePhoto, setupInboxFiles } from './support/inbox-files';
@@ -21,11 +22,15 @@ jest.mock('react-native-safe-area-context', () => ({
 jest.mock('@react-native-community/datetimepicker', () => {
   const { createElement } = jest.requireActual<typeof import('react')>('react');
   const { Button } = jest.requireActual<typeof import('react-native')>('react-native');
-  return ({ onChange }: { onChange: (event: unknown, date: Date) => void }) =>
-    createElement(Button, {
-      title: 'Choose July 1',
-      onPress: () => onChange({}, new Date('2026-07-01T12:00:00Z')),
-    });
+  return {
+    __esModule: true,
+    DateTimePickerAndroid: { open: jest.fn() },
+    default: ({ onValueChange }: { onValueChange: (event: unknown, date: Date) => void }) =>
+      createElement(Button, {
+        title: 'Choose July 1',
+        onPress: () => onValueChange({}, new Date('2026-07-01T12:00:00Z')),
+      }),
+  };
 });
 
 const groups = [
@@ -102,6 +107,10 @@ test('edits, payer and quantity splits reopen from disk and only a confirmed syn
   await fireEvent.changeText(screen.getByLabelText('Cost of Tea'), '100');
   await fireEvent.changeText(screen.getByLabelText('Cost of Soda'), '200');
   await fireEvent.changeText(screen.getByLabelText('Tax percentage'), '10');
+  await user.press(screen.getByTestId('receipt-date'));
+  await user.press(screen.getByText('Choose July 1'));
+  await user.press(screen.getByText('Cancel'));
+  expect(readDraft(draft.id)?.edits?.date).toBe(receipt.receipt_date.toISOString());
   await user.press(screen.getByTestId('receipt-date'));
   await user.press(screen.getByText('Choose July 1'));
   await user.press(screen.getByText('Done'));
@@ -207,4 +216,38 @@ test('a missing saved group keeps its edits until the user selects another avail
       costs: { 8: '100' },
     }),
   );
+});
+
+test('Android confirms the time before saving the date to the inbox', async () => {
+  jest.setSystemTime(new Date('2026-07-02T00:00:00Z'));
+  const os = jest.replaceProperty(Platform, 'OS', 'android');
+  try {
+    const draft = { ...(await createPhotoDraft(samplePhoto().uri)), receipt };
+    saveDraft(draft);
+    jest.mocked(useLocalSearchParams).mockReturnValue({ draftId: draft.id });
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(response(groups))
+      .mockResolvedValueOnce(response(members));
+    const open = jest.mocked(DateTimePickerAndroid.open);
+    open.mockClear();
+    const user = userEvent.setup();
+    await render(<ReceiptDetailsScreen />);
+    await screen.findByTestId('paid-by-aya');
+    await user.press(screen.getByTestId('receipt-date'));
+    const [datePicker] = open.mock.calls[0];
+    expect(datePicker).toMatchObject({ mode: 'date', value: receipt.receipt_date });
+    const day = new Date('2026-07-01T12:00:00Z');
+    const event = { nativeEvent: { timestamp: day.getTime(), utcOffset: 0 } };
+    datePicker.onValueChange?.(event, day);
+    const [timePicker] = open.mock.calls[1];
+    expect(timePicker).toMatchObject({ mode: 'time', value: day });
+    expect(readDraft(draft.id)?.edits?.date).toBe(receipt.receipt_date.toISOString());
+
+    const confirmed = new Date('2026-07-01T14:15:00Z');
+    await act(() => timePicker.onValueChange?.(event, confirmed));
+    expect(readDraft(draft.id)?.edits?.date).toBe(confirmed.toISOString());
+  } finally {
+    os.restore();
+  }
 });

@@ -1,4 +1,4 @@
-export const CHECK_NAME = 'iOS PR Verification';
+export const CHECK_NAME = 'iOS simulator verdict';
 
 const appDirectory = /^(app|assets|components|hooks|ios|lib|modules|src|utils)\//;
 const buildConfig = /^(app|babel|metro)\.config\.[^/]+$/;
@@ -41,16 +41,4 @@ export async function needsVerification(github, repo, pr) {
         affectsApp(filename) || (previous_filename && affectsApp(previous_filename)),
     )
   );
-}
-
-export async function isExempt({ github, context, core }) {
-  const eventPR = context.payload.pull_request;
-  const repo = context.repo;
-  const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: eventPR.number });
-  if (pr.state !== 'open' || pr.head.sha !== eventPR.head.sha || pr.base.ref !== eventPR.base.ref) {
-    return false;
-  }
-  const required = await needsVerification(github, repo, pr);
-  if (required) core.notice('iOS verification is required. An authorized writer can post /verify.');
-  return required === false;
 }

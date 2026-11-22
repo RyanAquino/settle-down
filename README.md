@@ -15,8 +15,9 @@ Camera / Library  →  Loading (upload + OCR)  →  Receipt details  →  Settle
 2. **Read** (`app/loading.tsx`): the photo is uploaded to the backend, which extracts the shop name, date, items, tax and total. The upload makes up to 3 attempts with exponential backoff.
 3. **Assign** (`app/receipt-details.tsx`):
    - choose a Settle Up group and who paid
-   - assign each item to a group member or mark it **Shared**
+   - assign an item to one member, mark it **Shared** across the group, or use **Split…** to divide it among selected members equally or by quantity
    - correct item costs, the tax %, or the receipt date if needed
+   - review paid amounts and scanned discounts, then use **Show my share** to see and share the breakdown after the assignments and totals balance
 4. **Sync**: the split is sent to Settle Up as a transaction.
 
 ### Receipt inbox and offline behavior
@@ -41,6 +42,7 @@ app/
   _layout.tsx          Root stack (no headers, slide transitions)
   index.tsx            Home: hosts the camera, plus an optional debug "Skip to Receipt" button
   camera.tsx           Camera view, shutter, library picker, permission prompt
+  inbox.tsx            Reopen and discard saved receipt drafts
   loading.tsx          Connectivity check, upload with retries, offline fallbacks
   receipt-details.tsx  Item editing, member assignment, Settle Up sync
 components/
@@ -74,7 +76,7 @@ If `EXPO_PUBLIC_AUTH_TOKEN` is set, every request includes it as `Authorization:
 
 ```bash
 nvm use
-npm install
+npm ci
 cp .env.sample .env
 ```
 
@@ -83,7 +85,7 @@ Then edit `.env`:
 | Variable                             | Description                                                                                                                            |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `EXPO_PUBLIC_API_BASE_URL`           | The backend's base URL, e.g. `http://192.168.0.242:8000` or an ngrok URL                                                               |
-| `EXPO_PUBLIC_AUTH_TOKEN`             | Optional bearer token for the backend                                                                                                  |
+| `EXPO_PUBLIC_AUTH_TOKEN`             | Optional public client token. Anyone with the app can read it. Keep private service credentials on the backend.                        |
 | `EXPO_PUBLIC_SHOW_DEBUG_SKIP_BUTTON` | `true` shows a "Skip to Receipt" button that opens the details screen with mock data, so you can work on that screen without a backend |
 
 > `EXPO_PUBLIC_*` values are inlined when the app is bundled. `.env` is gitignored, so EAS builds run in the cloud don't see it. Set these variables as EAS environment variables for the `preview` and `production` environments.
@@ -111,8 +113,7 @@ See [CI checks, local commands, coverage, and activation](docs/ci.md).
 
 ## PR verification
 
-After the CI setup is merged to `main`, repository writers can comment `/verify`
-on an open, same-repository PR. Copilot explores the changed iOS behavior, saves
+Repository writers can comment `/verify` on an open, same-repository PR targeting `main`. App and dependency changes require this check. The applicability workflow automatically passes it for documentation, workflow, and verifier-only changes. Copilot explores the changed iOS behavior, saves
 Maestro tests, and CI replays them against a synthetic local backend. The PR gets
 a separate final verdict comment identifying working, failing, or untestable
 behavior, with the captured commit and links to video, screenshots, test flows, and logs.
@@ -138,20 +139,20 @@ npm run update:production    # Push an OTA JS update to the production channel
 
 `runtimeVersion` follows `appVersion`, so OTA updates only reach builds with the same app version (`app.json` → `expo.version`).
 
-The app lives in two EAS projects: `@ryan.aquino/settle-down` (personal, the default) and `@org-ryan/settle-down` (a copy in the `org-ryan` organization).
-`app.config.ts` picks one from the `EAS_PROJECT_OWNER` environment variable, and every script above has an `:org` variant (for example `npm run update:preview:org`) that targets the org project.
+`app.config.ts` points builds and updates to [@org-ryan/settle-down](https://expo.dev/accounts/org-ryan/projects/settle-down). The existing `:org` npm commands are aliases for the commands above.
+
 The repository owner publishes previews by manually running **Publish Expo Go previews** on `main`. You can start the workflow while CI is running. It checks every 30 seconds until all push workflows for the selected `main` commit pass, including `Quality`, `Native smoke` (iOS and Android), and `Security`. Publishing proceeds automatically once CI passes. A completed failure or cancellation stops the release immediately. Each gate waits up to 90 minutes for queued, running, or missing checks and reports any blockers with run links when available.
 
-For a new preview, each project publishes its iOS and Android bundles directly to its `preview` channel using the EAS `preview` environment. Once both publishes succeed, the workflow creates a GitHub prerelease tagged `v<expo.version>-<commit SHA>` with generated release notes. The attached `expo-groups.json` records the update group ID returned by each publish. Keep the two projects' preview environment variables in sync.
+For a new preview, the workflow publishes iOS and Android to the org's `preview` channel using its EAS `preview` environment. It creates a GitHub prerelease tagged `v<expo.version>-<commit SHA>` and attaches `expo-groups.json` with the `org-ryan` update group ID.
 
 **Publish or restore a preview**
 
 1. Open **Actions → Publish Expo Go previews → Run workflow** as the GitHub repository owner. Select the `main` branch.
-2. Leave **release_tag** empty to publish the current `main`. To restore an older preview, paste its full tag from [GitHub Releases](https://github.com/RyanAquino/settle-down/releases). A restore checks CI on the current tip of `main`, then republishes each saved update group to `preview`. This works for groups originally uploaded to `expo-preview-staging` and for legacy `expo-preview-<commit SHA>` tags.
-3. Click **Run workflow**. Each project's update becomes available as soon as its publish finishes. A restore serves clients on the release's original runtime.
+2. Leave **release_tag** empty to publish the current `main`. To restore an older preview, paste its full tag from [GitHub Releases](https://github.com/RyanAquino/settle-down/releases). A restore checks CI on the current tip of `main`, then republishes the saved `org-ryan` group to `preview`. This also works for older manifests that list both projects.
+3. Click **Run workflow**. A restored update serves clients on the release's original runtime.
 
-GitHub lets writers request runs. The workflow skips manual publishes and retries requested by anyone other than the repository owner. If one project succeeds and the other fails, choose **Re-run failed jobs** to retry the failed project. GitHub Actions retains the successful project's update group ID for the release. If another preview has since been deployed, start a fresh run to update both projects together.
+The GitHub repository owner can publish and retry releases. If recording the GitHub prerelease fails after Expo accepts the update, choose **Re-run failed jobs**. The release job reuses the saved group.
 
-Set the repository Actions secret `EXPO_TOKEN` to an Expo access token with publish access to both projects. [Create an Expo access token](https://expo.dev/settings/access-tokens).
+Set the repository Actions secret `EXPO_TOKEN` to an Expo access token with publish access to the org project. [Create an Expo access token](https://expo.dev/settings/access-tokens).
 
-**Sharing with testers:** Expo Go QR links from `eas update` don't open for people who aren't members of the Expo project. Invite testers to the `org-ryan` organization and share the org project's update, or use an internal-distribution build (`build:preview`). iOS internal builds require a paid Apple Developer account to register devices.
+Invite Expo Go testers to `org-ryan` and share the org preview QR code, including with testers who previously opened a personal-project link. Standalone builds embed their project's update URL. To receive org updates, users of an older personal build need a build generated with the org configuration. iOS internal distribution requires a paid Apple Developer account to register devices.

@@ -4,7 +4,10 @@ import { publishPreviewImages } from './preview-branch.mjs';
 import { inlineEvidence } from './inline-evidence.mjs';
 import { CHECK_NAME, needsVerification } from './applicability.mjs';
 
-export { CHECK_NAME };
+import { externalId, finalMarker, marker, parseMarker } from './request-marker.mjs';
+import { refreshGate } from './merge-gate.mjs';
+
+export { CHECK_NAME, marker };
 export const isCommand = (event) =>
   event.action === 'created' &&
   !!event.issue?.pull_request &&
@@ -12,14 +15,6 @@ export const isCommand = (event) =>
   event.comment.body.trim() === '/verify';
 export const canVerify = (permission) => ['write', 'maintain', 'admin'].includes(permission);
 export const isEligible = (pr, repo) => pr.state === 'open' && pr.head?.repo?.full_name === repo;
-export const marker = (request) => `<!-- verify-ios:${JSON.stringify(request)} -->`;
-export const parseMarker = (body) => {
-  try {
-    return JSON.parse(body.match(/<!-- verify-ios:(\{[^\n]*\}) -->/)?.[1]);
-  } catch {
-    return null;
-  }
-};
 const escape = (text) =>
   String(text)
     .replaceAll('&', '&amp;')
@@ -29,8 +24,6 @@ const escape = (text) =>
     .replaceAll('`', '\\`')
     .replaceAll('[', '\\[')
     .replaceAll(']', '\\]');
-const externalId = (r) => `verify-ios:${r.runId}:${r.attempt}:${r.commentId}`;
-const finalMarker = (request, attempt) => `<!-- verify-ios-final:${request.runId}:${attempt} -->`;
 const verdictSummary = {
   PASS: 'Working in the tested scenarios. All listed scenarios replayed successfully. Physical-device-only behavior, if listed, is not covered.',
   FAIL: 'Failing. At least one replayed scenario failed; inspect its assertions and logs below.',
@@ -88,7 +81,7 @@ export async function admit({ github, context, core, outputDir }) {
   const checks = await github.paginate(github.rest.checks.listForRef, {
     ...repo,
     ref: pr.head.sha,
-    check_name: CHECK_NAME,
+    filter: 'all',
     per_page: 100,
   });
   for (const check of checks) {
@@ -144,6 +137,7 @@ export async function admit({ github, context, core, outputDir }) {
     issue_number: request.pr,
     body: `${marker(request)}\n## iOS PR Verification\n\nRunning PR-specific verification of \`${request.headSha}\`. [View run](${runUrl})`,
   });
+  await refreshGate(github, repo, pr);
   core.setOutput('accepted', 'true');
   core.setOutput('head_sha', request.headSha);
   core.setOutput('base_sha', request.baseSha);
@@ -396,4 +390,5 @@ export async function publish({ github, context, core, directory }) {
     });
   }
   await core.summary.addRaw(body).write();
+  if (pr.state === 'open') await refreshGate(github, repo, pr);
 }

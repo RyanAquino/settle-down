@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      actions: read
+      actions: write # Refresh the PR gate when its evidence changes.
       contents: write # Store fallback preview images on the evidence branch.
       pull-requests: write
       checks: write

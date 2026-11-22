@@ -78,9 +78,9 @@ Do not confuse Apple's Camera app row with this app's Camera permission switch.
 From an Apps list, find Settle Down (bundle ID com.ryan.aquino.settledown), using
 scroll/search if needed. Do not select Apple's Camera app. On iOS 26, a root Settings page (id Settings)
 can reach the Apps list by scrolling to id com.apple.settings.apps and tapping it.
-An Apps list exposes Search Apps; select this app there. Use separate visibility
-branches for those pages, and skip navigation when already on the app's details. If already on this
-app's settings page, skip the Apps-list navigation with a visibility branch.
+Wait until the Settings root, Apps list, or Camera switch appears before evaluating navigation
+conditions. On the Apps list, locate and tap the app row by bundle ID. Skip navigation when
+already on the app's details page.
 Use the app's Open settings control to enter Settings and inspect the live Camera
 switch. Toggle it there, return with launchApp using stopApp: false and an explicit
 camera permission matching the desired state, and assert the resulting app UI.
@@ -99,7 +99,8 @@ assertions and a screenshot. A standalone setPermissions tool call is not covera
 
 Use reset_scenario before each scenario. Inspect live accessibility hierarchy and
 screenshots, interact using execute_flow, and adapt navigation to what is actually
-present. You must inspect the live UI before submitting ready. Successful required
+present. Call `inspect_screen` while UI exploration is open. A ready plan requires
+a successful call recorded in this attempt's tool journal. Successful required
 regressions provide real interaction evidence; without them, execute the changed
 behavior yourself. For an additional scenario without successful required-regression evidence, before submitting it, reset_scenario with its fixture,
 then execute_flow once with that entire final YAML, including all unconditional
