@@ -1,0 +1,15 @@
+appId: com.ryan.aquino.settledown
+name: Scan one library photo with camera and library access denied
+---
+- launchApp:
+    permissions:
+      all: deny
+- assertVisible: Camera access
+- assertVisible: Open settings
+- tapOn:
+    id: pick-receipt
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- assertVisible: CI Receipt Shop
+- takeScreenshot: scanned-with-permissions-denied
