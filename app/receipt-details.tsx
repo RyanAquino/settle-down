@@ -664,6 +664,7 @@ function ReceiptEditor({
                       value={costInputs[item.item_order] ?? item.cost.toString()}
                       onChangeText={(t) => updateItemCost(item.item_order, t)}
                       keyboardType="decimal-pad"
+                      selectTextOnFocus
                       placeholder="0"
                       placeholderTextColor={theme.inkFaint}
                     />
@@ -784,6 +785,7 @@ function ReceiptEditor({
                   value={edits.tax}
                   onChangeText={updateTaxPercentage}
                   keyboardType="decimal-pad"
+                  selectTextOnFocus
                   placeholder="0"
                   placeholderTextColor={theme.inkFaint}
                 />
@@ -1245,16 +1247,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 6,
     backgroundColor: theme.surfaceAlt,
     borderRadius: theme.radiusSm,
     borderWidth: 1,
     borderColor: theme.border,
-    minWidth: 88,
+    minWidth: 132,
   },
   priceSymbol: { fontSize: 14, color: theme.inkMuted, fontWeight: '500', marginRight: 2 },
   priceInput: {
     flex: 1,
+    minHeight: 44,
     fontSize: 15,
     color: theme.ink,
     fontWeight: '600',
@@ -1328,11 +1330,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.border,
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 56,
+    minWidth: 92,
   },
   taxInput: {
     flex: 1,
+    minHeight: 44,
     fontSize: 14,
     color: theme.ink,
     fontWeight: '600',
