@@ -1,3 +1,4 @@
+import { prepareScan } from '@/utils/scan-request';
 import { CameraView } from 'expo-camera';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -104,7 +105,7 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
       if (!mounted.current) return;
       if (!photo?.uri) throw new Error('Camera returned no photo');
       // Keep capture locked until navigation unmounts this session.
-      router.push({ pathname: '/loading', params: { photoUri: photo.uri } });
+      router.push(prepareScan({ photoUri: photo.uri }));
     } catch {
       if (!mounted.current) return;
       capturing.current = false;

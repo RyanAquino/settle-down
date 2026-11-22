@@ -4,6 +4,7 @@ import { File } from 'expo-file-system';
 import NetInfo from '@react-native-community/netinfo';
 import { createPhotoDraft, readDraft, saveDraft, removeDraft } from '@/utils/receipt-inbox';
 import { Alert } from 'react-native';
+import { prepareScan } from '@/utils/scan-request';
 import LoadingScreen from '../app/loading';
 
 const mockExpoExtra = { verifyOfflineImport: false };
@@ -54,7 +55,9 @@ function scanResponse(total_amount: number) {
 
 beforeEach(() => {
   mockExpoExtra.verifyOfflineImport = false;
-  jest.mocked(useLocalSearchParams).mockReturnValue({ photoUri: 'file:///receipt.jpg' });
+  jest
+    .mocked(useLocalSearchParams)
+    .mockReturnValue(prepareScan({ photoUri: 'file:///receipt.jpg' }).params);
   jest.mocked(createPhotoDraft).mockResolvedValue(draft);
   jest
     .mocked(NetInfo.fetch)
@@ -140,7 +143,7 @@ test.each([
   async (fromLibrary, error) => {
     jest
       .mocked(useLocalSearchParams)
-      .mockReturnValue({ photoUri: 'file:///receipt.jpg', fromLibrary: String(fromLibrary) });
+      .mockReturnValue(prepareScan({ photoUri: 'file:///receipt.jpg', fromLibrary }).params);
     jest.mocked(createPhotoDraft).mockRejectedValueOnce(new Error('Storage full'));
     jest
       .mocked(NetInfo.fetch)
@@ -157,11 +160,13 @@ test.each([true, false])(
   async (enabled) => {
     const alert = jest.spyOn(Alert, 'alert');
     mockExpoExtra.verifyOfflineImport = enabled;
-    jest.mocked(useLocalSearchParams).mockReturnValue({
-      photoUri: 'file:///receipt.jpg',
-      fromLibrary: 'true',
-      verifyOfflineImport: 'true',
-    });
+    jest.mocked(useLocalSearchParams).mockReturnValue(
+      prepareScan({
+        photoUri: 'file:///receipt.jpg',
+        fromLibrary: true,
+        verifyOfflineImport: true,
+      }).params,
+    );
     const upload = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(scanResponse(100));
     await render(<LoadingScreen />);
     if (enabled) {
@@ -181,7 +186,7 @@ test.each([true, false])(
 );
 
 test('resuming a queued photo scans its durable copy and promotes the same draft', async () => {
-  jest.mocked(useLocalSearchParams).mockReturnValue({ draftId: draft.id, photoUri: durableUri });
+  jest.mocked(useLocalSearchParams).mockReturnValue(prepareScan({ draftId: draft.id }).params);
   jest.mocked(readDraft).mockReturnValue(draft);
   jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(scanResponse(100));
   await render(<LoadingScreen />);
@@ -196,4 +201,29 @@ test('resuming a queued photo scans its durable copy and promotes the same draft
     id: draft.id,
     receipt: { total_amount: 100 },
   });
+});
+
+test('opening the loading screen without a pending selection never opens a file or scans', async () => {
+  jest.mocked(useLocalSearchParams).mockReturnValue({ photoUri: 'unused', draftId: draft.id });
+  const upload = jest.spyOn(globalThis, 'fetch');
+  await render(<LoadingScreen />);
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/inbox'));
+  expect(createPhotoDraft).not.toHaveBeenCalled();
+  expect(readDraft).not.toHaveBeenCalled();
+  expect(File).not.toHaveBeenCalled();
+  expect(upload).not.toHaveBeenCalled();
+});
+
+test('a consumed request cannot scan again after remount', async () => {
+  const upload = jest.spyOn(globalThis, 'fetch').mockResolvedValue(scanResponse(100));
+  const first = await render(<LoadingScreen />);
+  await waitFor(() =>
+    expect(router.replace).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: '/receipt-details' }),
+    ),
+  );
+  await first.unmount();
+  await render(<LoadingScreen />);
+  await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/inbox'));
+  expect(upload).toHaveBeenCalledTimes(1);
 });
