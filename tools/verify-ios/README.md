@@ -136,10 +136,17 @@ The two Onigiri have a paid line total of 200 and a discount of 30.
 For the receipt inbox offline case, use the `success` fixture and tap **Import offline photo**
 (`verify-import-offline`) on the camera screen. Pick the seeded photo. A `CI_E2E=1` build
 supplies a disconnected NetInfo result for that import only. Assert **You’re offline**,
-dismiss the alert, and assert **Scan receipt, Receipt photo** in the inbox. No receipt upload
+dismiss the alert, and assert **Scan receipt, Receipt photo** in the inbox. The import should reach the inbox without a prompt to save to Photos. No receipt upload
 should appear in the fixture requests until you open the queued photo. Tap it and assert
 the receipt details to verify recovery. The regular library button uses device connectivity.
 [Offline inbox replay](../../.maestro/receipt-inbox-offline.yaml) contains the Maestro assertions.
+
+To verify recovery when a capture cannot be saved, start with a fresh inbox and the
+`success` fixture. Tap **Try missing capture** (`verify-missing-capture`) on the camera
+screen. This CI-only control opens the offline capture flow with a missing local file,
+so the real inbox copy fails. Assert **Couldn’t save the receipt to your inbox. Please
+retake the photo.** Dismiss the alert and open **Inbox** to confirm **No saved receipts**.
+[Inbox copy failure replay](../../.maestro/receipt-inbox-copy-failure.yaml) contains the assertions.
 
 The out-of-order member preset gives Japan three members for uneven splits
 and holds Taiwan’s member response until Hong Kong

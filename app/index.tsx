@@ -3,6 +3,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
+import { File, Paths } from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import CameraScreen from './camera';
 import { Entrance, PressableScale } from '@/components/motion';
@@ -58,7 +59,7 @@ export default function Index() {
         </PressableScale>
       </View>
       {Constants.expoConfig?.extra?.verifyOfflineImport === true && (
-        <View style={[styles.inboxOverlay, { top: insets.top + 56 }]}>
+        <View style={[styles.inboxOverlay, styles.verificationControls, { top: insets.top + 56 }]}>
           <PressableScale
             style={styles.debugButton}
             testID="verify-import-offline"
@@ -66,6 +67,23 @@ export default function Index() {
             onPress={() => void importOfflinePhoto()}
           >
             <Text style={styles.debugButtonText}>Import offline photo</Text>
+          </PressableScale>
+          <PressableScale
+            style={styles.debugButton}
+            testID="verify-missing-capture"
+            accessibilityLabel="Try missing capture"
+            onPress={() =>
+              router.push({
+                pathname: '/loading',
+                params: {
+                  // No file is created here, so the normal draft copy fails.
+                  photoUri: new File(Paths.cache, 'verify-missing-capture.jpg').uri,
+                  verifyOfflineImport: 'true',
+                },
+              })
+            }
+          >
+            <Text style={styles.debugButtonText}>Try missing capture</Text>
           </PressableScale>
         </View>
       )}
@@ -89,6 +107,7 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   inboxOverlay: { position: 'absolute', left: 16 },
+  verificationControls: { gap: 8, alignItems: 'flex-start' },
   debugOverlay: { position: 'absolute', top: 60, right: 16, zIndex: 1000 },
   debugButton: {
     backgroundColor: 'rgba(255,255,255,0.92)',

@@ -21,7 +21,7 @@ Camera / Library  →  Loading (upload + OCR)  →  Receipt details  →  Settle
 
 ### Receipt inbox and offline behavior
 
-Open **Inbox** from the camera to pick up an unfinished receipt. Camera captures and library selections are copied to app storage before scanning. If you are offline or the upload fails, open the saved photo from the inbox when you are online. Camera captures also go to your photo library when permission allows.
+Open **Inbox** from the camera to pick up an unfinished receipt. Camera captures and library selections are copied to app storage before scanning. If you are offline or the upload fails, open the saved photo from the inbox when you are online.
 
 Scanned drafts save edits, the selected group, payer, and item assignments on this device as you work. Tap **Save for later** to return to the inbox, or reopen the draft after leaving the app. A confirmed Settle Up submission or an explicit **Discard** removes the draft and its inbox photo.
 
@@ -29,7 +29,7 @@ Scanned drafts save edits, the selected group, payer, and item assignments on th
 
 - **Expo SDK 58**, React Native 0.88, React 19, TypeScript
 - **Expo Router**: file-based routing in `app/`, with typed routes and the React Compiler enabled
-- **expo-camera** and **expo-image-picker** for capturing receipts; **expo-media-library** for saving photos offline
+- **expo-camera** and **expo-image-picker** for capturing and selecting receipt photos
 - **@react-native-community/netinfo** to detect when the device is offline
 - **expo-haptics** and React Native's built-in `Animated` API for feedback and motion (shared helpers are in `components/motion.tsx`)
 - **EAS Build / EAS Update** for distribution

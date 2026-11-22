@@ -1,0 +1,15 @@
+appId: com.ryan.aquino.settledown
+name: Recover when an offline capture cannot be copied to the inbox
+---
+- launchApp:
+    permissions:
+      all: deny
+      camera: allow
+- tapOn:
+    id: verify-missing-capture
+- assertVisible: Couldn’t save the receipt to your inbox. Please retake the photo.
+- takeScreenshot: retake-unsaved-capture
+- tapOn: OK
+- tapOn:
+    id: receipt-inbox
+- assertVisible: No saved receipts
