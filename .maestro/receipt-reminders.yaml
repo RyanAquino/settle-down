@@ -26,9 +26,6 @@ name: Verify real schedules and resume a saved split through submission
 - tapOn:
     id: verify-receipt-reminder
 - pressKey: Home
-- extendedWaitUntil:
-    visible: '.*Ready to scan your saved receipt.*'
-    timeout: 20000
 - tapOn: '.*Ready to scan your saved receipt.*'
 - assertVisible: Cranberry juice
 - tapOn:
@@ -42,9 +39,6 @@ name: Verify real schedules and resume a saved split through submission
 - tapOn:
     id: verify-receipt-reminder
 - pressKey: Home
-- extendedWaitUntil:
-    visible: '.*1 item left to assign on your saved receipt.*'
-    timeout: 20000
 - tapOn: '.*1 item left to assign on your saved receipt.*'
 - assertVisible: Onigiri
 - tapOn:
@@ -56,9 +50,6 @@ name: Verify real schedules and resume a saved split through submission
 - tapOn:
     id: verify-receipt-reminder
 - pressKey: Home
-- extendedWaitUntil:
-    visible: '.*Your saved split is ready to review.*'
-    timeout: 20000
 - tapOn: '.*Your saved split is ready to review.*'
 - assertVisible:
     id: receipt-review-summary

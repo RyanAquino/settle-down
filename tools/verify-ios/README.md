@@ -176,6 +176,9 @@ Use the `success` fixture and a fresh simulator app installation for each flow.
 The offline-import control opens the system photo picker with a seeded receipt.
 The following three Maestro flows use the commands supported by the trusted
 verifier. Each starts on the camera screen and captures its own evidence.
+Use one `tapOn` with the expected banner text after pressing Home. Maestro waits
+for the text and taps it. A separate visibility check can leave the tap aimed at
+the Home Screen as the banner disappears.
 
 - [Reminder schedule, taps and submission](../../.maestro/receipt-reminders.yaml).
   Inspect the pending requests for a saved photo. Check the three-hour interval

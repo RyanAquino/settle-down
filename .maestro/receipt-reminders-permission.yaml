@@ -42,6 +42,17 @@ name: Enable notifications in Settings and skip missed reminders
           direction: DOWN
       - tapOn:
           id: com.ryan.aquino.settledown
+# Settings can leave the previous installation's enabled switch on screen.
+# Reopen its notification page to read the newly installed app's permission.
+- runFlow:
+    when:
+      visible:
+        id: ALLOW_NOTIFICATIONS_ID
+        checked: true
+    commands:
+      - tapOn:
+          id: BackButton
+          text: Settle Down
 - runFlow:
     when:
       notVisible:
