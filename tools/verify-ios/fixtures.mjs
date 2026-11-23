@@ -1,5 +1,4 @@
 import { FIXTURE_ORIGIN } from './fixture-control.mjs';
-import sugiReceipt from './fixtures/sugi-receipt.json' with { type: 'json' };
 import http from 'node:http';
 import { appendFile, readFile } from 'node:fs/promises';
 import { PRESETS } from './policy.mjs';
@@ -30,6 +29,9 @@ export const receipt = {
   receipt_date: '2026-01-15T12:00:00.000Z',
   receipt_image_url: `${FIXTURE_ORIGIN}/receipt.png`,
 };
+const sugiReceipt = JSON.parse(
+  await readFile(new URL('./fixtures/sugi-receipt.json', import.meta.url), 'utf8'),
+);
 const mismatchedReceipt = { ...receipt, total_amount: 410 };
 const receiptWithMissingDiscount = {
   ...receipt,
