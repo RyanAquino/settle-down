@@ -104,7 +104,9 @@ test('a Sugi scan opens the editor on the first upload and saves both deductions
   );
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(jest.mocked(saveDraft).mock.calls[0][0].receipt).toMatchObject({
-    receipt_adjustments: sugi.receipt_adjustments,
+    receipt_discount: 233,
+    points_redeemed: 494,
+    split_rules: sugi.split_rules,
     total_amount: 5809,
   });
 });
@@ -122,7 +124,13 @@ test('an inconsistent scan retries the same photo and opens the reconciled recei
   expect(router.replace).toHaveBeenCalledWith({
     pathname: '/receipt-details',
     params: {
-      data: JSON.stringify({ ...receipt, receipt_date: '2026-11-16T00:00:00.000Z' }),
+      data: JSON.stringify({
+        ...receipt,
+        receipt_date: '2026-11-16T00:00:00.000Z',
+        receipt_discount: 0,
+        points_redeemed: 0,
+        split_rules: { discounts: [], points: [] },
+      }),
       photoUri: durableUri,
       draftId: draft.id,
     },

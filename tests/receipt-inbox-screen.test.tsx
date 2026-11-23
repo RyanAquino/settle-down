@@ -41,6 +41,9 @@ const split: ReceiptDraft = {
   id: 'b',
   receipt: {
     receipt_items: [],
+    receipt_discount: 0,
+    points_redeemed: 0,
+    split_rules: { discounts: [], points: [] },
     en_shop_name: 'Dinner',
     jp_shop_name: '',
     tax_percentage: 0,

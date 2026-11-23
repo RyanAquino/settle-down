@@ -131,7 +131,9 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
           return send(200, {
             ...receipt,
             total_amount: 0,
-            receipt_adjustments: [{ kind: 'points_redemption', amount: 330, item_orders: [] }],
+            receipt_discount: 0,
+            points_redeemed: 330,
+            split_rules: { discounts: [], points: [] },
           });
         const mismatch =
           preset === 'scan-mismatch' || (preset === 'scan-mismatch-once' && validUploads === 1);

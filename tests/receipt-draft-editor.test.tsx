@@ -51,6 +51,9 @@ const members = [
   { id: 'ren', name: 'Ren' },
 ];
 const receipt = {
+  receipt_discount: 0,
+  points_redeemed: 0,
+  split_rules: { discounts: [], points: [] },
   en_shop_name: 'Market',
   jp_shop_name: '市場',
   receipt_date: new Date('2026-06-20T12:00:00Z'),

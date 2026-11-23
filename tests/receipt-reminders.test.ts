@@ -255,6 +255,9 @@ test('morning groups refresh on edits and removal; foreground delivery skips onl
   const first = await createPhotoDraft(samplePhoto().uri);
   const second = await createPhotoDraft(samplePhoto().uri);
   const receipt = {
+    receipt_discount: 0,
+    points_redeemed: 0,
+    split_rules: { discounts: [], points: [] },
     en_shop_name: 'Private restaurant',
     jp_shop_name: '',
     receipt_date: savedAt,

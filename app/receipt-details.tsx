@@ -56,6 +56,9 @@ import { previewReceipt, reconcileReceipt } from '@/utils/receipt-preview';
 
 function sampleReceipt(): ReceiptData {
   return {
+    receipt_discount: 0,
+    points_redeemed: 0,
+    split_rules: { discounts: [], points: [] },
     receipt_items: [
       {
         english_name: 'Cranberry juice',
@@ -515,9 +518,13 @@ function ReceiptEditor({
   const { subtotal, taxAmount } = receiptTotals(editableItems, editableTaxPercentage);
   const amountsValid = Number.isFinite(subtotal) && Number.isFinite(editableTaxPercentage);
   const total = receipt.total_amount;
-  const adjustments = receipt.receipt_adjustments ?? [];
-  const balance = reconcileReceipt(editableItems, editableTaxPercentage, total, adjustments);
-  const balanceWarning = adjustments.length
+  const hasDeductions = receipt.receipt_discount > 0 || receipt.points_redeemed > 0;
+  const balance = reconcileReceipt({
+    ...receipt,
+    receipt_items: editableItems,
+    tax_percentage: editableTaxPercentage,
+  });
+  const balanceWarning = hasDeductions
     ? 'The items, receipt adjustments and tax must match the scanned total.'
     : 'The items and tax must match the scanned total.';
   const taxIncluded = balance?.taxAmount === 0 && editableTaxPercentage > 0;
@@ -758,7 +765,7 @@ function ReceiptEditor({
                 </View>
                 {item.discount > 0 && (
                   <Text style={styles.itemSavings}>
-                    {adjustments.length
+                    {hasDeductions
                       ? `Item discount · ${formatMoney(item.discount, currency)}`
                       : `${formatMoney(item.cost, currency)} paid · ${formatMoney(item.discount, currency)} saved`}
                   </Text>
@@ -866,17 +873,25 @@ function ReceiptEditor({
               {formatMoney(balance?.subtotal ?? subtotal, currency)}
             </Text>
           </View>
-          {adjustments.map((adjustment, index) => (
-            <View style={styles.summaryLine} key={index}>
-              <Text style={styles.summaryLabel}>
-                {adjustment.kind === 'discount' ? 'Receipt discount' : 'Points redeemed'}
+          {receipt.receipt_discount > 0 && (
+            <View style={styles.summaryLine}>
+              <Text style={styles.summaryLabel}>Receipt discount</Text>
+              <Text style={styles.summaryValue}>
+                {formatMoney(-receipt.receipt_discount, currency)}
               </Text>
-              <Text style={styles.summaryValue}>{formatMoney(-adjustment.amount, currency)}</Text>
             </View>
-          ))}
+          )}
+          {receipt.points_redeemed > 0 && (
+            <View style={styles.summaryLine}>
+              <Text style={styles.summaryLabel}>Points redeemed</Text>
+              <Text style={styles.summaryValue}>
+                {formatMoney(-receipt.points_redeemed, currency)}
+              </Text>
+            </View>
+          )}
           <View style={styles.summaryLine}>
             <Text style={styles.summaryLabel}>
-              {taxIncluded ? 'Tax included' : adjustments.length ? 'Tax added' : 'Tax'}
+              {taxIncluded ? 'Tax included' : hasDeductions ? 'Tax added' : 'Tax'}
             </Text>
             <View style={styles.taxRight}>
               <View style={styles.taxInputWrap}>

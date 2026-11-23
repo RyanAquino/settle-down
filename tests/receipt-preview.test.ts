@@ -1,6 +1,6 @@
 import { previewReceipt, reconcileReceipt } from '../utils/receipt-preview';
 import sugi from '../tools/verify-ios/fixtures/sugi-receipt.json';
-import { readReceipt, type ReceiptAdjustment, type ReceiptItem } from '../utils/receipt';
+import { readReceipt, type ReceiptItem } from '../utils/receipt';
 
 const item: ReceiptItem = {
   english_name: 'Gyoza',
@@ -11,24 +11,35 @@ const item: ReceiptItem = {
   discount: 0,
 };
 
+function plainReceipt(receipt_items: ReceiptItem[], tax_percentage: number, total_amount: number) {
+  return {
+    receipt_items,
+    tax_percentage,
+    total_amount,
+    receipt_discount: 0,
+    points_redeemed: 0,
+    split_rules: { discounts: [], points: [] },
+  };
+}
+
 test('reconciles tax included in prices, rounded whole-yen tax, and cents', () => {
-  expect(reconcileReceipt([item], 10, 100)).toEqual({
+  expect(reconcileReceipt(plainReceipt([item], 10, 100))).toEqual({
     subtotal: 100,
     taxAmount: 0,
     total: 100,
   });
-  expect(reconcileReceipt([{ ...item, cost: 697 }], 8, 753)).toEqual({
+  expect(reconcileReceipt(plainReceipt([{ ...item, cost: 697 }], 8, 753))).toEqual({
     subtotal: 697,
     taxAmount: 56,
     total: 753,
   });
-  expect(reconcileReceipt([{ ...item, cost: 4.25 }], 8, 4.59)).toEqual({
+  expect(reconcileReceipt(plainReceipt([{ ...item, cost: 4.25 }], 8, 4.59))).toEqual({
     subtotal: 4.25,
     taxAmount: 0.34,
     total: 4.59,
   });
-  expect(reconcileReceipt([{ ...item, cost: 2920 }], 0, 3000)).toBeNull();
-  expect(reconcileReceipt([{ ...item, cost: 99 }], 10, 110)).toBeNull();
+  expect(reconcileReceipt(plainReceipt([{ ...item, cost: 2920 }], 0, 3000))).toBeNull();
+  expect(reconcileReceipt(plainReceipt([{ ...item, cost: 99 }], 10, 110))).toBeNull();
 });
 
 test('keeps whole-group shares even while the person and receipt totals reconcile', () => {
@@ -81,15 +92,15 @@ test('quantity previews use the same rounded line allocations as sync', () => {
 
 test('the six Sugi lines verify only after the eligible basket coupon and redeemed points', () => {
   const receipt = readReceipt(sugi)!;
-  const { receipt_items: items, receipt_adjustments: adjustments, total_amount: total } = receipt;
-  const result = reconcileReceipt(items, 0, total, adjustments);
+  const { receipt_items: items } = receipt;
+  const result = reconcileReceipt(receipt);
   expect(result).toMatchObject({ subtotal: 6536, taxAmount: 0, total: 5809 });
   expect(result?.adjustedItems?.map((item) => item.cost)).toEqual([837, 744, 1809, 1533, 650, 236]);
-  expect(reconcileReceipt([...items].reverse(), 10, total, adjustments)).toEqual(result);
+  expect(reconcileReceipt({ ...receipt, receipt_items: [...items].reverse() })).toEqual(result);
   expect(items.map((item) => item.cost)).toEqual([987, 877, 1963, 1664, 767, 278]);
-  expect(reconcileReceipt(items, 10, total)).toBeNull();
-  expect(reconcileReceipt(items, 10, total, adjustments?.slice(0, 1))).toBeNull();
-  expect(reconcileReceipt(items, 10, total + 1, adjustments)).toBeNull();
+  expect(reconcileReceipt({ ...receipt, receipt_discount: 0 })).toBeNull();
+  expect(reconcileReceipt({ ...receipt, points_redeemed: 0 })).toBeNull();
+  expect(reconcileReceipt({ ...receipt, total_amount: 5810 })).toBeNull();
 });
 
 test('tax is added after a pre-tax coupon, and points pay down the resulting bill', () => {
@@ -97,12 +108,13 @@ test('tax is added after a pre-tax coupon, and points pay down the resulting bil
     { ...item, cost: 10 },
     { ...item, item_order: 2, cost: 3 },
   ];
-  const adjustments: ReceiptAdjustment[] = [
-    { kind: 'points_redemption', amount: 3, item_orders: [] },
-    { kind: 'discount', amount: 1.25, item_orders: [1] },
-  ];
   // 13 - 1.25 = 11.75, plus 0.94 tax, minus 3 in points.
-  const result = reconcileReceipt(items, 8, 9.69, adjustments);
+  const result = reconcileReceipt({
+    ...plainReceipt(items, 8, 9.69),
+    receipt_discount: 1.25,
+    points_redeemed: 3,
+    split_rules: { discounts: [{ amount: 1.25, item_orders: [1] }], points: [] },
+  });
   expect(result?.taxAmount).toBe(0.94);
   expect(result?.adjustedItems?.map((line) => line.cost)).toEqual([7.22, 2.47]);
 });
@@ -111,17 +123,51 @@ test('deductions cannot exceed eligible prices or reference duplicate or missing
   const items = [item, { ...item, item_order: 2 }];
   for (const orders of [[1], [1, 1], [99]]) {
     expect(
-      reconcileReceipt(items, 0, 50, [{ kind: 'discount', amount: 150, item_orders: orders }]),
+      reconcileReceipt({
+        ...plainReceipt(items, 0, 50),
+        receipt_discount: 150,
+        split_rules: { discounts: [{ amount: 150, item_orders: orders }], points: [] },
+      }),
     ).toBeNull();
   }
 });
 
 test('points covering the entire taxed purchase yield zero shares', () => {
-  const balance = reconcileReceipt([item], 10, 0, [
-    { kind: 'points_redemption', amount: 110, item_orders: [] },
-  ]);
+  const balance = reconcileReceipt({ ...plainReceipt([item], 10, 0), points_redeemed: 110 });
   expect(balance?.adjustedItems?.[0].cost).toBe(0);
   expect(
     previewReceipt([item], { 1: 'a' }, [{ id: 'a', name: 'A' }], 'JPY', balance!)[0],
   ).toMatchObject({ total: 0, rounding: 0 });
+});
+
+test('overlapping coupons and scoped points use printed order and round each deduction once', () => {
+  const items = [item, { ...item, item_order: 2 }, { ...item, item_order: 3 }];
+  const result = reconcileReceipt({
+    ...plainReceipt(items, 0, 256),
+    receipt_discount: 41,
+    points_redeemed: 3,
+    split_rules: {
+      discounts: [
+        { amount: 21, item_orders: [1, 2] },
+        { amount: 20, item_orders: [2, 3] },
+      ],
+      points: [
+        { amount: 2, item_orders: [3] },
+        { amount: 1, item_orders: [] },
+      ],
+    },
+  });
+  expect(result?.adjustedItems?.map(({ cost }) => cost)).toEqual([88, 81, 87]);
+});
+
+test('a receipt with only checkout totals splits across the whole basket', () => {
+  const items = [item, { ...item, item_order: 2 }];
+  const receipt = { ...plainReceipt(items, 0, 172), receipt_discount: 25, points_redeemed: 3 };
+  expect(reconcileReceipt(receipt)?.adjustedItems?.map(({ cost }) => cost)).toEqual([86, 86]);
+  expect(
+    reconcileReceipt({
+      ...receipt,
+      split_rules: { discounts: [], points: [{ amount: 4, item_orders: [1] }] },
+    }),
+  ).toBeNull();
 });

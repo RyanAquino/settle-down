@@ -8,26 +8,82 @@ const receiptItemSchema = z.object({
   quantity: z.number().finite(),
   discount: z.number().finite().default(0),
 });
-const adjustmentSchema = z.object({
-  kind: z.enum(['discount', 'points_redemption']),
-  amount: z.number().finite().positive(),
+const splitDeductionSchema = z.object({
+  amount: z.number().positive(),
   item_orders: z.array(z.number().int()).default([]),
 });
-export type ReceiptAdjustment = z.output<typeof adjustmentSchema>;
-
-export const receiptSchema = z.object({
-  receipt_items: z.array(receiptItemSchema),
-  receipt_adjustments: z.array(adjustmentSchema).optional(),
-  en_shop_name: z.string(),
-  jp_shop_name: z.string(),
-  tax_percentage: z.number().finite(),
-  total_amount: z.number().finite(),
-  receipt_date: z
-    .union([z.string(), z.date()])
-    .transform((v) => new Date(v))
-    .refine((v) => !Number.isNaN(v.getTime())),
-  receipt_image_url: z.string().optional(),
+export type SplitDeduction = z.output<typeof splitDeductionSchema>;
+const splitRulesSchema = z.object({
+  discounts: z.array(splitDeductionSchema).default([]),
+  points: z.array(splitDeductionSchema).default([]),
 });
+
+const legacyAdjustmentSchema = splitDeductionSchema.extend({
+  kind: z.enum(['discount', 'points_redemption']),
+});
+
+export function receiptFractionDigits(amounts: number[]) {
+  return amounts.reduce(
+    (digits, amount) => Math.max(digits, amount.toString().split('.')[1]?.length ?? 0),
+    0,
+  );
+}
+
+function legacyDeductionTotal(entries: SplitDeduction[]) {
+  // Round the sum back to the precision printed on these deductions.
+  const amounts = entries.map(({ amount }) => amount);
+  return Number(
+    amounts.reduce((sum, amount) => sum + amount, 0).toFixed(receiptFractionDigits(amounts)),
+  );
+}
+
+function legacySplitRules(entries: SplitDeduction[]) {
+  if (entries.length === 1 && entries[0].item_orders.length === 0) return [];
+  return entries.map(({ amount, item_orders }) => ({ amount, item_orders }));
+}
+
+export const receiptSchema = z
+  .object({
+    receipt_items: z.array(receiptItemSchema),
+    receipt_discount: z.number().nonnegative().optional(),
+    points_redeemed: z.number().nonnegative().optional(),
+    split_rules: splitRulesSchema.optional(),
+    receipt_adjustments: z.array(legacyAdjustmentSchema).optional(),
+    en_shop_name: z.string(),
+    jp_shop_name: z.string(),
+    tax_percentage: z.number().finite(),
+    total_amount: z.number().finite(),
+    receipt_date: z
+      .union([z.string(), z.date()])
+      .transform((v) => new Date(v))
+      .refine((v) => !Number.isNaN(v.getTime())),
+    receipt_image_url: z.string().optional(),
+  })
+  .transform(
+    ({ receipt_adjustments = [], receipt_discount, points_redeemed, split_rules, ...receipt }) => {
+      // The same boundary reads scan responses, routes and previously saved inbox drafts.
+      if (
+        receipt_discount !== undefined ||
+        points_redeemed !== undefined ||
+        split_rules !== undefined
+      ) {
+        return {
+          ...receipt,
+          receipt_discount: receipt_discount ?? 0,
+          points_redeemed: points_redeemed ?? 0,
+          split_rules: split_rules ?? { discounts: [], points: [] },
+        };
+      }
+      const discounts = receipt_adjustments.filter((entry) => entry.kind === 'discount');
+      const points = receipt_adjustments.filter((entry) => entry.kind === 'points_redemption');
+      return {
+        ...receipt,
+        receipt_discount: legacyDeductionTotal(discounts),
+        points_redeemed: legacyDeductionTotal(points),
+        split_rules: { discounts: legacySplitRules(discounts), points: legacySplitRules(points) },
+      };
+    },
+  );
 export type ReceiptData = z.output<typeof receiptSchema>;
 export const groupSchema = z.object({
   name: z.string(),

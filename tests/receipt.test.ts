@@ -2,6 +2,7 @@ import {
   currencySymbol,
   formatMoney,
   parseReceipt,
+  readReceipt,
   parseReceiptAmount,
   receiptTotals,
   splitReceipt,
@@ -163,4 +164,30 @@ test.each([
   ['1,50.00', NaN],
 ])('reads the entire decimal amount %j', (text, amount) => {
   expect(parseReceiptAmount(text)).toBe(amount);
+});
+
+test('legacy decimal deductions keep ordered scope and canonical totals take precedence', () => {
+  const receipt_adjustments = [
+    { kind: 'discount', amount: 0.1 },
+    { kind: 'points_redemption', amount: 0.4, item_orders: [2] },
+    { kind: 'discount', amount: 0.2, item_orders: [8, 2] },
+  ];
+  expect(readReceipt({ ...receipt, receipt_adjustments })).toMatchObject({
+    receipt_discount: 0.3,
+    points_redeemed: 0.4,
+    split_rules: {
+      discounts: [
+        { amount: 0.1, item_orders: [] },
+        { amount: 0.2, item_orders: [8, 2] },
+      ],
+      points: [{ amount: 0.4, item_orders: [2] }],
+    },
+  });
+  expect(readReceipt({ ...receipt, receipt_adjustments, points_redeemed: 3 })).toMatchObject({
+    receipt_discount: 0,
+    points_redeemed: 3,
+    split_rules: { discounts: [], points: [] },
+  });
+  expect(readReceipt({ ...receipt, receipt_discount: 0.3 })).toMatchObject({ points_redeemed: 0 });
+  expect(readReceipt({ ...receipt, receipt_discount: -1 })).toBeNull();
 });

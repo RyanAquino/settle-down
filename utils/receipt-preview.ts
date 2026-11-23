@@ -4,10 +4,12 @@ import {
   moneyDigits,
   readReceipt,
   receiptTotals,
+  receiptFractionDigits,
   type GroupUser,
   type ItemAssignment,
   type ReceiptItem,
-  type ReceiptAdjustment,
+  type ReceiptData,
+  type SplitDeduction,
 } from './receipt';
 
 type ReceiptBalance = {
@@ -20,7 +22,8 @@ type ReceiptBalance = {
 
 function adjustedLinePrices(
   items: ReceiptItem[],
-  adjustments: ReceiptAdjustment[],
+  discounts: SplitDeduction[],
+  points: SplitDeduction[],
   taxAmount: number,
   digits: number,
 ): ReceiptItem[] | null {
@@ -37,26 +40,47 @@ function adjustedLinePrices(
   };
   // Apply basket coupons to eligible purchases, add any excluded tax, then spend
   // points on the remaining bill. Each deduction is allocated once in receipt units.
-  const deduct = ({ amount, item_orders }: ReceiptAdjustment) => {
+  const deduct = ({ amount, item_orders }: SplitDeduction) => {
     if (!item_orders.length) return distribute(-amount, paid);
     const eligible = new Set(item_orders);
     if (eligible.size !== item_orders.length) return false;
     const lines = paid.filter((item) => eligible.has(item.item_order));
     return lines.length === eligible.size && distribute(-amount, lines);
   };
-  const discounts = adjustments.filter(({ kind }) => kind === 'discount');
-  const points = adjustments.filter(({ kind }) => kind === 'points_redemption');
   if (!discounts.every(deduct) || !distribute(taxAmount, paid) || !points.every(deduct))
     return null;
   return paid;
 }
 
-export function reconcileReceipt(
-  items: ReceiptItem[],
-  taxPercentage: number,
-  total: number,
-  adjustments: ReceiptAdjustment[] = [],
-): ReceiptBalance | null {
+function allocationRules(total: number, rules: SplitDeduction[]) {
+  if (rules.length) {
+    const sum = rules.reduce((value, { amount }) => value + amount, 0);
+    return Math.abs(sum - total) < 1e-7 ? rules : null;
+  }
+  return total > 0 ? [{ amount: total, item_orders: [] }] : [];
+}
+
+type ReceiptAmounts = Pick<
+  ReceiptData,
+  | 'receipt_items'
+  | 'tax_percentage'
+  | 'total_amount'
+  | 'receipt_discount'
+  | 'points_redeemed'
+  | 'split_rules'
+>;
+
+export function reconcileReceipt({
+  receipt_items: items,
+  tax_percentage: taxPercentage,
+  total_amount: total,
+  receipt_discount,
+  points_redeemed,
+  split_rules,
+}: ReceiptAmounts): ReceiptBalance | null {
+  const discounts = allocationRules(receipt_discount, split_rules.discounts);
+  const points = allocationRules(points_redeemed, split_rules.points);
+  const hasDeductions = receipt_discount > 0 || points_redeemed > 0;
   const { subtotal } = receiptTotals(items, taxPercentage);
   if (
     !Number.isFinite(subtotal) ||
@@ -64,7 +88,9 @@ export function reconcileReceipt(
     subtotal <= 0 ||
     !Number.isFinite(total) ||
     total < 0 ||
-    (total === 0 && !adjustments.length) ||
+    (total === 0 && !hasDeductions) ||
+    !discounts ||
+    !points ||
     taxPercentage < 0 ||
     items.some(({ cost }) => cost < 0) ||
     new Set(items.map(({ item_order }) => item_order)).size !== items.length
@@ -72,26 +98,19 @@ export function reconcileReceipt(
     return null;
   }
 
-  const basketDiscount = adjustments.reduce(
-    (sum, a) => sum + (a.kind === 'discount' ? a.amount : 0),
-    0,
-  );
-  const afterCoupons = subtotal - basketDiscount;
-  const net = adjustments.reduce((sum, a) => sum - a.amount, subtotal);
+  const afterCoupons = subtotal - receipt_discount;
+  const net = afterCoupons - points_redeemed;
   const matchesTotal = (amount: number) => Math.abs(total - amount) < 1e-7;
-  if (!adjustments.length && matchesTotal(subtotal))
-    return { subtotal: total, taxAmount: 0, total };
+  if (!hasDeductions && matchesTotal(subtotal)) return { subtotal: total, taxAmount: 0, total };
 
   // OCR amounts have no currency code. Whole numbers use whole receipt units.
   const amounts = [
     total,
     ...items.map(({ cost }) => cost),
-    ...adjustments.map(({ amount }) => amount),
+    ...discounts.map(({ amount }) => amount),
+    ...points.map(({ amount }) => amount),
   ];
-  const visibleDigits = amounts.reduce((digits, amount) => {
-    const fraction = amount.toString().split('.')[1];
-    return Math.max(digits, fraction?.length ?? 0);
-  }, 0);
+  const visibleDigits = receiptFractionDigits(amounts);
   const printedDigits = visibleDigits === 0 ? 0 : Math.max(2, visibleDigits);
   const scale = 10 ** printedDigits;
   let taxAmount = 0;
@@ -103,8 +122,8 @@ export function reconcileReceipt(
     taxAmount = Number((total - net).toFixed(printedDigits));
   }
 
-  if (!adjustments.length) return { subtotal, taxAmount, total };
-  const adjustedItems = adjustedLinePrices(items, adjustments, taxAmount, printedDigits);
+  if (!hasDeductions) return { subtotal, taxAmount, total };
+  const adjustedItems = adjustedLinePrices(items, discounts, points, taxAmount, printedDigits);
   return adjustedItems && { subtotal, taxAmount, total, adjustedItems };
 }
 
@@ -112,15 +131,7 @@ export async function scanReconciledReceipt(read: () => Promise<unknown>, onRetr
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt === 1) onRetry();
     const receipt = readReceipt(await read());
-    if (
-      receipt &&
-      reconcileReceipt(
-        receipt.receipt_items,
-        receipt.tax_percentage,
-        receipt.total_amount,
-        receipt.receipt_adjustments,
-      )
-    ) {
+    if (receipt && reconcileReceipt(receipt)) {
       return receipt;
     }
   }
