@@ -26,18 +26,24 @@ import VerifyReminderDelivery from '@/components/verify-reminder-delivery';
 import { theme, shadow, type, buildUserColorMap, initialFor } from '@/utils/theme';
 import { Entrance, PressableScale } from '@/components/motion';
 import ItemSplitEditor from '@/components/item-split-editor';
+import ReceiptAdjustmentEditor from '@/components/receipt-adjustment-editor';
+import ReceiptAdjustments from '@/components/receipt-adjustments';
 import ReceiptSharePreview from '@/components/receipt-share-preview';
 
 import {
+  applyAllocation,
   currencySymbol,
   formatMoney,
   groupsSchema,
+  needsReview,
   usersSchema,
   parseReceipt,
   parseReceiptAmount,
+  printedPrice,
   receiptTotals,
   splitReceipt,
   type ItemAssignment,
+  type ReceiptAdjustment,
   type ReceiptData,
   type SettleUpGroup,
 } from '@/utils/receipt';
@@ -53,6 +59,7 @@ import { receiptLeftForLater } from '@/utils/receipt-reminder-lifecycle';
 import { useActiveReceiptDraft } from '@/utils/use-active-receipt-draft';
 import { retryApiCall } from '@/utils/retry';
 import { previewReceipt, reconcileReceipt } from '@/utils/receipt-preview';
+import { recalculateReceipt } from '@/utils/receipt-recalculation';
 
 function sampleReceipt(): ReceiptData {
   return {
@@ -195,7 +202,10 @@ function ReceiptEditor({
   const [rosterVerified, setRosterVerified] = useState(false);
   const [groupsFetchAttempts, setGroupsFetchAttempts] = useState(0);
   const [splitItemOrder, setSplitItemOrder] = useState<number | null>(null);
-  const requests = useRef({ groups: 0, members: 0 });
+  const [editingAdjustment, setEditingAdjustment] = useState<number | 'new' | null>(null);
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalculationError, setRecalculationError] = useState<string | null>(null);
+  const requests = useRef({ groups: 0, members: 0, allocation: 0 });
   const [isSyncing, setIsSyncing] = useState(false);
   const [showShares, setShowShares] = useState(false);
   const [showPhoto, setShowPhoto] = useState(false);
@@ -231,16 +241,26 @@ function ReceiptEditor({
     payer: paidByUserId,
   } = edits;
   const selectedGroupId = edits.group?.id ?? '';
+  // The receipt with the latest recalculation of corrected deductions applied.
+  const current = useMemo(
+    () => (edits.allocation ? applyAllocation(receipt, edits.allocation) : receipt),
+    [receipt, edits.allocation],
+  );
+  const adjustments = edits.adjustments ?? current.adjustments ?? [];
+  // Deductions were corrected but not recalculated yet, so the costs are stale.
+  const pending = edits.adjustments !== undefined && edits.allocation === undefined;
+  // Until a person settles the deductions there are no costs to split.
+  const reviewing = pending || needsReview(current);
   const editableItems = useMemo(
     () =>
-      [...receipt.receipt_items]
+      [...current.receipt_items]
         .sort((a, b) => a.item_order - b.item_order)
         .map((item) =>
           costInputs[item.item_order] === undefined
             ? item
             : { ...item, cost: parseReceiptAmount(costInputs[item.item_order]) },
         ),
-    [receipt.receipt_items, costInputs],
+    [current.receipt_items, costInputs],
   );
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const reminderTarget = useRef<ComponentRef<typeof View>>(null);
@@ -380,7 +400,7 @@ function ReceiptEditor({
 
   const updateItemCost = (itemOrder: number, cost: string) =>
     changeEdits({ costs: { ...latest.current.costs, [itemOrder]: cost } });
-  const getTotal = () => receipt.total_amount;
+  const getTotal = () => current.total_amount;
   const updateTaxPercentage = (value: string) => changeEdits({ tax: value });
   const editDate = () => {
     if (Platform.OS !== 'android') {
@@ -411,6 +431,32 @@ function ReceiptEditor({
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const formatTime = (d: Date) =>
     d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+  const recalculate = async (next: ReceiptAdjustment[]) => {
+    if (!apiBaseUrl || next.some(({ status }) => status === 'unresolved')) return;
+    const request = ++requests.current.allocation;
+    setRecalculating(true);
+    setRecalculationError(null);
+    const result = await recalculateReceipt(apiBaseUrl, receipt, next);
+    if (!mounted.current || request !== requests.current.allocation) return;
+    setRecalculating(false);
+    if ('error' in result) {
+      setRecalculationError(result.error);
+      return;
+    }
+    changeEdits({
+      adjustments: result.allocation.adjustments,
+      allocation: result.allocation,
+      costs: {},
+    });
+  };
+  const saveAdjustments = (next: ReceiptAdjustment[]) => {
+    setEditingAdjustment(null);
+    // Typed costs belonged to the old split; the recalculation replaces them.
+    if (changeEdits({ adjustments: next, allocation: undefined, costs: {} })) {
+      void recalculate(next);
+    }
+  };
 
   const assignItem = (itemOrder: number, assignment: ItemAssignment) => {
     changeEdits({ assignments: { ...latest.current.assignments, [itemOrder]: assignment } });
@@ -517,7 +563,13 @@ function ReceiptEditor({
   const splitAssignment = splitItem ? userSelections[splitItem.item_order] : undefined;
   const assignedCount = Object.keys(userSelections).length;
   const allAssigned = editableItems.length > 0 && assignedCount === editableItems.length;
-  const canPreview = allAssigned && !!balance && !!selectedGroupId && groupUsers.length > 0;
+  const canPreview =
+    allAssigned &&
+    !!balance &&
+    !reviewing &&
+    !recalculating &&
+    !!selectedGroupId &&
+    groupUsers.length > 0;
   const readyToSync = canPreview && !!paidByUserId && rosterVerified && !submitted;
 
   // -------- render --------
@@ -727,22 +779,32 @@ function ReceiptEditor({
                     <Text style={styles.qtyTagText}>×{item.quantity}</Text>
                   </View>
 
-                  <View style={styles.priceWrap}>
-                    {priceSymbol && <Text style={styles.priceSymbol}>{priceSymbol}</Text>}
-                    <TextInput
-                      style={styles.priceInput}
-                      testID={`item-cost-${item.item_order}`}
-                      accessibilityLabel={`Cost of ${item.english_name || item.japanese_name}`}
-                      value={costInputs[item.item_order] ?? item.cost.toString()}
-                      onChangeText={(t) => updateItemCost(item.item_order, t)}
-                      keyboardType="decimal-pad"
-                      selectTextOnFocus
-                      placeholder="0"
-                      placeholderTextColor={theme.inkFaint}
-                    />
-                  </View>
+                  {reviewing ? (
+                    // No cost until the deductions are settled: show what is printed.
+                    <Text
+                      style={styles.printedPrice}
+                      testID={`item-printed-price-${item.item_order}`}
+                    >
+                      {formatMoney(printedPrice(item), currency)}
+                    </Text>
+                  ) : (
+                    <View style={styles.priceWrap}>
+                      {priceSymbol && <Text style={styles.priceSymbol}>{priceSymbol}</Text>}
+                      <TextInput
+                        style={styles.priceInput}
+                        testID={`item-cost-${item.item_order}`}
+                        accessibilityLabel={`Cost of ${item.english_name || item.japanese_name}`}
+                        value={costInputs[item.item_order] ?? item.cost.toString()}
+                        onChangeText={(t) => updateItemCost(item.item_order, t)}
+                        keyboardType="decimal-pad"
+                        selectTextOnFocus
+                        placeholder="0"
+                        placeholderTextColor={theme.inkFaint}
+                      />
+                    </View>
+                  )}
                 </View>
-                {item.discount > 0 && (
+                {item.discount > 0 && !reviewing && (
                   <Text style={styles.itemSavings}>
                     {formatMoney(item.cost, currency)} paid · {formatMoney(item.discount, currency)}{' '}
                     saved
@@ -838,6 +900,31 @@ function ReceiptEditor({
           })}
         </Entrance>
 
+        {/* Discounts and points, from backends that reconcile receipts */}
+        {current.reconciliation !== undefined && (
+          <Entrance delay={290}>
+            <ReceiptAdjustments
+              adjustments={adjustments}
+              items={editableItems}
+              currency={currency}
+              reconciliation={current.reconciliation}
+              pending={pending}
+              recalculating={recalculating}
+              error={
+                recalculationError ??
+                (pending && !recalculating && !adjustments.some((a) => a.status === 'unresolved')
+                  ? 'Not recalculated yet.'
+                  : null)
+              }
+              onEdit={setEditingAdjustment}
+              onAdd={() => setEditingAdjustment('new')}
+              onRetry={() => {
+                void recalculate(adjustments);
+              }}
+            />
+          </Entrance>
+        )}
+
         {/* Summary */}
         <Entrance delay={320} style={styles.summaryCard}>
           <View
@@ -848,7 +935,7 @@ function ReceiptEditor({
           >
             <Text style={styles.summaryLabel}>Subtotal</Text>
             <Text style={styles.summaryValue}>
-              {formatMoney(balance?.subtotal ?? subtotal, currency)}
+              {reviewing ? '—' : formatMoney(balance?.subtotal ?? subtotal, currency)}
             </Text>
           </View>
           <View style={styles.summaryLine}>
@@ -869,7 +956,7 @@ function ReceiptEditor({
                 <Text style={styles.taxInputSuffix}>%</Text>
               </View>
               <Text style={styles.taxAmount}>
-                {formatMoney(balance?.taxAmount ?? taxAmount, currency)}
+                {reviewing ? '—' : formatMoney(balance?.taxAmount ?? taxAmount, currency)}
               </Text>
             </View>
           </View>
@@ -879,7 +966,7 @@ function ReceiptEditor({
               {formatMoney(total, currency)}
             </Text>
           </View>
-          {editableItems.length > 0 && !balance && (
+          {editableItems.length > 0 && !balance && !reviewing && (
             <Text style={styles.balanceWarning}>
               {amountsValid
                 ? 'The items and tax must match the scanned total.'
@@ -903,6 +990,8 @@ function ReceiptEditor({
           </View>
         </Entrance>
       </ScrollView>
+      {/* The header is white under the status bar; keep scrolled content out of it. */}
+      <View pointerEvents="none" style={[styles.statusBarBackdrop, { height: insets.top }]} />
 
       {/* Sticky sync footer */}
       <Entrance
@@ -920,15 +1009,17 @@ function ReceiptEditor({
             ? 'Synced to Settle Up.'
             : readyToSync
               ? 'Ready to sync.'
-              : !balance && editableItems.length > 0
-                ? 'Check the receipt amounts.'
-                : !selectedGroupId
-                  ? 'Pick a group to continue.'
-                  : !rosterVerified && allAssigned && paidByUserId
-                    ? 'Refresh group members to sync.'
-                    : !paidByUserId
-                      ? 'Select who paid.'
-                      : `${editableItems.length - assignedCount} item${editableItems.length - assignedCount === 1 ? '' : 's'} left to assign.`}
+              : reviewing || recalculating
+                ? 'Review the discounts and points.'
+                : !balance && editableItems.length > 0
+                  ? 'Check the receipt amounts.'
+                  : !selectedGroupId
+                    ? 'Pick a group to continue.'
+                    : !rosterVerified && allAssigned && paidByUserId
+                      ? 'Refresh group members to sync.'
+                      : !paidByUserId
+                        ? 'Select who paid.'
+                        : `${editableItems.length - assignedCount} item${editableItems.length - assignedCount === 1 ? '' : 's'} left to assign.`}
         </Text>
         <PressableScale
           scaleTo={0.98}
@@ -952,6 +1043,31 @@ function ReceiptEditor({
           )}
         </PressableScale>
       </Entrance>
+
+      {editingAdjustment !== null && (
+        <ReceiptAdjustmentEditor
+          key={String(editingAdjustment)}
+          adjustment={editingAdjustment === 'new' ? null : adjustments[editingAdjustment]}
+          items={editableItems}
+          currency={currency}
+          decimalPlaces={receipt.decimal_places ?? 0}
+          onCancel={() => setEditingAdjustment(null)}
+          onSave={(adjustment) =>
+            saveAdjustments(
+              editingAdjustment === 'new'
+                ? [...adjustments, adjustment]
+                : adjustments.map((entry, index) =>
+                    index === editingAdjustment ? adjustment : entry,
+                  ),
+            )
+          }
+          onDelete={
+            editingAdjustment === 'new'
+              ? undefined
+              : () => saveAdjustments(adjustments.filter((_, index) => index !== editingAdjustment))
+          }
+        />
+      )}
 
       {splitItem && (
         <ItemSplitEditor
@@ -1107,6 +1223,13 @@ function ReceiptEditor({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.bg },
+  statusBarBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: theme.surface,
+  },
   scroll: { flex: 1 },
   scrollContent: { flexGrow: 1 },
 
@@ -1335,6 +1458,17 @@ const styles = StyleSheet.create({
     minWidth: 132,
   },
   priceSymbol: { fontSize: 14, color: theme.inkMuted, fontWeight: '500', marginRight: 2 },
+  printedPrice: {
+    ...type.numeral,
+    minWidth: 132,
+    minHeight: 44,
+    lineHeight: 44,
+    fontSize: 15,
+    color: theme.inkMuted,
+    fontWeight: '600',
+    textAlign: 'right',
+    paddingHorizontal: 10,
+  },
   priceInput: {
     flex: 1,
     minHeight: 44,

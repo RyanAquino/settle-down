@@ -85,6 +85,7 @@ export function PressableScale({
   haptic = 'selection',
   scaleTo = motion.pressScale,
   accessibilityLabel,
+  accessibilityHint,
   testID,
   hitSlop,
 }: {
@@ -96,6 +97,7 @@ export function PressableScale({
   haptic?: HapticKind;
   scaleTo?: number;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
   testID?: string;
   hitSlop?: number;
 }) {
@@ -113,6 +115,7 @@ export function PressableScale({
     <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       testID={testID}
       hitSlop={hitSlop}
       disabled={disabled}

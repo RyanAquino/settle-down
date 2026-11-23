@@ -1,0 +1,103 @@
+appId: com.ryan.aquino.settledown
+name: Place a discount the receipt does not settle, then split and sync
+# Preset: receipt-review. Both 15% lines were read under one item, so the second
+# needs a person; placing it on the neck warmer recalculates every share.
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: pick-receipt
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- extendedWaitUntil:
+    visible: Sugi Pharmacy
+    timeout: 30000
+- tapOn:
+    id: receipt-group
+- tapOn:
+    id: group-ci-jpy
+- tapOn:
+    id: paid-by-ci-alex
+- scrollUntilVisible:
+    element:
+      id: receipt-adjustments
+    direction: DOWN
+    centerElement: true
+- assertVisible: 'Choose the items this line covers\. The receipt doesn’t say\.'
+- assertVisible:
+    id: sync-transaction
+    enabled: false
+- tapOn:
+    id: adjustment-1
+- assertVisible:
+    id: adjustment-done
+    enabled: false
+- assertVisible: '.*¥1,958 · 15% matches.*'
+- tapOn:
+    id: adjustment-item-4
+- tapOn:
+    id: adjustment-done
+- extendedWaitUntil:
+    notVisible: '.*Choose items.*'
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: item-3-assign-ci-alex
+    direction: UP
+    centerElement: true
+- assertVisible: '¥1,809 paid · ¥501 saved'
+- scrollUntilVisible:
+    element:
+      id: item-3-assign-ci-alex
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: item-3-assign-ci-alex
+- scrollUntilVisible:
+    element:
+      id: item-2-assign-ci-alex
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: item-2-assign-ci-alex
+- scrollUntilVisible:
+    element:
+      id: item-1-assign-ci-alex
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: item-1-assign-ci-alex
+- scrollUntilVisible:
+    element:
+      id: item-4-assign-ci-sam
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-4-assign-ci-sam
+- scrollUntilVisible:
+    element:
+      id: item-5-assign-ci-sam
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-5-assign-ci-sam
+- scrollUntilVisible:
+    element:
+      id: item-6-assign-ci-sam
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-6-assign-ci-sam
+- assertVisible: 'Ready to sync\.'
+- tapOn:
+    id: sync-transaction
+- extendedWaitUntil:
+    visible: Synced
+    timeout: 15000

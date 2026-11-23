@@ -2,7 +2,14 @@ import { uuid } from 'expo';
 import { Directory, File, Paths } from 'expo-file-system';
 import { z } from 'zod';
 import { nextMorningDate } from '@/utils/receipt-morning';
-import { groupSchema, groupUserSchema, itemAssignmentSchema, receiptSchema } from '@/utils/receipt';
+import {
+  adjustmentSchema,
+  allocationSchema,
+  groupSchema,
+  groupUserSchema,
+  itemAssignmentSchema,
+  receiptSchema,
+} from '@/utils/receipt';
 
 const editorSchema = z.object({
   costs: z.record(z.string(), z.string()),
@@ -12,6 +19,10 @@ const editorSchema = z.object({
   members: z.array(groupUserSchema),
   payer: z.string(),
   assignments: z.record(z.string(), itemAssignmentSchema),
+  // The deductions as a person corrected them, and the recalculation of the
+  // receipt with exactly those deductions (absent while it is pending).
+  adjustments: z.array(adjustmentSchema).optional(),
+  allocation: allocationSchema.optional(),
 });
 export type ReceiptEdits = z.output<typeof editorSchema>;
 
