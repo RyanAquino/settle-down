@@ -141,6 +141,13 @@ one quantity-two item), JPY/TWD/HKD groups, and synthetic Alex/Sam members. Pres
 The `missing-discount` preset omits the discount field on the full-price juice.
 The two Onigiri have a paid line total of 200 and a discount of 30.
 
+On the home screen with camera permission granted, the flash control starts at
+**Flash off**. Tap it through **Flash auto**, **Flash on**, and **Flash off**.
+The “Pinch to zoom” hint stays visible and the zoom buttons are absent. Use the
+`success` fixture for the simulator replay. Check the two-finger gesture and
+flash firing in bright and dim light on a physical device.
+[Camera flash replay](../../.maestro/camera-flash-modes.yaml)
+
 For the receipt inbox offline case, use the `success` fixture and tap **Import offline photo**
 (`verify-import-offline`) on the camera screen. Pick the seeded photo. A `CI_E2E=1` build
 supplies a disconnected NetInfo result for that import only. Assert **You’re offline**,

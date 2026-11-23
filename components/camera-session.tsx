@@ -7,7 +7,6 @@ import {
   Alert,
   PanResponder,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -17,7 +16,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { PressableScale } from '@/components/motion';
 
-const ZOOM_STEP = 0.05;
+const NEXT_FLASH_MODE = { off: 'auto', auto: 'on', on: 'off' } as const;
+
 // Expo uses normalized zoom, not magnification. A doubling of finger spacing
 // moves a small portion of that range so high-zoom devices remain controllable.
 const PINCH_SENSITIVITY = 0.15;
@@ -38,6 +38,7 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
   const zoomRef = useRef(0);
   const pinchRef = useRef<number | null>(null);
   const [zoom, setZoom] = useState(0);
+  const [flash, setFlash] = useState<keyof typeof NEXT_FLASH_MODE>('off');
   const [isReady, setIsReady] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [cameraError, setCameraError] = useState(false);
@@ -51,12 +52,6 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
       ready.current = false;
     };
   }, []);
-
-  const changeZoom = (value: number) => {
-    if (!ready.current || capturing.current) return;
-    zoomRef.current = Math.min(1, Math.max(0, value));
-    setZoom(zoomRef.current);
-  };
 
   // PanResponder stores these callbacks; refs are read only when a gesture fires.
   // eslint-disable-next-line react-hooks/refs
@@ -125,6 +120,7 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
           facing="back"
+          flash={flash}
           mode="picture"
           pictureSize="High"
           videoQuality="4:3"
@@ -170,35 +166,6 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
       </View>
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
-        <View style={styles.zoomControls}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Zoom out"
-            disabled={controlsDisabled || zoom === 0}
-            onPress={() => changeZoom(zoomRef.current - ZOOM_STEP)}
-            style={[styles.zoomButton, (controlsDisabled || zoom === 0) && styles.disabled]}
-          >
-            <Text style={styles.zoomSymbol}>−</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Reset zoom"
-            disabled={controlsDisabled || zoom === 0}
-            onPress={() => changeZoom(0)}
-            style={[styles.resetButton, (controlsDisabled || zoom === 0) && styles.disabled]}
-          >
-            <Text style={styles.controlText}>Reset</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Zoom in"
-            disabled={controlsDisabled || zoom === 1}
-            onPress={() => changeZoom(zoomRef.current + ZOOM_STEP)}
-            style={[styles.zoomButton, (controlsDisabled || zoom === 1) && styles.disabled]}
-          >
-            <Text style={styles.zoomSymbol}>+</Text>
-          </Pressable>
-        </View>
         <Text style={styles.zoomHint}>Pinch to zoom</Text>
         <View style={styles.captureRow}>
           <PressableScale
@@ -229,7 +196,18 @@ export function CameraSession({ onPickFromLibrary }: { onPickFromLibrary: () => 
           >
             <View style={styles.shutterInner} />
           </PressableScale>
-          <View style={styles.sideButton} />
+          <PressableScale
+            style={[styles.sideButton, isCapturing && styles.disabled]}
+            disabled={isCapturing}
+            onPress={() => setFlash((mode) => NEXT_FLASH_MODE[mode])}
+            accessibilityLabel={`Flash ${flash}`}
+            testID="camera-flash"
+          >
+            <View style={styles.flashBadge}>
+              <Text style={styles.flashMode}>{flash}</Text>
+            </View>
+            <Text style={styles.sideLabel}>Flash</Text>
+          </PressableScale>
         </View>
       </View>
     </View>
@@ -254,25 +232,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#000',
   },
-  zoomControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 999,
-    backgroundColor: '#242424',
-    padding: 2,
-    gap: 6,
-  },
-  zoomButton: {
-    width: 48,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 22,
-  },
-  resetButton: { minWidth: 64, height: 44, alignItems: 'center', justifyContent: 'center' },
-  zoomSymbol: { color: '#fff', fontSize: 26, fontWeight: '400' },
   controlText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  zoomHint: { color: '#aaa', fontSize: 12, marginTop: 8, marginBottom: 18 },
+  zoomHint: { color: '#aaa', fontSize: 12, marginBottom: 18 },
   captureRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -281,6 +242,15 @@ const styles = StyleSheet.create({
   },
   sideButton: { width: 64, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
   sideLabel: { color: '#ddd', fontSize: 11, marginTop: 4, fontWeight: '500' },
+  flashBadge: {
+    minHeight: 28,
+    minWidth: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    backgroundColor: '#242424',
+  },
+  flashMode: { color: '#fff', fontSize: 13, fontWeight: '600', textTransform: 'capitalize' },
   libraryIcon: { width: 32, height: 28 },
   libraryBack: {
     position: 'absolute',
