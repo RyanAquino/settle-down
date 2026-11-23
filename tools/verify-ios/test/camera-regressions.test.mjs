@@ -12,14 +12,25 @@ import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-test('required camera flows cover both zoom bounds and the actual native permission switch', () => {
+test('required camera flows cover foreground readiness and native permission recovery', () => {
   assert.equal(cameraRegressionsApply(['app/camera.tsx']), true);
   assert.equal(cameraRegressionsApply(['components/camera-session.tsx']), true);
   assert.equal(cameraRegressionsApply(['README.md']), false);
   for (const scenario of cameraRegressions)
     assert.doesNotThrow(() => validateFlow(scenario.yaml, { replay: true }));
-  assert.equal((cameraRegressions[0].yaml.match(/tapOn: Zoom in/g) || []).length, 21);
-  assert.match(cameraRegressions[0].yaml, /text: Zoom in\n    enabled: false/);
+  const { steps } = validateFlow(cameraRegressions[0].yaml, { replay: true });
+  const home = steps.findIndex((step) => step.pressKey === 'Home');
+  assert.ok(home > 0);
+  assert.equal(steps[home + 1].launchApp.stopApp, false);
+  for (const phase of [steps.slice(0, home), steps.slice(home + 2)]) {
+    assert.ok(phase.some((step) => step.assertVisible === 'Pinch to zoom'));
+    assert.ok(
+      phase.some(
+        (step) => step.assertVisible?.text === 'Capture receipt' && step.assertVisible.enabled,
+      ),
+    );
+  }
+  assert.match(cameraRegressions[1].yaml, /text: Capture receipt\n    enabled: true/);
   assert.match(cameraRegressions[1].yaml, /checked: false\n    point: "90%,50%"/);
   assert.match(cameraRegressions[1].yaml, /checked: true/);
   assert.doesNotMatch(cameraRegressions[1].yaml, /setPermissions:/);
@@ -76,7 +87,7 @@ test('host regression status requires real successful JUnit evidence, not just a
     },
     run: async (_command, args) => {
       const output = args[args.indexOf('--output') + 1];
-      await writeFile(output, output.includes('zoom-bounds') ? '<passed/>' : '<failed/>');
+      await writeFile(output, output.includes('camera-foreground') ? '<passed/>' : '<failed/>');
       return { code: 0 };
     },
     checkJUnit: (xml) => xml === '<passed/>',

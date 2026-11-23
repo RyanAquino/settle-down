@@ -4,51 +4,33 @@ import { APP_ID, validateFlow } from './policy.mjs';
 
 export const cameraRegressions = [
   {
-    id: 'camera-zoom-bounds',
-    name: 'Camera zoom bounds, Reset, and foreground lifecycle',
+    id: 'camera-foreground',
+    name: 'Camera readiness after foregrounding',
     fixture: 'success',
     coverage:
-      'Checks minimum disabled states, twenty zoom steps to the maximum and disabled Zoom in, Reset to zero, and a fresh zero-zoom session after Home/resume.',
+      'Checks the pinch hint and enabled shutter on the camera screen before and after Home/resume.',
     yaml: `appId: ${APP_ID}
-name: Camera zoom bounds and lifecycle
+name: Camera readiness after foregrounding
 ---
 - launchApp:
     permissions:
       all: allow
 - assertVisible: Point at a receipt
+- assertVisible: Pinch to zoom
 - assertVisible:
-    text: Zoom out
-    enabled: false
-- assertVisible:
-    text: Reset zoom
-    enabled: false
-${'- tapOn: Zoom in\n'.repeat(20)}- assertVisible:
-    text: Zoom in
-    enabled: false
-- assertVisible:
-    text: Zoom out
+    text: Capture receipt
     enabled: true
-- tapOn: Reset zoom
-- assertVisible:
-    text: Zoom out
-    enabled: false
-- assertVisible:
-    text: Reset zoom
-    enabled: false
-- tapOn: Zoom in
 - pressKey: Home
 - launchApp:
     stopApp: false
     permissions:
       camera: allow
 - assertVisible: Point at a receipt
+- assertVisible: Pinch to zoom
 - assertVisible:
-    text: Zoom out
-    enabled: false
-- assertVisible:
-    text: Reset zoom
-    enabled: false
-- takeScreenshot: camera-zoom-bounds
+    text: Capture receipt
+    enabled: true
+- takeScreenshot: camera-resumed
 `,
   },
   {
@@ -116,7 +98,7 @@ name: Native camera permission recovery
       camera: allow
 - assertVisible: Point at a receipt
 - assertVisible:
-    text: Zoom in
+    text: Capture receipt
     enabled: true
 - takeScreenshot: camera-permission-recovered
 `,

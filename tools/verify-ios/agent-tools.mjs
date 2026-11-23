@@ -228,7 +228,7 @@ tool(
 tool(
   'get_regression',
   'Read a required deterministic camera regression and its trusted execution status. Copy record.scenario unchanged into plan.scenarios, without the status/evidence wrapper fields; successful host execution counts as complete-flow evidence, but CI still independently replays it. Read the source to decide whether other changed behavior needs additional coverage.',
-  { id: z.enum(['camera-zoom-bounds', 'camera-settings-recovery']) },
+  { id: z.enum(['camera-foreground', 'camera-settings-recovery']) },
   async ({ id }) => {
     const records = JSON.parse(
       await readFile(`${evidence}/regressions.json`, 'utf8').catch(() => '[]'),
