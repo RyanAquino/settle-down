@@ -1,0 +1,18 @@
+appId: com.ryan.aquino.settledown
+name: Select camera flash modes and pinch-only zoom
+---
+- launchApp:
+    permissions:
+      all: allow
+- assertVisible: Pinch to zoom
+- assertNotVisible: Zoom in
+- assertNotVisible: Zoom out
+- assertNotVisible: Reset zoom
+- tapOn: Flash off
+- assertVisible: Flash auto
+- tapOn: Flash auto
+- assertVisible: Flash on
+- takeScreenshot: flash-on
+- tapOn: Flash on
+- assertVisible: Flash off
+- takeScreenshot: flash-off
