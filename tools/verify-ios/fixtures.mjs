@@ -29,6 +29,9 @@ export const receipt = {
   receipt_date: '2026-01-15T12:00:00.000Z',
   receipt_image_url: `${FIXTURE_ORIGIN}/receipt.png`,
 };
+const sugiReceipt = JSON.parse(
+  await readFile(new URL('./fixtures/sugi-receipt.json', import.meta.url), 'utf8'),
+);
 const mismatchedReceipt = { ...receipt, total_amount: 410 };
 const receiptWithMissingDiscount = {
   ...receipt,
@@ -122,6 +125,14 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
         if (preset === 'upload-error') return send(503, { error: 'Synthetic upload failure' });
         validUploads++;
         if (preset === 'missing-discount') return send(200, receiptWithMissingDiscount);
+        if (preset === 'receipt-adjustments')
+          return send(200, { ...sugiReceipt, receipt_image_url: receipt.receipt_image_url });
+        if (preset === 'points-covered')
+          return send(200, {
+            ...receipt,
+            total_amount: 0,
+            receipt_adjustments: [{ kind: 'points_redemption', amount: 330, item_orders: [] }],
+          });
         const mismatch =
           preset === 'scan-mismatch' || (preset === 'scan-mismatch-once' && validUploads === 1);
         return send(200, mismatch ? mismatchedReceipt : receipt);

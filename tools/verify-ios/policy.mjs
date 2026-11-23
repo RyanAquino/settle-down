@@ -7,6 +7,8 @@ export const flowFilePattern = /^\.maestro\/[a-zA-Z0-9][a-zA-Z0-9_-]*\.ya?ml$/;
 export const PRESETS = [
   'success',
   'missing-discount',
+  'receipt-adjustments',
+  'points-covered',
   'upload-error',
   'scan-mismatch-once',
   'scan-mismatch',

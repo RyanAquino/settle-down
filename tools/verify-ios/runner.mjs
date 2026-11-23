@@ -206,6 +206,8 @@ async function main() {
             members,
             notes: [
               'The app calls 127.0.0.1:8765. Reset selects one preset. No real OCR or transactions. One receipt photo is preseeded.',
+              'points-covered redeems 330 of points on the standard receipt, leaving zero to pay.',
+              'receipt-adjustments returns six Sugi Pharmacy lines totaling 6536, a receipt discount of 233 and a points redemption of 494, for a paid total of 5809. Use the regular photo picker and CI Japan.',
               'missing-discount omits the discount field on the full-price Cranberry juice. Onigiri still has a paid line total of 200 and a discount of 30. Groups and members are available as in success.',
               'out-of-order-members starts CI Japan with Alex, Sam and Lee for three-way splits. To verify clearing assignments and ignoring stale members in one flow, assign an item and payer in Japan. Select CI Taiwan (its users request waits), then CI Hong Kong. Hong Kong returns only Alex, then Taiwan returns only Sam. Assert Alex remains selectable and Sam absent after the switch. Hong Kong requires an overlapping Taiwan request.',
               'scan-mismatch-once returns HTTP 200 with the wrong total (410) on the first valid upload after a reset. Subsequent uploads return the reconciled receipt (330).',
