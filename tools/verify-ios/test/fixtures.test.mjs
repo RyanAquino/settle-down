@@ -39,6 +39,10 @@ test('synthetic API covers app contracts, errors, request evidence and reset', a
     { kind: 'points_redemption', amount: 494, item_orders: [] },
   ]);
   assert.equal(sugi.total_amount, 5809);
+  assert.equal((await reset('points-covered')).status, 200);
+  const covered = await (await upload()).json();
+  assert.equal(covered.total_amount, 0);
+  assert.equal(covered.receipt_adjustments[0].amount, 330);
   assert.equal((await reset('success')).status, 200);
   assert.deepEqual(
     scanned.receipt_items.map(({ cost, discount }) => [cost, discount]),

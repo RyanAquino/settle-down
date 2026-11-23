@@ -127,6 +127,12 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
         if (preset === 'missing-discount') return send(200, receiptWithMissingDiscount);
         if (preset === 'receipt-adjustments')
           return send(200, { ...sugiReceipt, receipt_image_url: receipt.receipt_image_url });
+        if (preset === 'points-covered')
+          return send(200, {
+            ...receipt,
+            total_amount: 0,
+            receipt_adjustments: [{ kind: 'points_redemption', amount: 330, item_orders: [] }],
+          });
         const mismatch =
           preset === 'scan-mismatch' || (preset === 'scan-mismatch-once' && validUploads === 1);
         return send(200, mismatch ? mismatchedReceipt : receipt);

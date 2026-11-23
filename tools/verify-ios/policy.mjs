@@ -8,6 +8,7 @@ export const PRESETS = [
   'success',
   'missing-discount',
   'receipt-adjustments',
+  'points-covered',
   'upload-error',
   'scan-mismatch-once',
   'scan-mismatch',
