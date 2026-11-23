@@ -26,8 +26,9 @@ name: Review a purchase fully paid with points
       id: receipt-total
     direction: DOWN
     centerElement: true
-- assertVisible: Points redeemed
-- assertVisible: '-¥330'
+- assertVisible:
+    id: edit-points-0
+    text: '.*-¥330.*'
 - assertVisible:
     id: receipt-total
     text: '¥0'

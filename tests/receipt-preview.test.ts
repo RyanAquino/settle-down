@@ -1,4 +1,4 @@
-import { previewReceipt, reconcileReceipt } from '../utils/receipt-preview';
+import { previewReceipt, pricesBeforeDeduction, reconcileReceipt } from '../utils/receipt-preview';
 import sugi from '../tools/verify-ios/fixtures/sugi-receipt.json';
 import { readReceipt, type ReceiptItem } from '../utils/receipt';
 
@@ -113,7 +113,10 @@ test('tax is added after a pre-tax coupon, and points pay down the resulting bil
     ...plainReceipt(items, 8, 9.69),
     receipt_discount: 1.25,
     points_redeemed: 3,
-    split_rules: { discounts: [{ amount: 1.25, item_orders: [1] }], points: [] },
+    split_rules: {
+      discounts: [{ amount: 1.25, item_orders: [1] }],
+      points: [{ scope: 'basket', amount: 3, item_orders: [] }],
+    },
   });
   expect(result?.taxAmount).toBe(0.94);
   expect(result?.adjustedItems?.map((line) => line.cost)).toEqual([7.22, 2.47]);
@@ -133,7 +136,11 @@ test('deductions cannot exceed eligible prices or reference duplicate or missing
 });
 
 test('points covering the entire taxed purchase yield zero shares', () => {
-  const balance = reconcileReceipt({ ...plainReceipt([item], 10, 0), points_redeemed: 110 });
+  const balance = reconcileReceipt({
+    ...plainReceipt([item], 10, 0),
+    points_redeemed: 110,
+    split_rules: { discounts: [], points: [{ scope: 'basket', amount: 110, item_orders: [] }] },
+  });
   expect(balance?.adjustedItems?.[0].cost).toBe(0);
   expect(
     previewReceipt([item], { 1: 'a' }, [{ id: 'a', name: 'A' }], 'JPY', balance!)[0],
@@ -160,9 +167,17 @@ test('overlapping coupons and scoped points use printed order and round each ded
   expect(result?.adjustedItems?.map(({ cost }) => cost)).toEqual([88, 81, 87]);
 });
 
-test('a receipt with only checkout totals splits across the whole basket', () => {
+test('an explicit whole-basket coupon splits proportionally', () => {
   const items = [item, { ...item, item_order: 2 }];
-  const receipt = { ...plainReceipt(items, 0, 172), receipt_discount: 25, points_redeemed: 3 };
+  const receipt = {
+    ...plainReceipt(items, 0, 172),
+    receipt_discount: 25,
+    points_redeemed: 3,
+    split_rules: {
+      discounts: [{ amount: 25, scope: 'basket' as const, item_orders: [] }],
+      points: [{ amount: 3, scope: 'basket' as const, item_orders: [] }],
+    },
+  };
   expect(reconcileReceipt(receipt)?.adjustedItems?.map(({ cost }) => cost)).toEqual([86, 86]);
   expect(
     reconcileReceipt({
@@ -170,4 +185,37 @@ test('a receipt with only checkout totals splits across the whole basket', () =>
       split_rules: { discounts: [], points: [{ amount: 4, item_orders: [1] }] },
     }),
   ).toBeNull();
+});
+
+test('review uses the running eligible prices for overlapping coupons', () => {
+  const items = [item, { ...item, item_order: 2, cost: 90 }];
+  const receipt = {
+    ...plainReceipt(items, 0, 175),
+    receipt_discount: 15,
+    split_rules: {
+      discounts: [
+        { amount: 10, item_orders: [1] },
+        { amount: 5, scope: 'needs_review' as const, item_orders: [], eligible_subtotal: 90 },
+      ],
+      points: [],
+    },
+  };
+  expect(pricesBeforeDeduction(receipt, 'discounts', 1, 'JPY')?.map((i) => i.cost)).toEqual([
+    90, 90,
+  ]);
+  expect(reconcileReceipt(receipt)).toBeNull();
+});
+
+test('an old checkout deduction without eligibility opens for confirmation while a points-only receipt balances', () => {
+  const old = { ...sugi, split_rules: undefined };
+  const receipt = readReceipt(old)!;
+  expect(receipt.split_rules.discounts[0].scope).toBe('needs_review');
+  expect(receipt.split_rules.points[0].scope).toBe('basket');
+  expect(reconcileReceipt(receipt)).toBeNull();
+});
+
+test('an item reduced to zero by its coupon stays reviewable', () => {
+  expect(
+    reconcileReceipt(plainReceipt([{ ...item, cost: 0, discount: 100 }], 0, 0), 'JPY'),
+  ).toEqual({ subtotal: 0, taxAmount: 0, total: 0 });
 });

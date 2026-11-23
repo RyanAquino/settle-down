@@ -6,14 +6,17 @@ const receiptItemSchema = z.object({
   item_order: z.number().int(),
   cost: z.number().finite(),
   quantity: z.number().finite(),
-  discount: z.number().finite().default(0),
+  discount: z.number().nonnegative().default(0),
 });
 const splitDeductionSchema = z.object({
   amount: z.number().positive(),
+  scope: z.enum(['basket', 'items', 'needs_review']).optional(),
+  printed_label: z.string().optional(),
+  eligible_subtotal: z.number().positive().nullish(),
   item_orders: z.array(z.number().int()).default([]),
 });
 export type SplitDeduction = z.output<typeof splitDeductionSchema>;
-const splitRulesSchema = z.object({
+export const splitRulesSchema = z.object({
   discounts: z.array(splitDeductionSchema).default([]),
   points: z.array(splitDeductionSchema).default([]),
 });
@@ -29,17 +32,30 @@ export function receiptFractionDigits(amounts: number[]) {
   );
 }
 
-function legacyDeductionTotal(entries: SplitDeduction[]) {
-  // Round the sum back to the precision printed on these deductions.
+export function deductionTotal(entries: SplitDeduction[]) {
   const amounts = entries.map(({ amount }) => amount);
   return Number(
     amounts.reduce((sum, amount) => sum + amount, 0).toFixed(receiptFractionDigits(amounts)),
   );
 }
 
-function legacySplitRules(entries: SplitDeduction[]) {
-  if (entries.length === 1 && entries[0].item_orders.length === 0) return [];
-  return entries.map(({ amount, item_orders }) => ({ amount, item_orders }));
+export type DeductionStage = 'discounts' | 'points';
+
+export function deductionScope(rule: SplitDeduction, stage: DeductionStage) {
+  if (rule.scope) return rule.scope;
+  if (rule.item_orders.length) return 'items';
+  // Earlier responses could lose a restricted coupon's eligibility.
+  if (stage === 'points' && rule.eligible_subtotal == null) return 'basket';
+  return 'needs_review';
+}
+
+function readRules(
+  entries: SplitDeduction[],
+  total: number,
+  stage: DeductionStage,
+): SplitDeduction[] {
+  const rules = entries.length || total === 0 ? entries : [{ amount: total, item_orders: [] }];
+  return rules.map((rule) => ({ ...rule, scope: deductionScope(rule, stage) }));
 }
 
 export const receiptSchema = z
@@ -62,25 +78,26 @@ export const receiptSchema = z
   .transform(
     ({ receipt_adjustments = [], receipt_discount, points_redeemed, split_rules, ...receipt }) => {
       // The same boundary reads scan responses, routes and previously saved inbox drafts.
-      if (
+      const canonical =
+        split_rules !== undefined ||
         receipt_discount !== undefined ||
-        points_redeemed !== undefined ||
-        split_rules !== undefined
-      ) {
-        return {
-          ...receipt,
-          receipt_discount: receipt_discount ?? 0,
-          points_redeemed: points_redeemed ?? 0,
-          split_rules: split_rules ?? { discounts: [], points: [] },
-        };
-      }
-      const discounts = receipt_adjustments.filter((entry) => entry.kind === 'discount');
-      const points = receipt_adjustments.filter((entry) => entry.kind === 'points_redemption');
+        points_redeemed !== undefined;
+      const prior = (kind: 'discount' | 'points_redemption') =>
+        receipt_adjustments
+          .filter((entry) => entry.kind === kind)
+          .map(({ kind: _kind, ...rule }) => rule);
+      const discounts = canonical ? (split_rules?.discounts ?? []) : prior('discount');
+      const points = canonical ? (split_rules?.points ?? []) : prior('points_redemption');
+      const discountTotal = receipt_discount ?? deductionTotal(discounts);
+      const pointsTotal = points_redeemed ?? deductionTotal(points);
       return {
         ...receipt,
-        receipt_discount: legacyDeductionTotal(discounts),
-        points_redeemed: legacyDeductionTotal(points),
-        split_rules: { discounts: legacySplitRules(discounts), points: legacySplitRules(points) },
+        receipt_discount: discountTotal,
+        points_redeemed: pointsTotal,
+        split_rules: {
+          discounts: readRules(discounts, discountTotal, 'discounts'),
+          points: readRules(points, pointsTotal, 'points'),
+        },
       };
     },
   );

@@ -64,14 +64,36 @@ name: Scan and split the discounted Sugi receipt
     id: item-6-shared
 - scrollUntilVisible:
     element:
+      id: edit-discounts-0
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: edit-discounts-0
+    text: '.*-¥233.*'
+- tapOn:
+    id: edit-discounts-0
+- tapOn:
+    id: deduction-item-1
+- tapOn:
+    id: deduction-item-1
+- tapOn:
+    id: deduction-save
+- scrollUntilVisible:
+    element:
+      id: shopping-total
+    direction: DOWN
+    centerElement: true
+- assertVisible:
+    id: shopping-total
+    text: '¥6,303'
+- assertVisible:
+    id: edit-points-0
+    text: '.*-¥494.*'
+- scrollUntilVisible:
+    element:
       id: show-my-share
     direction: DOWN
     centerElement: true
-- assertVisible: Tax added
-- assertVisible: Receipt discount
-- assertVisible: '-¥233'
-- assertVisible: Points redeemed
-- assertVisible: '-¥494'
 - assertVisible:
     id: receipt-total
     text: '¥5,809'

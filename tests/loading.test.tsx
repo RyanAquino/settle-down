@@ -137,8 +137,22 @@ test('an inconsistent scan retries the same photo and opens the reconciled recei
   });
 });
 
-test('two inconsistent scans show the original photo and let the payer retake it', async () => {
+test('a readable mismatch opens the original photo and amounts for correction after one retry', async () => {
   const scan = jest.spyOn(globalThis, 'fetch').mockResolvedValue(scanResponse(120));
+  await render(<LoadingScreen />);
+  await waitFor(() =>
+    expect(router.replace).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: '/receipt-details' }),
+    ),
+  );
+  expect(scan).toHaveBeenCalledTimes(2);
+  expect(jest.mocked(saveDraft).mock.calls[0][0].receipt?.total_amount).toBe(120);
+});
+
+test('two unreadable scans let the payer retake the photo', async () => {
+  const scan = jest
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue({ ok: true, json: () => Promise.resolve({}) } as Response);
   const user = userEvent.setup();
 
   await render(<LoadingScreen />);

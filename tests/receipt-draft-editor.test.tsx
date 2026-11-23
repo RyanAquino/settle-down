@@ -307,3 +307,108 @@ test('Android confirms the time before saving the date to the inbox', async () =
     os.restore();
   }
 });
+
+test('confirming either equal-price item gives its owner the coupon and the draft restores that choice', async () => {
+  const draft = await createPhotoDraft(samplePhoto().uri);
+  saveDraft({
+    ...draft,
+    receipt: {
+      ...receipt,
+      receipt_items: receipt.receipt_items.map((item) => ({ ...item, cost: 100 })),
+      total_amount: 180,
+      receipt_discount: 20,
+      split_rules: {
+        discounts: [
+          {
+            amount: 20,
+            scope: 'needs_review',
+            item_orders: [],
+            eligible_subtotal: 100,
+            printed_label: '対象商品',
+          },
+        ],
+        points: [],
+      },
+    },
+  });
+  jest.mocked(useLocalSearchParams).mockReturnValue({ draftId: draft.id });
+  const fetch = jest.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+    if (typeof url === 'string' && url.includes('groups/'))
+      return Promise.resolve(response([groups[1]]));
+    if (typeof url === 'string' && url.includes('users/'))
+      return Promise.resolve(response(members));
+    return Promise.resolve({ ok: true, status: 201 } as Response);
+  });
+  const user = userEvent.setup();
+  const first = await render(<ReceiptDetailsScreen />);
+  await user.press(await screen.findByTestId('paid-by-aya'));
+  await user.press(screen.getByTestId('item-8-assign-aya'));
+  await user.press(screen.getByTestId('item-12-assign-ren'));
+  expect(screen.getByTestId('show-my-share')).toBeDisabled();
+  expect(screen.getByTestId('sync-transaction')).toBeDisabled();
+  await user.press(screen.getByTestId('edit-discounts-0'));
+  expect(screen.getByTestId('deduction-save')).toBeDisabled();
+  await user.press(screen.getByTestId('deduction-item-8'));
+  expect(screen.getByText('Selected · ¥100 / ¥100 on receipt')).toBeOnTheScreen();
+  await user.press(screen.getByTestId('deduction-save'));
+  await user.press(screen.getByTestId('show-my-share'));
+  expect(screen.getByTestId('share-member-aya')).toHaveTextContent(/¥80/);
+  await user.press(screen.getByRole('button', { name: 'Close' }));
+  await first.unmount();
+  await render(<ReceiptDetailsScreen />);
+  await waitFor(() => expect(screen.getByTestId('sync-transaction')).toBeEnabled());
+  await user.press(screen.getByTestId('edit-discounts-0'));
+  expect(screen.getByTestId('deduction-item-8')).toBeChecked();
+  await user.press(screen.getByTestId('deduction-item-8'));
+  await user.press(screen.getByTestId('deduction-item-12'));
+  await user.press(screen.getByTestId('deduction-save'));
+  await user.press(screen.getByTestId('sync-transaction'));
+  const body = fetch.mock.calls.at(-1)?.[1]?.body;
+  if (typeof body !== 'string') throw new Error('Expected a JSON transaction body');
+  expect(JSON.parse(body)).toMatchObject({
+    total_amount: 180,
+    user_receipt_items: [
+      { member_id: 'aya', cost: 100 },
+      { member_id: 'ren', cost: 80 },
+    ],
+  });
+});
+
+test('missing item and checkout coupons and redeemed points can be corrected against the printed payment', async () => {
+  const draft = await createPhotoDraft(samplePhoto().uri);
+  saveDraft({ ...draft, receipt: { ...receipt, total_amount: 250 } });
+  jest.mocked(useLocalSearchParams).mockReturnValue({ draftId: draft.id });
+  jest
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(response([groups[1]]))
+    .mockResolvedValueOnce(response(members));
+  const user = userEvent.setup();
+  const first = await render(<ReceiptDetailsScreen />);
+  await user.press(await screen.findByTestId('paid-by-aya'));
+  await user.press(screen.getByTestId('item-8-assign-aya'));
+  await user.press(screen.getByTestId('item-12-assign-aya'));
+  const enter = async (id: string, amount: string) => {
+    await user.press(screen.getByTestId(id));
+    await fireEvent.changeText(screen.getByTestId('deduction-amount'), amount);
+    await user.press(screen.getByTestId('deduction-save'));
+  };
+  await enter('edit-item-coupon-8', '20');
+  expect(screen.getByTestId('item-cost-8')).toHaveDisplayValue('90');
+  await enter('edit-item-coupon-8', '25');
+  expect(screen.getByTestId('item-cost-8')).toHaveDisplayValue('85');
+  expect(screen.getByText('Original ¥110 · Edit coupon')).toBeOnTheScreen();
+  await enter('add-discounts', '20');
+  await enter('add-points', '5');
+  expect(screen.getByTestId('shopping-total')).toHaveTextContent('¥255');
+  expect(screen.getByTestId('sync-transaction')).toBeEnabled();
+  await first.unmount();
+  await render(<ReceiptDetailsScreen />);
+  expect(screen.getByTestId('item-cost-8')).toHaveDisplayValue('85');
+  await user.press(screen.getByTestId('edit-points-0'));
+  await user.press(screen.getByTestId('deduction-remove'));
+  expect(screen.getByTestId('show-my-share')).toBeDisabled();
+  expect(screen.getByText(/Difference · -¥5/)).toBeOnTheScreen();
+  await user.press(screen.getByTestId('edit-item-coupon-8'));
+  await user.press(screen.getByTestId('deduction-remove'));
+  expect(screen.getByTestId('item-cost-8')).toHaveDisplayValue('110');
+});

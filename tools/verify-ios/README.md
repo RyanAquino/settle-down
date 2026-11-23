@@ -145,7 +145,7 @@ printed payment total is ¥5,809. The `points-covered` preset redeems ¥330
 of points on the standard receipt, covering the entire purchase.
 
 Replay [.maestro/receipt-adjustments.yaml](../../.maestro/receipt-adjustments.yaml)
-with `receipt-adjustments`. Import the seeded photo, use CI Japan, and assign the
+with `receipt-adjustments`. Import the seeded photo, review the four eligible items in the coupon editor, and confirm the ¥6,303 shopping total. Use CI Japan and assign the
 six items as recorded. Check the two deductions and ¥5,809 payment, the ¥3,089
 and ¥2,720 shares, and a successful fixture submission with those exact amounts.
 Replay [.maestro/receipt-points-covered.yaml](../../.maestro/receipt-points-covered.yaml)

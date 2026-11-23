@@ -26,6 +26,7 @@ import VerifyReminderDelivery from '@/components/verify-reminder-delivery';
 import { theme, shadow, type, buildUserColorMap, initialFor } from '@/utils/theme';
 import { Entrance, PressableScale } from '@/components/motion';
 import ItemSplitEditor from '@/components/item-split-editor';
+import ReceiptDeductionEditor from '@/components/receipt-deduction-editor';
 import ReceiptSharePreview from '@/components/receipt-share-preview';
 
 import {
@@ -35,7 +36,10 @@ import {
   usersSchema,
   parseReceipt,
   parseReceiptAmount,
-  receiptTotals,
+  deductionTotal,
+  deductionScope,
+  type DeductionStage,
+  type SplitDeduction,
   splitReceipt,
   type ItemAssignment,
   type ReceiptData,
@@ -52,7 +56,12 @@ import {
 import { receiptLeftForLater } from '@/utils/receipt-reminder-lifecycle';
 import { useActiveReceiptDraft } from '@/utils/use-active-receipt-draft';
 import { retryApiCall } from '@/utils/retry';
-import { previewReceipt, reconcileReceipt } from '@/utils/receipt-preview';
+import {
+  previewReceipt,
+  pricesBeforeDeduction,
+  receiptPayment,
+  reconcileReceipt,
+} from '@/utils/receipt-preview';
 
 function sampleReceipt(): ReceiptData {
   return {
@@ -197,6 +206,9 @@ function ReceiptEditor({
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [rosterVerified, setRosterVerified] = useState(false);
   const [groupsFetchAttempts, setGroupsFetchAttempts] = useState(0);
+  const [editingDeduction, setEditingDeduction] = useState<
+    { kind: 'item'; order: number } | { kind: DeductionStage; index: number } | null
+  >(null);
   const [splitItemOrder, setSplitItemOrder] = useState<number | null>(null);
   const requests = useRef({ groups: 0, members: 0 });
   const [isSyncing, setIsSyncing] = useState(false);
@@ -238,12 +250,15 @@ function ReceiptEditor({
     () =>
       [...receipt.receipt_items]
         .sort((a, b) => a.item_order - b.item_order)
-        .map((item) =>
-          costInputs[item.item_order] === undefined
-            ? item
-            : { ...item, cost: parseReceiptAmount(costInputs[item.item_order]) },
-        ),
-    [receipt.receipt_items, costInputs],
+        .map((item) => ({
+          ...item,
+          cost:
+            costInputs[item.item_order] === undefined
+              ? item.cost
+              : parseReceiptAmount(costInputs[item.item_order]),
+          discount: edits.itemDiscounts?.[item.item_order] ?? item.discount,
+        })),
+    [receipt.receipt_items, costInputs, edits.itemDiscounts],
   );
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const reminderTarget = useRef<ComponentRef<typeof View>>(null);
@@ -452,7 +467,7 @@ function ReceiptEditor({
         total_amount: total,
         // Adjusted shares already include tax and both kinds of deductions. Send the
         // same rounded amounts shown in the preview, including for shared items.
-        ...(balance.adjustedItems
+        ...(balance.adjustedItems || editableItems.some((item) => item.discount > 0)
           ? {
               tax_percentage: 0,
               user_receipt_items: shares
@@ -515,21 +530,86 @@ function ReceiptEditor({
   };
 
   // -------- derived --------
-  const { subtotal, taxAmount } = receiptTotals(editableItems, editableTaxPercentage);
-  const amountsValid = Number.isFinite(subtotal) && Number.isFinite(editableTaxPercentage);
-  const total = receipt.total_amount;
-  const hasDeductions = receipt.receipt_discount > 0 || receipt.points_redeemed > 0;
-  const balance = reconcileReceipt({
+  const currency = edits.group?.currency ?? null;
+  const rules = edits.splitRules ?? receipt.split_rules;
+  const editedReceipt = {
     ...receipt,
     receipt_items: editableItems,
     tax_percentage: editableTaxPercentage,
-  });
-  const balanceWarning = hasDeductions
-    ? 'The items, receipt adjustments and tax must match the scanned total.'
-    : 'The items and tax must match the scanned total.';
+    split_rules: rules,
+    ...(edits.splitRules && {
+      receipt_discount: deductionTotal(rules.discounts),
+      points_redeemed: deductionTotal(rules.points),
+    }),
+  };
+  const { subtotal, taxAmount, shoppingTotal, difference } = receiptPayment(editedReceipt);
+  const amountsValid = Number.isFinite(subtotal) && Number.isFinite(editableTaxPercentage);
+  const total = receipt.total_amount;
+  const hasDeductions = editedReceipt.receipt_discount > 0 || editedReceipt.points_redeemed > 0;
+  const balance = reconcileReceipt(editedReceipt, currency);
+  const needsReview = (['discounts', 'points'] as const).some((stage) =>
+    rules[stage].some((rule) => deductionScope(rule, stage) === 'needs_review'),
+  );
+  const balanceWarning = needsReview
+    ? 'Confirm which items qualify for the deduction.'
+    : hasDeductions
+      ? 'The items, receipt adjustments and tax must match the scanned total.'
+      : 'The items and tax must match the scanned total.';
   const taxIncluded = balance?.taxAmount === 0 && editableTaxPercentage > 0;
   const receiptPhoto = photoUri || shopInfo.receipt_image_url;
-  const currency = edits.group?.currency ?? null;
+  const editingItem =
+    editingDeduction?.kind === 'item'
+      ? editableItems.find((i) => i.item_order === editingDeduction.order)
+      : undefined;
+  const originalPrice =
+    editingItem && Number((editingItem.cost + editingItem.discount).toFixed(10));
+  const editingStage =
+    editingDeduction && editingDeduction.kind !== 'item' ? editingDeduction : null;
+  const currentRule = editingStage ? rules[editingStage.kind][editingStage.index] : undefined;
+
+  function saveDeduction(rule: SplitDeduction | null) {
+    if (editingItem && originalPrice !== undefined) {
+      const order = editingItem.item_order;
+      const discount = rule?.amount ?? 0;
+      changeEdits({
+        itemDiscounts: { ...latest.current.itemDiscounts, [order]: discount },
+        costs: {
+          ...latest.current.costs,
+          [order]: String(Number((originalPrice - discount).toFixed(10))),
+        },
+      });
+    } else if (editingStage) {
+      const { kind, index } = editingStage;
+      const entries = [...rules[kind]];
+      entries.splice(index, 1, ...(rule ? [rule] : []));
+      changeEdits({ splitRules: { ...rules, [kind]: entries } });
+    }
+    setEditingDeduction(null);
+  }
+
+  function deductionRows(stage: DeductionStage) {
+    return rules[stage].map((rule, index) => {
+      const name = stage === 'discounts' ? 'Receipt discount' : 'Points redeemed';
+      const review = deductionScope(rule, stage) === 'needs_review';
+      return (
+        <PressableScale
+          key={index}
+          testID={`edit-${stage}-${index}`}
+          accessibilityLabel={`${review ? 'Review' : 'Edit'} ${name} ${index + 1}, ${formatMoney(-rule.amount, currency)}`}
+          onPress={() => setEditingDeduction({ kind: stage, index })}
+        >
+          <View style={styles.summaryLine}>
+            <Text style={styles.summaryLabel}>{name}</Text>
+            <Text style={styles.summaryValue}>{formatMoney(-rule.amount, currency)}</Text>
+          </View>
+          <Text style={styles.summaryActionText}>
+            {rule.printed_label ? rule.printed_label + ' · ' : ''}
+            {review ? 'Confirm eligible items' : 'Edit'}
+          </Text>
+        </PressableScale>
+      );
+    });
+  }
   const priceSymbol = currencySymbol(currency);
   const splitItem = editableItems.find((item) => item.item_order === splitItemOrder);
   const splitAssignment = splitItem ? userSelections[splitItem.item_order] : undefined;
@@ -771,6 +851,17 @@ function ReceiptEditor({
                   </Text>
                 )}
 
+                <PressableScale
+                  testID={`edit-item-coupon-${item.item_order}`}
+                  accessibilityLabel={`Edit item coupon for ${item.english_name || item.japanese_name}`}
+                  onPress={() => setEditingDeduction({ kind: 'item', order: item.item_order })}
+                >
+                  <Text style={styles.summaryActionText}>
+                    {item.discount > 0
+                      ? `Original ${formatMoney(item.cost + item.discount, currency)} · Edit coupon`
+                      : 'Add item coupon'}
+                  </Text>
+                </PressableScale>
                 {/* Assignment chips */}
                 {groupUsers.length > 0 && (
                   <View style={styles.assignRow}>
@@ -873,22 +964,7 @@ function ReceiptEditor({
               {formatMoney(balance?.subtotal ?? subtotal, currency)}
             </Text>
           </View>
-          {receipt.receipt_discount > 0 && (
-            <View style={styles.summaryLine}>
-              <Text style={styles.summaryLabel}>Receipt discount</Text>
-              <Text style={styles.summaryValue}>
-                {formatMoney(-receipt.receipt_discount, currency)}
-              </Text>
-            </View>
-          )}
-          {receipt.points_redeemed > 0 && (
-            <View style={styles.summaryLine}>
-              <Text style={styles.summaryLabel}>Points redeemed</Text>
-              <Text style={styles.summaryValue}>
-                {formatMoney(-receipt.points_redeemed, currency)}
-              </Text>
-            </View>
-          )}
+          {deductionRows('discounts')}
           <View style={styles.summaryLine}>
             <Text style={styles.summaryLabel}>
               {taxIncluded ? 'Tax included' : hasDeductions ? 'Tax added' : 'Tax'}
@@ -913,6 +989,29 @@ function ReceiptEditor({
               </Text>
             </View>
           </View>
+          {hasDeductions && (
+            <View style={styles.summaryLine}>
+              <Text style={styles.summaryLabel}>Shopping total</Text>
+              <Text testID="shopping-total" style={styles.summaryValue}>
+                {formatMoney(shoppingTotal, currency)}
+              </Text>
+            </View>
+          )}
+          {deductionRows('points')}
+          <View style={styles.summaryActions}>
+            {(['discounts', 'points'] as const).map((stage) => (
+              <PressableScale
+                key={stage}
+                style={styles.summaryAction}
+                testID={`add-${stage}`}
+                onPress={() => setEditingDeduction({ kind: stage, index: rules[stage].length })}
+              >
+                <Text style={styles.summaryActionText}>
+                  {stage === 'discounts' ? 'Add checkout coupon' : 'Add redeemed points'}
+                </Text>
+              </PressableScale>
+            ))}
+          </View>
           <View style={[styles.summaryLine, styles.summaryTotalLine]}>
             <Text style={styles.summaryTotalLabel}>Total</Text>
             <Text testID="receipt-total" style={styles.summaryTotal}>
@@ -922,7 +1021,9 @@ function ReceiptEditor({
           {editableItems.length > 0 && !balance && (
             <Text style={styles.balanceWarning}>
               {amountsValid
-                ? balanceWarning
+                ? difference
+                  ? balanceWarning + ' Difference · ' + formatMoney(difference, currency)
+                  : balanceWarning
                 : 'Enter amounts as numbers without grouping separators.'}
             </Text>
           )}
@@ -995,6 +1096,38 @@ function ReceiptEditor({
         </PressableScale>
       </Entrance>
 
+      {editingDeduction && (
+        <ReceiptDeductionEditor
+          title={
+            editingItem
+              ? `Item coupon · ${editingItem.english_name || editingItem.japanese_name}`
+              : editingStage?.kind === 'discounts'
+                ? 'Checkout coupon'
+                : 'Redeemed points'
+          }
+          currency={currency}
+          items={editableItems}
+          originalPrice={originalPrice}
+          remainingItems={
+            editingStage
+              ? pricesBeforeDeduction(
+                  editedReceipt,
+                  editingStage.kind,
+                  editingStage.index,
+                  currency,
+                )
+              : undefined
+          }
+          initial={
+            editingItem && editingItem.discount > 0
+              ? { amount: editingItem.discount, item_orders: [editingItem.item_order] }
+              : currentRule
+          }
+          onClose={() => setEditingDeduction(null)}
+          onSave={saveDeduction}
+          onRemove={currentRule || editingItem?.discount ? () => saveDeduction(null) : undefined}
+        />
+      )}
       {splitItem && (
         <ItemSplitEditor
           key={splitItem.item_order}

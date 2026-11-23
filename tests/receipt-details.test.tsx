@@ -86,7 +86,7 @@ test('the itemized preview can be shared before choosing a payer and sync reject
   expect(screen.getByTestId('sync-transaction')).toBeEnabled();
   await fireEvent.changeText(screen.getByTestId('item-cost-1'), '100');
   expect(screen.getByTestId('sync-transaction')).toBeDisabled();
-  expect(screen.getByText('The items and tax must match the scanned total.')).toBeOnTheScreen();
+  expect(screen.getByText(/The items and tax must match the scanned total/)).toBeOnTheScreen();
   await fireEvent.changeText(screen.getByTestId('item-cost-1'), '172,50');
   await fireEvent.changeText(screen.getByTestId('item-cost-2'), '158,50');
   expect(screen.getByTestId('sync-transaction')).toBeEnabled();
@@ -175,6 +175,7 @@ test('Sugi coupon and points reach the summary, share preview and exact Settle U
   }
   for (const value of [
     '¥6,536',
+    '¥6,303',
     'Item discount · ¥347',
     'Item discount · ¥294',
     'Receipt discount',

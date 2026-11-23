@@ -55,8 +55,24 @@
   "receipt_discount": 233,
   "points_redeemed": 494,
   "split_rules": {
-    "discounts": [{ "amount": 233, "item_orders": [1, 2, 5, 6] }],
-    "points": []
+    "discounts": [
+      {
+        "scope": "items",
+        "amount": 233,
+        "item_orders": [1, 2, 5, 6],
+        "printed_label": "全品割引",
+        "eligible_subtotal": 2909
+      }
+    ],
+    "points": [
+      {
+        "scope": "basket",
+        "amount": 494,
+        "item_orders": [],
+        "printed_label": "スギポイント値引金額",
+        "eligible_subtotal": null
+      }
+    ]
   },
   "tax_percentage": 0,
   "total_amount": 5809

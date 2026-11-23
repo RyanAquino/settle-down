@@ -186,7 +186,7 @@ test('legacy decimal deductions keep ordered scope and canonical totals take pre
   expect(readReceipt({ ...receipt, receipt_adjustments, points_redeemed: 3 })).toMatchObject({
     receipt_discount: 0,
     points_redeemed: 3,
-    split_rules: { discounts: [], points: [] },
+    split_rules: { discounts: [], points: [{ amount: 3, scope: 'basket', item_orders: [] }] },
   });
   expect(readReceipt({ ...receipt, receipt_discount: 0.3 })).toMatchObject({ points_redeemed: 0 });
   expect(readReceipt({ ...receipt, receipt_discount: -1 })).toBeNull();

@@ -120,11 +120,20 @@ test('a legacy draft keeps coupon eligibility and price edits when reopened and 
     }),
   );
   const reopened = readDraft(draft.id)!;
-  expect(reopened.receipt).toEqual(readReceipt(sugi));
+  expect(reopened.receipt?.receipt_items).toEqual(readReceipt(sugi)?.receipt_items);
   expect(reopened.edits).toEqual(edits);
   saveDraft(reopened);
   const saved: unknown = JSON.parse(file.textSync());
-  expect(saved).toMatchObject({ receipt: { receipt_discount, points_redeemed, split_rules } });
+  expect(saved).toMatchObject({
+    receipt: {
+      receipt_discount,
+      points_redeemed,
+      split_rules: {
+        discounts: [{ scope: 'items', item_orders: split_rules.discounts[0].item_orders }],
+        points: [{ scope: 'basket', amount: 494 }],
+      },
+    },
+  });
   expect(saved).not.toHaveProperty('receipt.receipt_adjustments');
 
   const receipt = readDraft(draft.id)!.receipt!;

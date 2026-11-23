@@ -2,9 +2,17 @@ import { uuid } from 'expo';
 import { Directory, File, Paths } from 'expo-file-system';
 import { z } from 'zod';
 import { nextMorningDate } from '@/utils/receipt-morning';
-import { groupSchema, groupUserSchema, itemAssignmentSchema, receiptSchema } from '@/utils/receipt';
+import {
+  groupSchema,
+  groupUserSchema,
+  itemAssignmentSchema,
+  receiptSchema,
+  splitRulesSchema,
+} from '@/utils/receipt';
 
 const editorSchema = z.object({
+  itemDiscounts: z.record(z.string(), z.number().nonnegative()).optional(),
+  splitRules: splitRulesSchema.optional(),
   costs: z.record(z.string(), z.string()),
   tax: z.string(),
   date: z.iso.datetime(),

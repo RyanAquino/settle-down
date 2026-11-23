@@ -37,8 +37,24 @@ test('synthetic API covers app contracts, errors, request evidence and reset', a
   assert.equal(sugi.receipt_discount, 233);
   assert.equal(sugi.points_redeemed, 494);
   assert.deepEqual(sugi.split_rules, {
-    discounts: [{ amount: 233, item_orders: [1, 2, 5, 6] }],
-    points: [],
+    discounts: [
+      {
+        amount: 233,
+        scope: 'items',
+        printed_label: '全品割引',
+        eligible_subtotal: 2909,
+        item_orders: [1, 2, 5, 6],
+      },
+    ],
+    points: [
+      {
+        amount: 494,
+        scope: 'basket',
+        printed_label: 'スギポイント値引金額',
+        eligible_subtotal: null,
+        item_orders: [],
+      },
+    ],
   });
   assert.equal(sugi.total_amount, 5809);
   assert.equal((await reset('points-covered')).status, 200);
