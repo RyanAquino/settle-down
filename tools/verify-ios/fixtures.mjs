@@ -1,4 +1,5 @@
 import { FIXTURE_ORIGIN } from './fixture-control.mjs';
+import sugiReceipt from './fixtures/sugi-receipt.json' with { type: 'json' };
 import http from 'node:http';
 import { appendFile, readFile } from 'node:fs/promises';
 import { PRESETS } from './policy.mjs';
@@ -122,6 +123,8 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
         if (preset === 'upload-error') return send(503, { error: 'Synthetic upload failure' });
         validUploads++;
         if (preset === 'missing-discount') return send(200, receiptWithMissingDiscount);
+        if (preset === 'receipt-adjustments')
+          return send(200, { ...sugiReceipt, receipt_image_url: receipt.receipt_image_url });
         const mismatch =
           preset === 'scan-mismatch' || (preset === 'scan-mismatch-once' && validUploads === 1);
         return send(200, mismatch ? mismatchedReceipt : receipt);

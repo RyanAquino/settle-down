@@ -136,7 +136,12 @@ Real OCR and real Settle Up integration are never exercised.
 The fixture service implements the app's existing receipt, groups, members, and
 transaction endpoints. It supplies a fixed-date receipt with line totals (including
 one quantity-two item), JPY/TWD/HKD groups, and synthetic Alex/Sam members. Presets:
-`success`, `missing-discount`, `upload-error`, `groups-error`, `no-groups`, `users-error`, `sync-error`, `out-of-order-members`.
+`success`, `receipt-adjustments`, `missing-discount`, `upload-error`, `groups-error`, `no-groups`, `users-error`, `sync-error`, `out-of-order-members`.
+
+The `receipt-adjustments` preset serves a transcribed six-item Sugi Pharmacy receipt.
+Line prices after item discounts sum to ¥6,536. The ¥233 basket discount applies
+to the ¥2,909 of eligible items, and redeemed points take off another ¥494. The
+printed payment total is ¥5,809.
 
 The `missing-discount` preset omits the discount field on the full-price juice.
 The two Onigiri have a paid line total of 200 and a discount of 30.
