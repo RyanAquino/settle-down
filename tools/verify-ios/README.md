@@ -416,12 +416,18 @@ requires a stop/relaunch check; use the native switch to assess foreground refre
 
 ## Required camera regressions
 
-Changes to `app/camera.tsx` or `components/camera-session.tsx` select two trusted,
-deterministic regressions before Copilot exploration: both zoom bounds (including
-twenty zoom-in steps and the disabled upper-bound control), Reset and foreground
-lifecycle; and native Settings permission recovery with checked-state assertions
-and an element-anchored switch tap. The first flow reuses the untouched initial installation; the second runs after a fresh reinstall through
-Maestro CLI and requires successful JUnit evidence. Each has a six-minute bound
+Changes to `app/camera.tsx` or `components/camera-session.tsx` run two trusted
+Maestro flows before Copilot exploration. Both use the `success` fixture.
+
+- Launch the home screen with camera permission granted. Verify the “Pinch to
+  zoom” hint and enabled Capture receipt button, press Home, and resume the app.
+  Check that the hint and enabled shutter return.
+- Launch with camera permission denied, open native Settings, verify that the
+  Camera switch is off, and tap it on. Resume the app and check that Capture
+  receipt is enabled.
+
+The first flow reuses the untouched initial installation. The second runs after
+a fresh reinstall. Each requires successful JUnit evidence and has a six-minute bound
 including reset, driver startup, and the complete flow. Hosted startup alone has
 consumed almost two minutes before the first assertion. The flows contain no
 scripts or optional assertions, and a timeout remains BLOCKED even with JUnit.
