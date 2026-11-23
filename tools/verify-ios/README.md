@@ -144,6 +144,13 @@ to the ¥2,909 of eligible items, and redeemed points take off another ¥494. Th
 printed payment total is ¥5,809. The `points-covered` preset redeems ¥330
 of points on the standard receipt, covering the entire purchase.
 
+Replay [.maestro/receipt-adjustments.yaml](../../.maestro/receipt-adjustments.yaml)
+with `receipt-adjustments`. Import the seeded photo, use CI Japan, and assign the
+six items as recorded. Check the two deductions and ¥5,809 payment, the ¥3,089
+and ¥2,720 shares, and a successful fixture submission with those exact amounts.
+Replay [.maestro/receipt-points-covered.yaml](../../.maestro/receipt-points-covered.yaml)
+with `points-covered` to see a ¥0 payment and disabled sync.
+
 The `missing-discount` preset omits the discount field on the full-price juice.
 The two Onigiri have a paid line total of 200 and a discount of 30.
 

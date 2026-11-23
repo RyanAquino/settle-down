@@ -380,7 +380,6 @@ function ReceiptEditor({
 
   const updateItemCost = (itemOrder: number, cost: string) =>
     changeEdits({ costs: { ...latest.current.costs, [itemOrder]: cost } });
-  const getTotal = () => receipt.total_amount;
   const updateTaxPercentage = (value: string) => changeEdits({ tax: value });
   const editDate = () => {
     if (Platform.OS !== 'android') {
@@ -431,7 +430,7 @@ function ReceiptEditor({
   };
 
   const syncTransaction = async () => {
-    if (!apiBaseUrl || posting.current || !rosterVerified) return;
+    if (!apiBaseUrl || posting.current || !rosterVerified || total === 0) return;
     if (!selectedGroupId) return Alert.alert('Pick a group', 'Please select a settle-up group.');
     if (!paidByUserId) return Alert.alert('Who paid?', 'Please select who paid for this receipt.');
     const unassigned = editableItems.filter((item) => !userSelections[item.item_order]);
@@ -439,11 +438,7 @@ function ReceiptEditor({
       return Alert.alert('Assign every item', 'Tap a person on each item, or mark it shared.');
 
     if (editableItems.length === 0) return Alert.alert('Nothing to split');
-    if (!balance)
-      return Alert.alert(
-        'Check the receipt amounts',
-        'The items and tax must add up to the scanned total.',
-      );
+    if (!balance) return Alert.alert('Check the receipt amounts', balanceWarning);
 
     posting.current = true;
     setIsSyncing(true);
@@ -451,9 +446,21 @@ function ReceiptEditor({
       const payload = {
         purpose: shopInfo.en_shop_name || shopInfo.jp_shop_name || 'Receipt',
         paying_member_id: paidByUserId,
-        tax_percentage: editableTaxPercentage,
-        total_amount: getTotal(),
-        ...splitReceipt(editableItems, userSelections, currency),
+        total_amount: total,
+        // Adjusted shares already include tax and both kinds of deductions. Send the
+        // same rounded amounts shown in the preview, including for shared items.
+        ...(balance.adjustedItems
+          ? {
+              tax_percentage: 0,
+              user_receipt_items: shares
+                .filter((share) => share.total > 0)
+                .map((share) => ({ member_id: share.user.id, cost: share.total })),
+              split_receipt_items: [],
+            }
+          : {
+              tax_percentage: editableTaxPercentage,
+              ...splitReceipt(editableItems, userSelections, currency),
+            }),
         group_id: selectedGroupId,
         receipt_date: shopInfo.receipt_date,
         receipt_image_url: shopInfo.receipt_image_url,
@@ -507,8 +514,12 @@ function ReceiptEditor({
   // -------- derived --------
   const { subtotal, taxAmount } = receiptTotals(editableItems, editableTaxPercentage);
   const amountsValid = Number.isFinite(subtotal) && Number.isFinite(editableTaxPercentage);
-  const total = getTotal();
-  const balance = reconcileReceipt(editableItems, editableTaxPercentage, total);
+  const total = receipt.total_amount;
+  const adjustments = receipt.receipt_adjustments ?? [];
+  const balance = reconcileReceipt(editableItems, editableTaxPercentage, total, adjustments);
+  const balanceWarning = adjustments.length
+    ? 'The items, receipt adjustments and tax must match the scanned total.'
+    : 'The items and tax must match the scanned total.';
   const taxIncluded = balance?.taxAmount === 0 && editableTaxPercentage > 0;
   const receiptPhoto = photoUri || shopInfo.receipt_image_url;
   const currency = edits.group?.currency ?? null;
@@ -518,7 +529,10 @@ function ReceiptEditor({
   const assignedCount = Object.keys(userSelections).length;
   const allAssigned = editableItems.length > 0 && assignedCount === editableItems.length;
   const canPreview = allAssigned && !!balance && !!selectedGroupId && groupUsers.length > 0;
-  const readyToSync = canPreview && !!paidByUserId && rosterVerified && !submitted;
+  const shares = canPreview
+    ? previewReceipt(editableItems, userSelections, groupUsers, currency, balance)
+    : [];
+  const readyToSync = canPreview && total > 0 && !!paidByUserId && rosterVerified && !submitted;
 
   // -------- render --------
   return (
@@ -744,8 +758,9 @@ function ReceiptEditor({
                 </View>
                 {item.discount > 0 && (
                   <Text style={styles.itemSavings}>
-                    {formatMoney(item.cost, currency)} paid · {formatMoney(item.discount, currency)}{' '}
-                    saved
+                    {adjustments.length
+                      ? `Item discount · ${formatMoney(item.discount, currency)}`
+                      : `${formatMoney(item.cost, currency)} paid · ${formatMoney(item.discount, currency)} saved`}
                   </Text>
                 )}
 
@@ -851,8 +866,18 @@ function ReceiptEditor({
               {formatMoney(balance?.subtotal ?? subtotal, currency)}
             </Text>
           </View>
+          {adjustments.map((adjustment, index) => (
+            <View style={styles.summaryLine} key={index}>
+              <Text style={styles.summaryLabel}>
+                {adjustment.kind === 'discount' ? 'Receipt discount' : 'Points redeemed'}
+              </Text>
+              <Text style={styles.summaryValue}>{formatMoney(-adjustment.amount, currency)}</Text>
+            </View>
+          ))}
           <View style={styles.summaryLine}>
-            <Text style={styles.summaryLabel}>{taxIncluded ? 'Tax included' : 'Tax'}</Text>
+            <Text style={styles.summaryLabel}>
+              {taxIncluded ? 'Tax included' : adjustments.length ? 'Tax added' : 'Tax'}
+            </Text>
             <View style={styles.taxRight}>
               <View style={styles.taxInputWrap}>
                 <TextInput
@@ -882,7 +907,7 @@ function ReceiptEditor({
           {editableItems.length > 0 && !balance && (
             <Text style={styles.balanceWarning}>
               {amountsValid
-                ? 'The items and tax must match the scanned total.'
+                ? balanceWarning
                 : 'Enter amounts as numbers without grouping separators.'}
             </Text>
           )}
@@ -918,17 +943,19 @@ function ReceiptEditor({
         <Text style={styles.footerHint}>
           {submitted
             ? 'Synced to Settle Up.'
-            : readyToSync
-              ? 'Ready to sync.'
-              : !balance && editableItems.length > 0
-                ? 'Check the receipt amounts.'
-                : !selectedGroupId
-                  ? 'Pick a group to continue.'
-                  : !rosterVerified && allAssigned && paidByUserId
-                    ? 'Refresh group members to sync.'
-                    : !paidByUserId
-                      ? 'Select who paid.'
-                      : `${editableItems.length - assignedCount} item${editableItems.length - assignedCount === 1 ? '' : 's'} left to assign.`}
+            : balance && total === 0
+              ? 'Fully covered. No payment to sync.'
+              : readyToSync
+                ? 'Ready to sync.'
+                : !balance && editableItems.length > 0
+                  ? 'Check the receipt amounts.'
+                  : !selectedGroupId
+                    ? 'Pick a group to continue.'
+                    : !rosterVerified && allAssigned && paidByUserId
+                      ? 'Refresh group members to sync.'
+                      : !paidByUserId
+                        ? 'Select who paid.'
+                        : `${editableItems.length - assignedCount} item${editableItems.length - assignedCount === 1 ? '' : 's'} left to assign.`}
         </Text>
         <PressableScale
           scaleTo={0.98}
@@ -970,7 +997,8 @@ function ReceiptEditor({
 
       {showShares && canPreview && balance && (
         <ReceiptSharePreview
-          shares={previewReceipt(editableItems, userSelections, groupUsers, currency, balance)}
+          shares={shares}
+          adjusted={!!balance.adjustedItems}
           total={total}
           currency={currency}
           title={shopInfo.en_shop_name || shopInfo.jp_shop_name || 'Receipt'}

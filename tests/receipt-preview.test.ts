@@ -1,5 +1,6 @@
 import { previewReceipt, reconcileReceipt } from '../utils/receipt-preview';
-import type { ReceiptItem } from '../utils/receipt';
+import sugi from '../tools/verify-ios/fixtures/sugi-receipt.json';
+import { readReceipt, type ReceiptAdjustment, type ReceiptItem } from '../utils/receipt';
 
 const item: ReceiptItem = {
   english_name: 'Gyoza',
@@ -76,4 +77,51 @@ test('quantity previews use the same rounded line allocations as sync', () => {
     { user: { id: 'aya' }, lines: [{ portion: '×1', amount: 3.33 }], taxAmount: 0.33, total: 3.66 },
     { user: { id: 'ren' }, lines: [{ portion: '×2', amount: 6.67 }], taxAmount: 0.67, total: 7.34 },
   ]);
+});
+
+test('the six Sugi lines verify only after the eligible basket coupon and redeemed points', () => {
+  const receipt = readReceipt(sugi)!;
+  const { receipt_items: items, receipt_adjustments: adjustments, total_amount: total } = receipt;
+  const result = reconcileReceipt(items, 0, total, adjustments);
+  expect(result).toMatchObject({ subtotal: 6536, taxAmount: 0, total: 5809 });
+  expect(result?.adjustedItems?.map((item) => item.cost)).toEqual([837, 744, 1809, 1533, 650, 236]);
+  expect(reconcileReceipt([...items].reverse(), 10, total, adjustments)).toEqual(result);
+  expect(items.map((item) => item.cost)).toEqual([987, 877, 1963, 1664, 767, 278]);
+  expect(reconcileReceipt(items, 10, total)).toBeNull();
+  expect(reconcileReceipt(items, 10, total, adjustments?.slice(0, 1))).toBeNull();
+  expect(reconcileReceipt(items, 10, total + 1, adjustments)).toBeNull();
+});
+
+test('tax is added after a pre-tax coupon, and points pay down the resulting bill', () => {
+  const items = [
+    { ...item, cost: 10 },
+    { ...item, item_order: 2, cost: 3 },
+  ];
+  const adjustments: ReceiptAdjustment[] = [
+    { kind: 'points_redemption', amount: 3, item_orders: [] },
+    { kind: 'discount', amount: 1.25, item_orders: [1] },
+  ];
+  // 13 - 1.25 = 11.75, plus 0.94 tax, minus 3 in points.
+  const result = reconcileReceipt(items, 8, 9.69, adjustments);
+  expect(result?.taxAmount).toBe(0.94);
+  expect(result?.adjustedItems?.map((line) => line.cost)).toEqual([7.22, 2.47]);
+});
+
+test('deductions cannot exceed eligible prices or reference duplicate or missing items', () => {
+  const items = [item, { ...item, item_order: 2 }];
+  for (const orders of [[1], [1, 1], [99]]) {
+    expect(
+      reconcileReceipt(items, 0, 50, [{ kind: 'discount', amount: 150, item_orders: orders }]),
+    ).toBeNull();
+  }
+});
+
+test('points covering the entire taxed purchase yield zero shares', () => {
+  const balance = reconcileReceipt([item], 10, 0, [
+    { kind: 'points_redemption', amount: 110, item_orders: [] },
+  ]);
+  expect(balance?.adjustedItems?.[0].cost).toBe(0);
+  expect(
+    previewReceipt([item], { 1: 'a' }, [{ id: 'a', name: 'A' }], 'JPY', balance!)[0],
+  ).toMatchObject({ total: 0, rounding: 0 });
 });

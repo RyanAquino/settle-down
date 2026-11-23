@@ -12,6 +12,7 @@ export default function ReceiptSharePreview({
   total,
   title,
   taxIncluded,
+  adjusted,
   onClose,
 }: {
   shares: ReturnType<typeof previewReceipt>;
@@ -19,11 +20,13 @@ export default function ReceiptSharePreview({
   total: number;
   title: string;
   taxIncluded: boolean;
+  adjusted: boolean;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const money = (amount: number) => formatMoney(amount, currency);
+  const adjustmentNote = 'Item shares include receipt deductions and any tax.';
   const taxLabel = taxIncluded ? 'Tax included' : 'Tax';
   const itemLabel = (line: { name: string; portion?: string }) =>
     line.portion ? `${line.name} · ${line.portion}` : line.name;
@@ -33,14 +36,18 @@ export default function ReceiptSharePreview({
       [
         `${share.user.name} · Estimated share ${money(share.total)}`,
         ...share.lines.map((line) => `• ${itemLabel(line)} · ${money(line.amount)}`),
-        taxIncluded ? taxLabel : `${taxLabel} · ${money(share.taxAmount)}`,
+        ...(adjusted ? [] : [taxIncluded ? taxLabel : `${taxLabel} · ${money(share.taxAmount)}`]),
         ...(share.rounding ? [`Rounding · ${money(share.rounding)}`] : []),
       ].join('\n'),
     );
     try {
       await Share.share({
         title,
-        message: [`${title} · Receipt total ${money(total)}`, ...summaries].join('\n\n'),
+        message: [
+          `${title} · Receipt total ${money(total)}`,
+          ...(adjusted ? [adjustmentNote] : []),
+          ...summaries,
+        ].join('\n\n'),
       });
     } catch {
       Alert.alert('Couldn’t share the breakdown', 'Please try again.');
@@ -55,6 +62,7 @@ export default function ReceiptSharePreview({
             <View style={styles.heading}>
               <Text style={styles.title}>Show me my share</Text>
               <Text style={styles.muted}>Receipt total · {money(total)}</Text>
+              {adjusted && <Text style={styles.muted}>{adjustmentNote}</Text>}
             </View>
             <PressableScale onPress={onClose} style={styles.close}>
               <Text style={styles.label}>Close</Text>
@@ -87,10 +95,14 @@ export default function ReceiptSharePreview({
                           <Text style={styles.label}>{money(line.amount)}</Text>
                         </View>
                       ))}
-                      <View style={styles.row}>
-                        <Text style={styles.muted}>{taxLabel}</Text>
-                        {!taxIncluded && <Text style={styles.label}>{money(share.taxAmount)}</Text>}
-                      </View>
+                      {!adjusted && (
+                        <View style={styles.row}>
+                          <Text style={styles.muted}>{taxLabel}</Text>
+                          {!taxIncluded && (
+                            <Text style={styles.label}>{money(share.taxAmount)}</Text>
+                          )}
+                        </View>
+                      )}
                       {!!share.rounding && (
                         <View style={styles.row}>
                           <Text style={styles.muted}>Rounding</Text>

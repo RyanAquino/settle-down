@@ -1,0 +1,34 @@
+appId: com.ryan.aquino.settledown
+name: Review a purchase fully paid with points
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: pick-receipt
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- extendedWaitUntil:
+    visible: CI Receipt Shop
+    timeout: 30000
+- assertVisible: 'Fully covered. No payment to sync.'
+- assertVisible:
+    id: sync-transaction
+    enabled: false
+- scrollUntilVisible:
+    element:
+      id: receipt-total
+    direction: DOWN
+    centerElement: true
+- assertVisible: Points redeemed
+- assertVisible: '-¥330'
+- assertVisible:
+    id: receipt-total
+    text: '¥0'
+- takeScreenshot: fully-covered-with-points

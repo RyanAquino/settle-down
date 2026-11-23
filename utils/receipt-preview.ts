@@ -7,21 +7,64 @@ import {
   type GroupUser,
   type ItemAssignment,
   type ReceiptItem,
+  type ReceiptAdjustment,
 } from './receipt';
 
-type ReceiptBalance = { subtotal: number; taxAmount: number; total: number };
+type ReceiptBalance = {
+  subtotal: number;
+  taxAmount: number;
+  total: number;
+  // Paid line totals, including allocated tax and receipt-wide deductions.
+  adjustedItems?: ReceiptItem[];
+};
+
+function adjustedLinePrices(
+  items: ReceiptItem[],
+  adjustments: ReceiptAdjustment[],
+  taxAmount: number,
+  digits: number,
+): ReceiptItem[] | null {
+  const paid = items.map((item) => ({ ...item })).sort((a, b) => a.item_order - b.item_order);
+  const distribute = (amount: number, lines: ReceiptItem[]) => {
+    const weights = lines.map((item) => item.cost);
+    const available = weights.reduce((sum, cost) => sum + cost, 0);
+    if (available + amount < -1e-7 || (available === 0 && amount !== 0)) return false;
+    const shares = allocateMoney(amount, weights, digits);
+    lines.forEach((line, i) => {
+      line.cost = Number((line.cost + shares[i]).toFixed(digits));
+    });
+    return true;
+  };
+  // Apply basket coupons to eligible purchases, add any excluded tax, then spend
+  // points on the remaining bill. Each deduction is allocated once in receipt units.
+  const deduct = ({ amount, item_orders }: ReceiptAdjustment) => {
+    if (!item_orders.length) return distribute(-amount, paid);
+    const eligible = new Set(item_orders);
+    if (eligible.size !== item_orders.length) return false;
+    const lines = paid.filter((item) => eligible.has(item.item_order));
+    return lines.length === eligible.size && distribute(-amount, lines);
+  };
+  const discounts = adjustments.filter(({ kind }) => kind === 'discount');
+  const points = adjustments.filter(({ kind }) => kind === 'points_redemption');
+  if (!discounts.every(deduct) || !distribute(taxAmount, paid) || !points.every(deduct))
+    return null;
+  return paid;
+}
 
 export function reconcileReceipt(
   items: ReceiptItem[],
   taxPercentage: number,
   total: number,
+  adjustments: ReceiptAdjustment[] = [],
 ): ReceiptBalance | null {
-  const { subtotal, taxAmount } = receiptTotals(items, taxPercentage);
+  const { subtotal } = receiptTotals(items, taxPercentage);
   if (
     !Number.isFinite(subtotal) ||
     !Number.isFinite(taxPercentage) ||
     subtotal <= 0 ||
-    total <= 0 ||
+    !Number.isFinite(total) ||
+    total < 0 ||
+    (total === 0 && !adjustments.length) ||
     taxPercentage < 0 ||
     items.some(({ cost }) => cost < 0) ||
     new Set(items.map(({ item_order }) => item_order)).size !== items.length
@@ -29,23 +72,40 @@ export function reconcileReceipt(
     return null;
   }
 
+  const basketDiscount = adjustments.reduce(
+    (sum, a) => sum + (a.kind === 'discount' ? a.amount : 0),
+    0,
+  );
+  const afterCoupons = subtotal - basketDiscount;
+  const net = adjustments.reduce((sum, a) => sum - a.amount, subtotal);
   const matchesTotal = (amount: number) => Math.abs(total - amount) < 1e-7;
-  if (matchesTotal(subtotal)) return { subtotal: total, taxAmount: 0, total };
+  if (!adjustments.length && matchesTotal(subtotal))
+    return { subtotal: total, taxAmount: 0, total };
 
-  // OCR returns numeric amounts without a currency. Use the visible amount precision
-  // to recognize tax rounded up or down on the receipt, including whole yen.
-  const visibleDigits = [total, ...items.map(({ cost }) => cost)].reduce((digits, amount) => {
+  // OCR amounts have no currency code. Whole numbers use whole receipt units.
+  const amounts = [
+    total,
+    ...items.map(({ cost }) => cost),
+    ...adjustments.map(({ amount }) => amount),
+  ];
+  const visibleDigits = amounts.reduce((digits, amount) => {
     const fraction = amount.toString().split('.')[1];
     return Math.max(digits, fraction?.length ?? 0);
   }, 0);
   const printedDigits = visibleDigits === 0 ? 0 : Math.max(2, visibleDigits);
   const scale = 10 ** printedDigits;
-  const scaledTax = taxAmount * scale;
-  const lower = Math.floor(scaledTax + 1e-7) / scale;
-  const upper = Math.ceil(scaledTax - 1e-7) / scale;
+  let taxAmount = 0;
+  if (!matchesTotal(net)) {
+    const scaledTax = ((afterCoupons * taxPercentage) / 100) * scale;
+    const lower = Math.floor(scaledTax + 1e-7) / scale;
+    const upper = Math.ceil(scaledTax - 1e-7) / scale;
+    if (!matchesTotal(net + lower) && !matchesTotal(net + upper)) return null;
+    taxAmount = Number((total - net).toFixed(printedDigits));
+  }
 
-  if (!matchesTotal(subtotal + lower) && !matchesTotal(subtotal + upper)) return null;
-  return { subtotal, taxAmount: Number((total - subtotal).toFixed(printedDigits)), total };
+  if (!adjustments.length) return { subtotal, taxAmount, total };
+  const adjustedItems = adjustedLinePrices(items, adjustments, taxAmount, printedDigits);
+  return adjustedItems && { subtotal, taxAmount, total, adjustedItems };
 }
 
 export async function scanReconciledReceipt(read: () => Promise<unknown>, onRetry: () => void) {
@@ -54,7 +114,12 @@ export async function scanReconciledReceipt(read: () => Promise<unknown>, onRetr
     const receipt = readReceipt(await read());
     if (
       receipt &&
-      reconcileReceipt(receipt.receipt_items, receipt.tax_percentage, receipt.total_amount)
+      reconcileReceipt(
+        receipt.receipt_items,
+        receipt.tax_percentage,
+        receipt.total_amount,
+        receipt.receipt_adjustments,
+      )
     ) {
       return receipt;
     }
@@ -75,7 +140,7 @@ export function previewReceipt(
   const digits = moneyDigits(currency);
   const round = (amount: number) => Number(amount.toFixed(digits));
 
-  for (const item of items) {
+  for (const item of balance.adjustedItems ?? items) {
     const assignment = assignments[item.item_order];
     const portions = itemPortions(item, assignment, currency, users);
     for (const { memberId, cost, units } of portions) {
@@ -105,8 +170,8 @@ export function previewReceipt(
   );
   // Group-wide shared items retain their full-precision proportions. Round the
   // estimate against the scanned total, as Settle Up receives that total and weights.
-  const totals = allocateMoney(balance.total, weights, currency);
-  const taxes = allocateMoney(balance.taxAmount, totals, currency);
+  const totals = allocateMoney(balance.total, weights, digits);
+  const taxes = allocateMoney(balance.adjustedItems ? 0 : balance.taxAmount, totals, digits);
 
   return participants.map(({ user, lines }, index) => {
     const amounts = lines.map((line) => ({ ...line, amount: round(line.amount) }));

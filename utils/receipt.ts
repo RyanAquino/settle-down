@@ -8,8 +8,16 @@ const receiptItemSchema = z.object({
   quantity: z.number().finite(),
   discount: z.number().finite().default(0),
 });
+const adjustmentSchema = z.object({
+  kind: z.enum(['discount', 'points_redemption']),
+  amount: z.number().finite().positive(),
+  item_orders: z.array(z.number().int()).default([]),
+});
+export type ReceiptAdjustment = z.output<typeof adjustmentSchema>;
+
 export const receiptSchema = z.object({
   receipt_items: z.array(receiptItemSchema),
+  receipt_adjustments: z.array(adjustmentSchema).optional(),
   en_shop_name: z.string(),
   jp_shop_name: z.string(),
   tax_percentage: z.number().finite(),
@@ -81,10 +89,11 @@ export function moneyDigits(currency: string | null) {
   );
 }
 
-export function allocateMoney(amount: number, weights: number[], currency: string | null) {
-  const scale = 10 ** moneyDigits(currency);
+export function allocateMoney(amount: number, weights: number[], digits: number) {
+  const scale = 10 ** digits;
   const magnitude = Math.round(Math.abs(amount) * scale);
   const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+  if (weightTotal === 0) return weights.map(() => 0);
   const shares = weights.map((weight, index) => {
     const portion = (magnitude * weight) / weightTotal;
     const units = Math.floor(portion);
@@ -111,7 +120,7 @@ export function itemPortions(
   if (typeof assignment === 'string') return [{ memberId: assignment, cost: item.cost }];
 
   const weights = assignment.portions.map(({ units }) => units);
-  const costs = allocateMoney(item.cost, weights, currency);
+  const costs = allocateMoney(item.cost, weights, moneyDigits(currency));
   return assignment.portions.map(({ memberId, units }, index) => ({
     memberId,
     cost: costs[index],

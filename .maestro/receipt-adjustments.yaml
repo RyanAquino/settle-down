@@ -1,0 +1,91 @@
+appId: com.ryan.aquino.settledown
+name: Scan and split the discounted Sugi receipt
+---
+- launchApp:
+    permissions:
+      all: allow
+- tapOn:
+    id: pick-receipt
+- extendedWaitUntil:
+    visible:
+      id: PXGGridLayout-Info
+      index: 0
+    timeout: 30000
+- tapOn:
+    id: PXGGridLayout-Info
+    index: 0
+- extendedWaitUntil:
+    visible: Sugi Pharmacy
+    timeout: 30000
+- tapOn:
+    id: paid-by-ci-alex
+- scrollUntilVisible:
+    element:
+      id: item-1-assign-ci-alex
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-1-assign-ci-alex
+- scrollUntilVisible:
+    element:
+      id: item-2-assign-ci-sam
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-2-assign-ci-sam
+- scrollUntilVisible:
+    element:
+      id: item-3-assign-ci-alex
+    direction: DOWN
+    centerElement: true
+- assertVisible: Item discount · ¥347
+- tapOn:
+    id: item-3-assign-ci-alex
+- scrollUntilVisible:
+    element:
+      id: item-4-assign-ci-sam
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-4-assign-ci-sam
+- scrollUntilVisible:
+    element:
+      id: item-5-shared
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-5-shared
+- scrollUntilVisible:
+    element:
+      id: item-6-shared
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: item-6-shared
+- scrollUntilVisible:
+    element:
+      id: show-my-share
+    direction: DOWN
+    centerElement: true
+- assertVisible: Tax added
+- assertVisible: Receipt discount
+- assertVisible: '-¥233'
+- assertVisible: Points redeemed
+- assertVisible: '-¥494'
+- assertVisible:
+    id: receipt-total
+    text: '¥5,809'
+- takeScreenshot: sugi-receipt-total
+- tapOn:
+    id: show-my-share
+- assertVisible: 'Receipt total · ¥5,809'
+- assertVisible: '¥3,089'
+- assertVisible: '¥2,720'
+- tapOn:
+    id: share-member-ci-alex
+- assertVisible: '¥837'
+- takeScreenshot: sugi-member-shares
+- tapOn: Close
+- tapOn:
+    id: sync-transaction
+- assertVisible: Synced

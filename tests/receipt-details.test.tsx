@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, userEvent, within } from '@testing-library/react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { Share } from 'react-native';
+import sugi from '../tools/verify-ios/fixtures/sugi-receipt.json';
+import { Alert, Share } from 'react-native';
 import * as api from '@/utils/api';
 import ReceiptDetailsScreen from '../app/receipt-details';
 
@@ -141,4 +142,73 @@ test('a build without a backend URL keeps receipt details local', async () => {
   expect(screen.getByText('This build is missing its backend URL.')).toBeOnTheScreen();
   expect(screen.getByTestId('sync-transaction')).toBeDisabled();
   expect(fetch).not.toHaveBeenCalled();
+});
+
+test('Sugi coupon and points reach the summary, share preview and exact Settle Up payment', async () => {
+  jest.mocked(useLocalSearchParams).mockReturnValue({ data: JSON.stringify(sugi) });
+  const fetch = jest
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(response([{ id: 'group', name: 'Japan', currency: 'JPY' }]))
+    .mockResolvedValueOnce(
+      response([
+        { id: 'aya', name: 'Aya' },
+        { id: 'ren', name: 'Ren' },
+      ]),
+    )
+    .mockResolvedValueOnce({ status: 201, ok: true } as Response);
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const share = jest
+    .spyOn(Share, 'share')
+    .mockResolvedValue({ action: Share.sharedAction, activityType: undefined });
+  const user = userEvent.setup();
+  await render(<ReceiptDetailsScreen />);
+  await user.press(await screen.findByTestId('paid-by-aya'));
+  for (const [i, control] of [
+    'assign-aya',
+    'assign-ren',
+    'assign-aya',
+    'assign-ren',
+    'shared',
+    'shared',
+  ].entries()) {
+    await user.press(screen.getByTestId(`item-${i + 1}-${control}`));
+  }
+  for (const value of [
+    '¥6,536',
+    'Item discount · ¥347',
+    'Item discount · ¥294',
+    'Receipt discount',
+    '-¥233',
+    'Points redeemed',
+    '-¥494',
+    'Tax added',
+  ]) {
+    expect(screen.getByText(value)).toBeOnTheScreen();
+  }
+  expect(screen.getByTestId('receipt-total')).toHaveTextContent('¥5,809');
+  await user.press(screen.getByTestId('show-my-share'));
+  await user.press(screen.getByTestId('share-member-aya'));
+  expect(screen.getByText('¥837')).toBeOnTheScreen();
+  await user.press(screen.getByTestId('share-receipt-breakdown'));
+  const [{ message }] = share.mock.calls[0];
+  expect(message).toContain('Aya · Estimated share ¥3,089');
+  expect(message).toContain('Ren · Estimated share ¥2,720');
+  expect(message).toContain('Item shares include receipt deductions');
+  await user.press(screen.getByRole('button', { name: 'Close' }));
+  await fireEvent.changeText(screen.getByTestId('item-cost-1'), '988');
+  expect(screen.getByTestId('sync-transaction')).toBeDisabled();
+  await fireEvent.changeText(screen.getByTestId('item-cost-1'), '987');
+  await user.press(screen.getByTestId('sync-transaction'));
+  expect(alert).toHaveBeenCalledWith('Synced', expect.any(String), expect.any(Array));
+  const body = fetch.mock.calls[2][1]?.body;
+  if (typeof body !== 'string') throw new Error('Expected a JSON transaction body');
+  expect(JSON.parse(body)).toMatchObject({
+    total_amount: 5809,
+    tax_percentage: 0,
+    split_receipt_items: [],
+    user_receipt_items: [
+      { member_id: 'aya', cost: 3089 },
+      { member_id: 'ren', cost: 2720 },
+    ],
+  });
 });

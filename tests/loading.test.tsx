@@ -1,3 +1,4 @@
+import sugi from '../tools/verify-ios/fixtures/sugi-receipt.json';
 import { render, screen, userEvent, waitFor } from '@testing-library/react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { File } from 'expo-file-system';
@@ -87,6 +88,24 @@ test('a reconciled scan proceeds directly to the receipt', async () => {
   expect(jest.mocked(saveDraft).mock.calls[0][0]).toMatchObject({
     id: draft.id,
     receipt: { total_amount: 100 },
+  });
+});
+
+test('a Sugi scan opens the editor on the first upload and saves both deductions in the inbox', async () => {
+  const fetch = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+    ok: true,
+    json: () => Promise.resolve(sugi),
+  } as Response);
+  await render(<LoadingScreen />);
+  await waitFor(() =>
+    expect(router.replace).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: '/receipt-details' }),
+    ),
+  );
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(jest.mocked(saveDraft).mock.calls[0][0].receipt).toMatchObject({
+    receipt_adjustments: sugi.receipt_adjustments,
+    total_amount: 5809,
   });
 });
 
