@@ -29,9 +29,34 @@ export const receipt = {
   receipt_date: '2026-01-15T12:00:00.000Z',
   receipt_image_url: `${FIXTURE_ORIGIN}/receipt.png`,
 };
+// The Sugi Pharmacy receipt as the backend returns it once reconciled.
 const sugiReceipt = JSON.parse(
   await readFile(new URL('./fixtures/sugi-receipt.json', import.meta.url), 'utf8'),
 );
+// The same scan with both 15% lines read under item 3: the second needs a person.
+const sugiReview = {
+  ...sugiReceipt,
+  receipt_items: sugiReceipt.receipt_items.map((item) => ({ ...item, cost: 0, discount: 0 })),
+  adjustments: sugiReceipt.adjustments.map((adjustment, index) => ({
+    ...adjustment,
+    ...(index === 1 ? { item_orders: [3], status: 'unresolved' } : {}),
+    allocations: [],
+  })),
+  reconciliation: { status: 'needs_review', difference: 0 },
+};
+// The recalculation once the second line is placed on item 4.
+const sugiAllocation = {
+  receipt_items: sugiReceipt.receipt_items.map(({ item_order, list_price, cost, discount }) => ({
+    item_order,
+    list_price,
+    cost,
+    discount,
+  })),
+  adjustments: sugiReceipt.adjustments.map((adjustment) => ({ ...adjustment, status: 'verified' })),
+  reconciliation: sugiReceipt.reconciliation,
+  tax_percentage: sugiReceipt.tax_percentage,
+  total_amount: sugiReceipt.total_amount,
+};
 const mismatchedReceipt = { ...receipt, total_amount: 410 };
 const receiptWithMissingDiscount = {
   ...receipt,
@@ -127,15 +152,23 @@ export async function startFixtures({ port = 8765, token, logPath, imagePath }) 
         if (preset === 'missing-discount') return send(200, receiptWithMissingDiscount);
         if (preset === 'receipt-adjustments')
           return send(200, { ...sugiReceipt, receipt_image_url: receipt.receipt_image_url });
-        if (preset === 'points-covered')
-          return send(200, {
-            ...receipt,
-            total_amount: 0,
-            receipt_adjustments: [{ kind: 'points_redemption', amount: 330, item_orders: [] }],
-          });
+        if (preset === 'receipt-review')
+          return send(200, { ...sugiReview, receipt_image_url: receipt.receipt_image_url });
         const mismatch =
           preset === 'scan-mismatch' || (preset === 'scan-mismatch-once' && validUploads === 1);
         return send(200, mismatch ? mismatchedReceipt : receipt);
+      }
+      if (url.pathname === '/api/v1/receipts/allocations/' && req.method === 'POST') {
+        // Only the Sugi receipt is recalculated, and only with the second 15%
+        // line on item 4, where the printed percentage puts it.
+        const lines = record.body?.adjustments;
+        if (!Array.isArray(lines) || lines.some((line) => !line.item_orders?.length))
+          return send(422, { detail: 'Every line must apply to items on the receipt.' });
+        const placed = lines.map(({ item_orders }) => item_orders.join(','));
+        const expected = sugiReceipt.adjustments.map(({ item_orders }) => item_orders.join(','));
+        if (placed.join('|') !== expected.join('|'))
+          return send(422, { detail: "'1品割引' is larger than what its items still cost." });
+        return send(200, sugiAllocation);
       }
       if (url.pathname === '/api/v1/settle-up/groups/' && req.method === 'GET') {
         if (preset === 'groups-error') return send(503, { error: 'Synthetic groups failure' });

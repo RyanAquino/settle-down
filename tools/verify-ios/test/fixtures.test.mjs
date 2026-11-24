@@ -32,17 +32,48 @@ test('synthetic API covers app contracts, errors, request evidence and reset', a
   const sugi = await (await upload()).json();
   assert.deepEqual(
     sugi.receipt_items.map(({ cost }) => cost),
-    [987, 877, 1963, 1664, 767, 278],
+    [837, 744, 1809, 1533, 650, 236],
   );
-  assert.deepEqual(sugi.receipt_adjustments, [
-    { kind: 'discount', amount: 233, item_orders: [1, 2, 5, 6] },
-    { kind: 'points_redemption', amount: 494, item_orders: [] },
-  ]);
+  assert.deepEqual(
+    sugi.receipt_items.map(({ list_price }) => list_price),
+    [987, 877, 2310, 1958, 767, 278],
+  );
+  assert.deepEqual(
+    sugi.adjustments.map(({ amount, item_orders, status }) => [amount, item_orders, status]),
+    [
+      [347, [3], 'verified'],
+      [294, [4], 'verified'],
+      [233, [1, 2, 5, 6], 'verified'],
+      [494, [1, 2, 3, 4, 5, 6], 'assumed'],
+    ],
+  );
   assert.equal(sugi.total_amount, 5809);
-  assert.equal((await reset('points-covered')).status, 200);
-  const covered = await (await upload()).json();
-  assert.equal(covered.total_amount, 0);
-  assert.equal(covered.receipt_adjustments[0].amount, 330);
+  assert.equal(sugi.reconciliation.status, 'reconciled');
+  assert.equal((await reset('receipt-review')).status, 200);
+  const review = await (await upload()).json();
+  assert.deepEqual(new Set(review.receipt_items.map(({ cost }) => cost)), new Set([0]));
+  assert.equal(review.adjustments[1].status, 'unresolved');
+  assert.equal(review.reconciliation.status, 'needs_review');
+  const recalculate = (itemOrders) =>
+    fetch(`${base}/api/v1/receipts/allocations/`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        adjustments: review.adjustments.map((adjustment, index) => ({
+          ...adjustment,
+          item_orders: index === 1 ? itemOrders : adjustment.item_orders,
+        })),
+      }),
+    });
+  const unplaced = await recalculate([]);
+  assert.equal(unplaced.status, 422);
+  assert.equal((await recalculate([3])).status, 422);
+  const placed = await (await recalculate([4])).json();
+  assert.deepEqual(
+    placed.receipt_items.map(({ cost }) => cost),
+    [837, 744, 1809, 1533, 650, 236],
+  );
+  assert.equal(placed.reconciliation.status, 'reconciled');
   assert.equal((await reset('success')).status, 200);
   assert.deepEqual(
     scanned.receipt_items.map(({ cost, discount }) => [cost, discount]),
