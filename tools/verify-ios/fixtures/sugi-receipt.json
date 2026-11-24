@@ -5,65 +5,170 @@
   "receipt_items": [
     {
       "english_name": "Dry shampoo",
-      "japanese_name": "ドライシャンプー",
+      "japanese_name": "ダイアンPドライシャンプ",
       "item_order": 1,
-      "cost": 987,
+      "cost": 837,
       "quantity": 1,
-      "discount": 0
+      "discount": 150,
+      "list_price": 987
     },
     {
-      "english_name": "Breathing tape",
-      "japanese_name": "鼻呼吸テープ",
+      "english_name": "Nose strips",
+      "japanese_name": "ナイトミン鼻呼吸テープ",
       "item_order": 2,
-      "cost": 877,
+      "cost": 744,
       "quantity": 1,
-      "discount": 0
+      "discount": 133,
+      "list_price": 877
     },
     {
       "english_name": "Amino Moist",
-      "japanese_name": "アミノモイスト",
+      "japanese_name": "ミノン アミノモイスト",
       "item_order": 3,
-      "cost": 1963,
+      "cost": 1809,
       "quantity": 1,
-      "discount": 347
+      "discount": 501,
+      "list_price": 2310
     },
     {
       "english_name": "Neck warmer",
       "japanese_name": "あずきのチカラ 首肩用",
       "item_order": 4,
-      "cost": 1664,
+      "cost": 1533,
       "quantity": 1,
-      "discount": 294
+      "discount": 425,
+      "list_price": 1958
     },
     {
       "english_name": "Soft masks",
-      "japanese_name": "ソフトマスク",
+      "japanese_name": "Wソフトマスク小60",
       "item_order": 5,
-      "cost": 767,
+      "cost": 650,
       "quantity": 1,
-      "discount": 0
+      "discount": 117,
+      "list_price": 767
     },
     {
-      "english_name": "Mini chocolate bars",
+      "english_name": "Chocolate bar",
       "japanese_name": "ミルクのサンダーミニバー",
       "item_order": 6,
-      "cost": 278,
+      "cost": 236,
       "quantity": 1,
-      "discount": 0
+      "discount": 42,
+      "list_price": 278
     }
   ],
-  "receipt_adjustments": [
+  "tax_percentage": 10,
+  "total_amount": 5809,
+  "decimal_places": 0,
+  "adjustments": [
     {
+      "printed_label": "1品割引",
       "kind": "discount",
-      "amount": 233,
-      "item_orders": [1, 2, 5, 6]
+      "amount": 347,
+      "percentage": 15,
+      "eligible_subtotal": null,
+      "item_orders": [3],
+      "status": "verified",
+      "allocations": [
+        {
+          "item_order": 3,
+          "amount": 347
+        }
+      ]
     },
     {
-      "kind": "points_redemption",
+      "printed_label": "1品割引",
+      "kind": "discount",
+      "amount": 294,
+      "percentage": 15,
+      "eligible_subtotal": null,
+      "item_orders": [4],
+      "status": "verified",
+      "allocations": [
+        {
+          "item_order": 4,
+          "amount": 294
+        }
+      ]
+    },
+    {
+      "printed_label": "全品割引",
+      "kind": "discount",
+      "amount": 233,
+      "percentage": 8,
+      "eligible_subtotal": 2909,
+      "item_orders": [1, 2, 5, 6],
+      "status": "verified",
+      "allocations": [
+        {
+          "item_order": 1,
+          "amount": 79
+        },
+        {
+          "item_order": 2,
+          "amount": 70
+        },
+        {
+          "item_order": 5,
+          "amount": 62
+        },
+        {
+          "item_order": 6,
+          "amount": 22
+        }
+      ]
+    },
+    {
+      "printed_label": "スギポイント値引金額",
+      "kind": "points",
       "amount": 494,
-      "item_orders": []
+      "percentage": null,
+      "eligible_subtotal": null,
+      "item_orders": [1, 2, 3, 4, 5, 6],
+      "status": "assumed",
+      "allocations": [
+        {
+          "item_order": 1,
+          "amount": 71
+        },
+        {
+          "item_order": 2,
+          "amount": 63
+        },
+        {
+          "item_order": 3,
+          "amount": 154
+        },
+        {
+          "item_order": 4,
+          "amount": 131
+        },
+        {
+          "item_order": 5,
+          "amount": 55
+        },
+        {
+          "item_order": 6,
+          "amount": 20
+        }
+      ]
     }
   ],
-  "tax_percentage": 0,
-  "total_amount": 5809
+  "tax_lines": [
+    {
+      "rate": 8,
+      "taxable_amount": 236,
+      "tax_amount": 17
+    },
+    {
+      "rate": 10,
+      "taxable_amount": 5573,
+      "tax_amount": 506
+    }
+  ],
+  "reconciliation": {
+    "status": "reconciled",
+    "difference": 0
+  }
 }

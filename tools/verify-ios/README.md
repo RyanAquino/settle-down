@@ -136,13 +136,15 @@ Real OCR and real Settle Up integration are never exercised.
 The fixture service implements the app's existing receipt, groups, members, and
 transaction endpoints. It supplies a fixed-date receipt with line totals (including
 one quantity-two item), JPY/TWD/HKD groups, and synthetic Alex/Sam members. Presets:
-`success`, `receipt-adjustments`, `points-covered`, `missing-discount`, `upload-error`, `groups-error`, `no-groups`, `users-error`, `sync-error`, `out-of-order-members`.
+`success`, `receipt-adjustments`, `receipt-review`, `missing-discount`, `upload-error`, `groups-error`, `no-groups`, `users-error`, `sync-error`, `out-of-order-members`.
 
-The `receipt-adjustments` preset serves a transcribed six-item Sugi Pharmacy receipt.
-Line prices after item discounts sum to ¥6,536. The ¥233 basket discount applies
-to the ¥2,909 of eligible items, and redeemed points take off another ¥494. The
-printed payment total is ¥5,809. The `points-covered` preset redeems ¥330
-of points on the standard receipt, covering the entire purchase.
+The `receipt-adjustments` preset serves the six-item Sugi Pharmacy receipt as the
+backend returns it: two 15% item discounts, an 8% discount on the four items
+without one (base ¥2,909) and ¥494 of points. Each line's cost is its share after
+all of them (¥837, ¥744, ¥1,809, ¥1,533, ¥650, ¥236), adding up to the ¥5,809 paid.
+The `receipt-review` preset serves the same receipt with its second 15% line
+unplaced, so costs are 0 until it is placed on the neck warmer (item 4); the
+fixture's allocations endpoint then returns the reconciled split.
 
 The `missing-discount` preset omits the discount field on the full-price juice.
 The two Onigiri have a paid line total of 200 and a discount of 30.
