@@ -4,10 +4,42 @@ const receiptItemSchema = z.object({
   english_name: z.string(),
   japanese_name: z.string(),
   item_order: z.number().int(),
+  // What the line cost after every discount, coupon and points; 0 while the
+  // receipt does not reconcile (see `reconciliation`).
   cost: z.number().finite(),
   quantity: z.number().finite(),
   discount: z.number().finite().default(0),
+  // The price printed on the item's own line. Absent from older backends.
+  list_price: z.number().finite().optional(),
 });
+// A printed line that changed the amount to pay: a discount, coupon, points
+// used, or a surcharge. The backend decides which items it covers.
+export const adjustmentSchema = z.object({
+  printed_label: z.string(),
+  kind: z.enum(['discount', 'points', 'surcharge']),
+  amount: z.number().finite(),
+  percentage: z.number().finite().nullable().default(null),
+  eligible_subtotal: z.number().finite().nullable().default(null),
+  item_orders: z.array(z.number().int()),
+  // verified: printed numbers prove its items; assumed: taken from the layout
+  // or the whole receipt; unresolved: a person must choose its items.
+  status: z.enum(['verified', 'assumed', 'unresolved']),
+  allocations: z
+    .array(z.object({ item_order: z.number().int(), amount: z.number().finite() }))
+    .default([]),
+});
+export type ReceiptAdjustment = z.output<typeof adjustmentSchema>;
+export type AdjustmentKind = ReceiptAdjustment['kind'];
+const taxLineSchema = z.object({
+  rate: z.number().finite().nullable(),
+  taxable_amount: z.number().finite().nullable(),
+  tax_amount: z.number().finite().nullable(),
+});
+const reconciliationSchema = z.object({
+  status: z.enum(['reconciled', 'needs_review', 'mismatch']),
+  difference: z.number().finite(),
+});
+export type ReceiptReconciliation = z.output<typeof reconciliationSchema>;
 export const receiptSchema = z.object({
   receipt_items: z.array(receiptItemSchema),
   en_shop_name: z.string(),
@@ -19,8 +51,29 @@ export const receiptSchema = z.object({
     .transform((v) => new Date(v))
     .refine((v) => !Number.isNaN(v.getTime())),
   receipt_image_url: z.string().optional(),
+  // Present only from backends that reconcile receipts themselves.
+  decimal_places: z.number().int().optional(),
+  adjustments: z.array(adjustmentSchema).optional(),
+  tax_lines: z.array(taxLineSchema).optional(),
+  reconciliation: reconciliationSchema.optional(),
 });
 export type ReceiptData = z.output<typeof receiptSchema>;
+// What `POST /api/v1/receipts/allocations/` returns for a corrected receipt.
+export const allocationSchema = z.object({
+  receipt_items: z.array(
+    z.object({
+      item_order: z.number().int(),
+      list_price: z.number().finite(),
+      cost: z.number().finite(),
+      discount: z.number().finite(),
+    }),
+  ),
+  adjustments: z.array(adjustmentSchema),
+  reconciliation: reconciliationSchema,
+  tax_percentage: z.number().finite(),
+  total_amount: z.number().finite(),
+});
+export type ReceiptAllocation = z.output<typeof allocationSchema>;
 export const groupSchema = z.object({
   name: z.string(),
   id: z.string(),
@@ -167,3 +220,59 @@ export const formatMoney = (n: number, currency: string | null) => {
 // digits from a formatted 0 rather than using formatToParts, which Hermes may lack.
 export const currencySymbol = (currency: string | null) =>
   currency ? formatMoney(0, currency).replace(/[\d\s.,]/g, '') : null;
+
+// The printed price of a line: `list_price` from backends that report it,
+// otherwise the cost, which older backends set to the printed price less its
+// own discount.
+export const printedPrice = (item: ReceiptItem) => item.list_price ?? item.cost;
+
+// Whether a receipt still needs a person before it can be split: the backend
+// could not reconcile it, or deductions were edited and not recalculated yet.
+export const needsReview = (receipt: ReceiptData) =>
+  receipt.reconciliation !== undefined && receipt.reconciliation.status !== 'reconciled';
+
+// The receipt with a recalculation applied: each line's cost and discount, the
+// deductions as allocated, and the reconciliation that goes with them.
+export function applyAllocation(receipt: ReceiptData, allocation: ReceiptAllocation): ReceiptData {
+  const byOrder = new Map(allocation.receipt_items.map((item) => [item.item_order, item]));
+  return {
+    ...receipt,
+    receipt_items: receipt.receipt_items.map((item) => {
+      const allocated = byOrder.get(item.item_order);
+      return allocated
+        ? {
+            ...item,
+            cost: allocated.cost,
+            discount: allocated.discount,
+            list_price: allocated.list_price,
+          }
+        : item;
+    }),
+    adjustments: allocation.adjustments,
+    reconciliation: allocation.reconciliation,
+    tax_percentage: allocation.tax_percentage,
+    total_amount: allocation.total_amount,
+  };
+}
+
+// The body `POST /api/v1/receipts/allocations/` expects: the receipt as printed,
+// with each deduction applied to the items a person chose.
+export function allocationRequest(receipt: ReceiptData, adjustments: ReceiptAdjustment[]) {
+  return {
+    decimal_places: receipt.decimal_places ?? 0,
+    receipt_items: receipt.receipt_items.map((item) => ({
+      item_order: item.item_order,
+      list_price: printedPrice(item),
+    })),
+    adjustments: adjustments.map((adjustment) => ({
+      printed_label: adjustment.printed_label,
+      kind: adjustment.kind,
+      amount: adjustment.amount,
+      percentage: adjustment.percentage,
+      eligible_subtotal: adjustment.eligible_subtotal,
+      item_orders: adjustment.item_orders,
+    })),
+    tax_lines: receipt.tax_lines ?? [],
+    total_amount: receipt.total_amount,
+  };
+}

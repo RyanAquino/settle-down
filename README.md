@@ -18,6 +18,7 @@ Camera / Library  →  Loading (upload + OCR)  →  Receipt details  →  Settle
    - assign an item to one member, mark it **Shared** across the group, or use **Split…** to divide it among selected members equally or by quantity
    - correct item costs, the tax %, or the receipt date if needed
    - review paid amounts and scanned discounts, then use **Show my share** to see and share the breakdown after the assignments and totals balance
+   - check **Discounts & points**: each printed discount, coupon, points or charge line and the items it covers. When the receipt doesn't say which items a line covers, or its lines don't add up to the total, choose the items, correct an amount, or add a line that was missed; every share is recalculated by the backend before you can share or sync
 4. **Sync**: the split is sent to Settle Up as a transaction.
 
 ### Receipt inbox and offline behavior

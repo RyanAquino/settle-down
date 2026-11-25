@@ -52,6 +52,9 @@ export async function scanReconciledReceipt(read: () => Promise<unknown>, onRetr
   for (let attempt = 0; attempt < 2; attempt++) {
     if (attempt === 1) onRetry();
     const receipt = readReceipt(await read());
+    // A backend that reconciles receipts itself has already read the photo again
+    // and says what a person must review, so another read would not help.
+    if (receipt?.reconciliation) return receipt;
     if (
       receipt &&
       reconcileReceipt(receipt.receipt_items, receipt.tax_percentage, receipt.total_amount)
